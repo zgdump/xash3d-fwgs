@@ -676,11 +676,17 @@ qboolean R_Init( void )
 	// 3. Detected renderers in `DEFAULT_RENDERERS` order.
 	requested[0] = '\0';
 	if( !Sys_GetParmFromCmdLine( "-ref", requested ) && COM_CheckString( r_refdll->string ) )
+	{
 		// r_refdll is set to empty by default, so we can change hardcoded defaults just in case
 		Q_strncpy( requested, r_refdll->string, sizeof( requested ) );
+	}
 
 	if ( requested[0] )
+	{
+		// Save selected renderer to cvar. Thats fixes video mode in settings
+        Cvar_Set( "r_refdll", requested );
 		success = R_LoadRenderer( requested );
+	}
 
 	if( !success )
 	{
