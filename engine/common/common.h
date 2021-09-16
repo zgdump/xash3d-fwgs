@@ -441,6 +441,7 @@ typedef struct host_parm_s
 	// some settings were changed and needs to global update
 	qboolean		userinfo_changed;
 	qboolean		movevars_changed;
+	qboolean        rendermode_changed;
 	qboolean		renderinfo_changed;
 
 	char		rootdir[MAX_OSPATH];	// member root directory

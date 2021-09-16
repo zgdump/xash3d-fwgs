@@ -348,7 +348,7 @@ static void SDLash_ActiveEvent( int gain )
 		host.force_draw_version = true;
 		host.force_draw_version_time = host.realtime + FORCE_DRAW_VERSION_TIME;
 		if( vid_fullscreen->value )
-			VID_SetMode();
+			VID_SetMode( false );
 	}
 	else
 	{
@@ -614,7 +614,7 @@ static void SDLash_EventFilter( SDL_Event *event )
 			host.force_draw_version = true;
 			host.force_draw_version_time = host.realtime + FORCE_DRAW_VERSION_TIME;
 			if( vid_fullscreen->value )
-				VID_SetMode();
+				VID_SetMode( false );
 			break;
 		case SDL_WINDOWEVENT_FOCUS_GAINED:
 			SDLash_ActiveEvent( true );

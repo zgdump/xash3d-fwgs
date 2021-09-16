@@ -1059,7 +1059,7 @@ qboolean R_Init_Video( const int type )
 		break;
 	}
 
-	if( !(retval = VID_SetMode()) )
+	if( !(retval = VID_SetMode( false )) )
 	{
 		return retval;
 	}
@@ -1077,12 +1077,13 @@ qboolean R_Init_Video( const int type )
 
 	R_InitVideoModes();
 
+	host.rendermode_changed = false;
 	host.renderinfo_changed = false;
 
 	return true;
 }
 
-rserr_t R_ChangeDisplaySettings( int width, int height, qboolean fullscreen )
+rserr_t R_ChangeDisplaySettings( int width, int height, qboolean fullscreen, qboolean recreate_window )
 {
 #if SDL_VERSION_ATLEAST( 2, 0, 0 )
 	SDL_DisplayMode displayMode;
@@ -1100,6 +1101,12 @@ rserr_t R_ChangeDisplaySettings( int width, int height, qboolean fullscreen )
 	if( !host.hWnd )
 	{
 		if( !VID_CreateWindow( width, height, fullscreen ) )
+			return rserr_invalid_mode;
+	}
+	else if (recreate_window)
+	{
+		VID_DestroyWindow( );
+		if (!VID_CreateWindow( width, height, fullscreen ))
 			return rserr_invalid_mode;
 	}
 	else if( fullscreen )
@@ -1133,7 +1140,7 @@ VID_SetMode
 Set the described video mode
 ==================
 */
-qboolean VID_SetMode( void )
+qboolean VID_SetMode( qboolean recreate_window )
 {
 	qboolean	fullscreen = false;
 	int iScreenWidth, iScreenHeight;
@@ -1171,7 +1178,7 @@ qboolean VID_SetMode( void )
 	SetBits( gl_vsync->flags, FCVAR_CHANGED );
 	fullscreen = Cvar_VariableInteger("fullscreen") != 0;
 
-	if(( err = R_ChangeDisplaySettings( iScreenWidth, iScreenHeight, fullscreen )) == rserr_ok )
+	if(( err = R_ChangeDisplaySettings( iScreenWidth, iScreenHeight, fullscreen, recreate_window )) == rserr_ok )
 	{
 		sdlState.prev_width = iScreenWidth;
 		sdlState.prev_height = iScreenHeight;
@@ -1183,7 +1190,7 @@ qboolean VID_SetMode( void )
 			Cvar_SetValue( "fullscreen", 0 );
 			Con_Reportf( S_ERROR  "VID_SetMode: fullscreen unavailable in this mode\n" );
 			Sys_Warn("fullscreen unavailable in this mode!");
-			if(( err = R_ChangeDisplaySettings( iScreenWidth, iScreenHeight, false )) == rserr_ok )
+			if(( err = R_ChangeDisplaySettings( iScreenWidth, iScreenHeight, false, recreate_window )) == rserr_ok )
 				return true;
 		}
 		else if( err == rserr_invalid_mode )
@@ -1193,7 +1200,7 @@ qboolean VID_SetMode( void )
 		}
 
 		// try setting it back to something safe
-		if(( err = R_ChangeDisplaySettings( sdlState.prev_width, sdlState.prev_height, false )) != rserr_ok )
+		if(( err = R_ChangeDisplaySettings( sdlState.prev_width, sdlState.prev_height, false, recreate_window )) != rserr_ok )
 		{
 			Con_Reportf( S_ERROR  "VID_SetMode: could not revert to safe mode\n" );
 			Sys_Warn("could not revert to safe mode!");

@@ -652,7 +652,7 @@ qboolean R_Init( void )
 	gl_wgl_msaa_samples = Cvar_Get( "gl_wgl_msaa_samples", "0", FCVAR_GLCONFIG, "samples number for multisample anti-aliasing" );
 	gl_clear = Cvar_Get( "gl_clear", "0", FCVAR_ARCHIVE, "clearing screen after each frame" );
 	r_showtree = Cvar_Get( "r_showtree", "0", FCVAR_ARCHIVE, "build the graph of visible BSP tree" );
-	r_refdll = Cvar_Get( "r_refdll", "", FCVAR_RENDERINFO|FCVAR_VIDRESTART, "choose renderer implementation, if supported" );
+	r_refdll = Cvar_Get( "r_refdll", "", FCVAR_RENDERINFO|FCVAR_WINRESTART, "choose renderer implementation, if supported" );
 
 	// cvars that are expected to exist by client.dll
 	// refdll should just get pointer to them

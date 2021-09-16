@@ -123,7 +123,7 @@ void VID_CheckChanges( void )
 
 	if( host.renderinfo_changed )
 	{
-		if( VID_SetMode( ))
+		if( VID_SetMode( host.rendermode_changed ))
 		{
 			SCR_VidInit(); // tell the client.dll what vid_mode has changed
 		}
@@ -131,6 +131,8 @@ void VID_CheckChanges( void )
 		{
 			Sys_Error( "Can't re-initialize video subsystem\n" );
 		}
+
+		host.rendermode_changed = false;
 		host.renderinfo_changed = false;
 	}
 }
@@ -167,7 +169,7 @@ static void VID_Mode_f( void )
 		return;
 	}
 
-	R_ChangeDisplaySettings( w, h, Cvar_VariableInteger( "fullscreen" ) );
+	R_ChangeDisplaySettings( w, h, Cvar_VariableInteger( "fullscreen" ), false );
 }
 
 void VID_Init( void )

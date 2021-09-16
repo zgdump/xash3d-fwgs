@@ -112,7 +112,7 @@ struct vidmode_s;
 // Window
 qboolean  R_Init_Video( const int type );
 void      R_Free_Video( void );
-qboolean  VID_SetMode( void );
+qboolean  VID_SetMode( qboolean );
 rserr_t   R_ChangeDisplaySettings( int width, int height, qboolean fullscreen );
 int       R_MaxVideoModes( void );
 struct vidmode_s *R_GetVideoMode( int num );
