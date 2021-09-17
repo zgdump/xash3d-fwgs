@@ -103,6 +103,7 @@ void Android_MouseMove( float *x, float *y );
 typedef enum
 {
 	rserr_ok,
+	rserr_reinit_renderer,
 	rserr_invalid_fullscreen,
 	rserr_invalid_mode,
 	rserr_unknown
@@ -113,7 +114,7 @@ struct vidmode_s;
 qboolean  R_Init_Video( const int type );
 void      R_Free_Video( void );
 qboolean  VID_SetMode( qboolean );
-rserr_t   R_ChangeDisplaySettings( int width, int height, qboolean fullscreen );
+rserr_t   R_ChangeDisplaySettings( int width, int height, qboolean fullscreen, qboolean recreate_window );
 int       R_MaxVideoModes( void );
 struct vidmode_s *R_GetVideoMode( int num );
 void*     GL_GetProcAddress( const char *name ); // RenderAPI requirement

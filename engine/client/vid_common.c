@@ -85,7 +85,7 @@ void R_SaveVideoMode( int w, int h , int render_w, int render_h )
 		refState.wideScreen = true;
 	else refState.wideScreen = false;
 
-	SCR_VidInit(); // tell client.dll that vid_mode has changed
+	SCR_VidInit( false ); // tell client.dll that vid_mode has changed
 }
 
 /*
@@ -123,9 +123,14 @@ void VID_CheckChanges( void )
 
 	if( host.renderinfo_changed )
 	{
-		if( VID_SetMode( host.rendermode_changed ))
+		if ( host.rendermode_changed )
 		{
-			SCR_VidInit(); // tell the client.dll what vid_mode has changed
+			SCR_VidInit( true );
+			VID_SetMode( true );
+		}
+		else if ( VID_SetMode( false ) )
+		{
+			SCR_VidInit( false );
 		}
 		else
 		{

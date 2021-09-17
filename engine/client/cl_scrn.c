@@ -779,8 +779,14 @@ void SCR_SizeDown_f( void )
 SCR_VidInit
 ==================
 */
-void SCR_VidInit( void )
+void SCR_VidInit( qboolean recreate_renderer )
 {
+	if (recreate_renderer)
+	{
+		R_Init();
+		return;
+	}
+
 	if( !ref.initialized ) // don't call VidInit too soon
 		return;
 
@@ -842,7 +848,7 @@ void SCR_Init( void )
 		host.allow_console = true; // we need console, because menu is missing
 	}
 
-	SCR_VidInit();
+	SCR_VidInit( false );
 	SCR_LoadCreditsFont ();
 	SCR_RegisterTextures ();
 	SCR_InstallParticlePalette ();

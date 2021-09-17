@@ -1105,9 +1105,7 @@ rserr_t R_ChangeDisplaySettings( int width, int height, qboolean fullscreen, qbo
 	}
 	else if (recreate_window)
 	{
-		VID_DestroyWindow( );
-		if (!VID_CreateWindow( width, height, fullscreen ))
-			return rserr_invalid_mode;
+		return rserr_reinit_renderer;
 	}
 	else if( fullscreen )
 	{
@@ -1156,7 +1154,11 @@ qboolean VID_SetMode( qboolean recreate_window )
 #if !defined( DEFAULT_MODE_WIDTH ) || !defined( DEFAULT_MODE_HEIGHT )
 		SDL_DisplayMode mode;
 
-		SDL_GetDesktopDisplayMode( 0, &mode );
+		if ( SDL_GetDesktopDisplayMode( 0, &mode ) != 0 )
+		{
+			Con_Reportf(S_ERROR  "SDL_GetDesktopDisplayMode failed: %s\n", SDL_GetError());
+			return false;
+		}
 
 		iScreenWidth = mode.w;
 		iScreenHeight = mode.h;
@@ -1185,7 +1187,12 @@ qboolean VID_SetMode( qboolean recreate_window )
 	}
 	else
 	{
-		if( err == rserr_invalid_fullscreen )
+		if ( err == rserr_reinit_renderer )
+		{
+			Con_Printf( "Re-init renderer" );
+			return true;
+		}
+		else if( err == rserr_invalid_fullscreen )
 		{
 			Cvar_SetValue( "fullscreen", 0 );
 			Con_Reportf( S_ERROR  "VID_SetMode: fullscreen unavailable in this mode\n" );
