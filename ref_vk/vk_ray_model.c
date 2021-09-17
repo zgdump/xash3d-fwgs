@@ -296,6 +296,7 @@ void VK_RayFrameAddModel( vk_ray_model_t *model, const vk_render_model_t *render
 	}
 
 	{
+		if (model == NULL) return;
 		ASSERT(model->as != VK_NULL_HANDLE);
 		draw_model->alpha_test = false;
 		draw_model->model = model;

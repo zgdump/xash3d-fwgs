@@ -1,4 +1,4 @@
-#include "vk_core.h"
+﻿#include "vk_core.h"
 
 #include "vk_common.h"
 #include "vk_textures.h"
