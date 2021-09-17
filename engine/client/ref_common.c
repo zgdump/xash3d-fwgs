@@ -405,11 +405,11 @@ static void R_UnloadProgs( void )
 	COM_FreeLibrary( ref.hInstance );
 	ref.hInstance = NULL;
 
-	memset( &refState, 0, sizeof( refState ));
-	memset( &ref.dllFuncs, 0, sizeof( ref.dllFuncs ));
+	//memset( &refState, 0, sizeof( refState ));
+	//memset( &ref.dllFuncs, 0, sizeof( ref.dllFuncs ));
 
-	Cvar_Unlink( FCVAR_RENDERINFO | FCVAR_GLCONFIG );
-	Cmd_Unlink( CMD_REFDLL );
+	//Cvar_Unlink( FCVAR_RENDERINFO | FCVAR_GLCONFIG );
+	//Cmd_Unlink( CMD_REFDLL );
 }
 
 static void CL_FillTriAPIFromRef( triangleapi_t *dst, const ref_interface_t *src )
@@ -640,6 +640,8 @@ void R_CollectRendererNames( void )
 	ref.numRenderers = cur;
 }
 
+static test = false;
+
 qboolean R_Init( void )
 {
 	qboolean success = false;
@@ -670,23 +672,30 @@ qboolean R_Init( void )
 
 	R_CollectRendererNames();
 
-	// Priority:
-	// 1. Command line `-ref` argument.
-	// 2. `ref_dll` cvar.
-	// 3. Detected renderers in `DEFAULT_RENDERERS` order.
 	requested[0] = '\0';
-	if( !Sys_GetParmFromCmdLine( "-ref", requested ) && COM_CheckString( r_refdll->string ) )
+	if (test)
 	{
-		// r_refdll is set to empty by default, so we can change hardcoded defaults just in case
-		Q_strncpy( requested, r_refdll->string, sizeof( requested ) );
+		Q_strncpy(requested, "vk", sizeof(requested));
+		test = false;
+	}
+	else
+	{
+		Q_strncpy(requested, "gl", sizeof(requested));
+		test = true;
 	}
 
-	if ( requested[0] )
-	{
+	//if( !Sys_GetParmFromCmdLine( "-ref", requested ) && COM_CheckString( r_refdll->string ) )
+	//{
+	//	// r_refdll is set to empty by default, so we can change hardcoded defaults just in case
+	//	Q_strncpy(requested, r_refdll->string, sizeof(requested));
+	//}
+
+	//if ( requested[0] )
+	//{
 		// Save selected renderer to cvar. Thats fixes video mode in settings
         Cvar_Set( "r_refdll", requested );
 		success = R_LoadRenderer( requested );
-	}
+	//}
 
 	if( !success )
 	{

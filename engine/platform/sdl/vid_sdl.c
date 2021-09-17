@@ -846,9 +846,9 @@ VID_DestroyWindow
 */
 void VID_DestroyWindow( void )
 {
-	GL_DeleteContext();
+	//GL_DeleteContext();
 
-	VID_RestoreScreenResolution();
+	//VID_RestoreScreenResolution();
 	if( host.hWnd )
 	{
 #if SDL_VERSION_ATLEAST( 2, 0, 0 )
@@ -1228,12 +1228,12 @@ void R_Free_Video( void )
 
 	VID_DestroyWindow ();
 
-	R_FreeVideoModes();
+	//R_FreeVideoModes();
 
 	ref.dllFuncs.GL_ClearExtensions();
 
 #if SDL_VERSION_ATLEAST( 2, 0, 0 )
-	SDL_VideoQuit();
+	//SDL_VideoQuit();
 #endif
 }
 
