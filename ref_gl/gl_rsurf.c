@@ -2636,8 +2636,6 @@ void R_DrawVBO( qboolean drawlightmap, qboolean drawtextures )
 	int k;
 	vboarray_t *vbo = vbos.arraylist;
 
-	if (vbo == NULL) return;
-
 	if( !CVAR_TO_BOOL( r_vbo ) )
 		return;
 
@@ -2967,8 +2965,6 @@ static qboolean R_CheckLightMap( msurface_t *fa )
 
 qboolean R_AddSurfToVBO( msurface_t *surf, qboolean buildlightmap )
 {
-	if (vbos.surfdata == NULL) return false;
-
 	if( CVAR_TO_BOOL(r_vbo) && vbos.surfdata[surf - WORLDMODEL->surfaces].vbotexture )
 	{
 		// find vbotexture_t assotiated with this surface

@@ -52,6 +52,7 @@ static void GL_BackendEndFrame( void )
 // debug
 static void R_ShowTextures( void )
 {
+	PRINT_NOT_IMPLEMENTED();
 	//PRINT_NOT_IMPLEMENTED();
 }
 
@@ -371,7 +372,7 @@ static qboolean	R_SpeedsMessage( char *out, size_t size )
 // get visdata for current frame from custom renderer
 static byte*		Mod_GetCurrentVis( void )
 {
-	//PRINT_NOT_IMPLEMENTED();
+	PRINT_NOT_IMPLEMENTED();
 	return NULL;
 }
 

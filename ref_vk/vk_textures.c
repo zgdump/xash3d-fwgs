@@ -457,9 +457,6 @@ static qboolean VK_UploadTexture(vk_texture_t *tex, rgbdata_t *pic)
 	// TODO non-rbga textures
 	// TODO cubemaps
 
-	if (vk_core.device == NULL)
-		return false;
-
 	if (!pic->buffer)
 		return false;
 
