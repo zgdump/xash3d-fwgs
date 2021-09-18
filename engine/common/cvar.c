@@ -377,11 +377,11 @@ convar_t *Cvar_Get( const char *name, const char *value, int flags, const char *
 				Cvar_Changed( var );
 			}
 		}
-		else
-		{
-			SetBits( var->flags, flags );
-			Cvar_DirectSet( var, value );
-		}
+		//else
+		//{
+		//	SetBits( var->flags, flags );
+		//	Cvar_DirectSet( var, value );
+		//}
 
 		if( FBitSet( var->flags, FCVAR_ALLOCATED ) && Q_strcmp( var_desc, var->desc ))
 		{
