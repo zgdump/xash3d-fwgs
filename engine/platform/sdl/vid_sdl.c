@@ -516,7 +516,7 @@ qboolean GL_UpdateContext( void )
 	return true;
 }
 
-void VID_SaveWindowSize( int width, int height )
+void VID_SaveWindowSize( int width, int height, qboolean is_recreate_window )
 {
 	int render_w = width, render_h = height;
 	uint rotate = vid_rotate->value;
@@ -546,10 +546,13 @@ void VID_SaveWindowSize( int width, int height )
 		Con_Printf( S_WARN "failed to setup screen transform\n" );
 	}
 
-	R_SaveVideoMode( width, height, render_w, render_h );
+    if ( !is_recreate_window )
+	{
+		R_SaveVideoMode( width, height, render_w, render_h );
+	}
 }
 
-static qboolean VID_SetScreenResolution( int width, int height )
+static qboolean VID_SetScreenResolution( int width, int height, qboolean is_recreate_window )
 {
 #if SDL_VERSION_ATLEAST( 2, 0, 0 )
 	SDL_DisplayMode want, got;
@@ -580,9 +583,9 @@ static qboolean VID_SetScreenResolution( int width, int height )
 	SDL_SetWindowGrab( host.hWnd, SDL_TRUE );
 	SDL_SetWindowSize( host.hWnd, got.w, got.h );
 
-	VID_SaveWindowSize( got.w, got.h );
+	VID_SaveWindowSize( got.w, got.h, is_recreate_window );
 #else
-	VID_SaveWindowSize( width, height );
+	VID_SaveWindowSize( width, height, is_recreate_window );
 #endif
 	return true;
 }
@@ -624,7 +627,7 @@ static void WIN_SetWindowIcon( HICON ico )
 VID_CreateWindow
 =================
 */
-qboolean VID_CreateWindow( int width, int height, qboolean fullscreen )
+qboolean VID_CreateWindow( int width, int height, qboolean fullscreen, qboolean is_recreate_window )
 {
 	static string	wndname;
 #if SDL_VERSION_ATLEAST( 2, 0, 0 )
@@ -690,7 +693,7 @@ qboolean VID_CreateWindow( int width, int height, qboolean fullscreen )
 
 	if( fullscreen )
 	{
-		if( !VID_SetScreenResolution( width, height ) )
+		if( !VID_SetScreenResolution( width, height, is_recreate_window ) )
 		{
 			return false;
 		}
@@ -834,7 +837,7 @@ qboolean VID_CreateWindow( int width, int height, qboolean fullscreen )
 
 #endif // SDL_VERSION_ATLEAST( 2, 0, 0 )
 
-	VID_SaveWindowSize( width, height );
+	VID_SaveWindowSize( width, height, false );
 
 	return true;
 }
@@ -986,7 +989,9 @@ int XVK_GetInstanceExtensions( unsigned int count, const char **pNames )
 
 void *XVK_GetVkGetInstanceProcAddr( void )
 {
-	return SDL_Vulkan_GetVkGetInstanceProcAddr();
+	void *t = SDL_Vulkan_GetVkGetInstanceProcAddr();
+	if ( t == NULL ) Con_Printf( "XVK_GetVkGetInstanceProcAddr err: %s", SDL_GetError() );
+	return t;
 }
 
 VkSurfaceKHR XVK_CreateSurface( VkInstance instance )
@@ -1012,6 +1017,7 @@ qboolean R_Init_Video( const int type )
 {
 	string safe;
 	qboolean retval;
+	qboolean is_first_init;
 #if SDL_VERSION_ATLEAST( 2, 0, 0 )
 	SDL_DisplayMode displayMode;
 	SDL_GetCurrentDisplayMode(0, &displayMode);
@@ -1031,7 +1037,9 @@ qboolean R_Init_Video( const int type )
 #if XASH_WIN32
 	WIN_SetDPIAwareness();
 #endif
-
+    
+	is_first_init = glw_state.context_type == REF_UNITIALIZED;
+    
 	glw_state.context_type = type;
 	switch( type )
 	{
@@ -1059,10 +1067,13 @@ qboolean R_Init_Video( const int type )
 		break;
 	}
 
-	if( !(retval = VID_SetMode( false )) )
-	{
-		return retval;
-	}
+    //if (is_first_init)
+	//{
+		if( !(retval = VID_SetMode( false )) )
+		{
+			return retval;
+		}
+	//}
 
 	switch( type )
 	{
@@ -1101,7 +1112,7 @@ rserr_t R_ChangeDisplaySettings( int width, int height, qboolean fullscreen, qbo
 
 	if( !host.hWnd )
 	{
-		if( !VID_CreateWindow( width, height, fullscreen ) )
+		if( !VID_CreateWindow( width, height, fullscreen, recreate_window ) )
 			return rserr_invalid_mode;
 	}
 	else if (recreate_window)
@@ -1110,7 +1121,7 @@ rserr_t R_ChangeDisplaySettings( int width, int height, qboolean fullscreen, qbo
 	}
 	else if( fullscreen )
 	{
-		if( !VID_SetScreenResolution( width, height ) )
+		if( !VID_SetScreenResolution( width, height, false ) )
 			return rserr_invalid_fullscreen;
 	}
 	else
@@ -1126,7 +1137,7 @@ rserr_t R_ChangeDisplaySettings( int width, int height, qboolean fullscreen, qbo
 		SDL_SetWindowSize( host.hWnd, width, height );
 
 #endif // SDL_VERSION_ATLEAST( 2, 0, 0 )
-		VID_SaveWindowSize( width, height );
+		VID_SaveWindowSize( width, height, false );
 	}
 
 	return rserr_ok;

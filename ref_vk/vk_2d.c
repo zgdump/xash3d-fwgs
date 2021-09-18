@@ -18,7 +18,7 @@ void R_DrawStretchRaw( float x, float y, float w, float h, int cols, int rows, c
 }
 void R_DrawTileClear( int texnum, int x, int y, int w, int h )
 {
-	gEngine.Con_Printf(S_WARN "VK FIXME: %s\n", __FUNCTION__);
+	//gEngine.Con_Printf(S_WARN "VK FIXME: %s\n", __FUNCTION__);
 }
 
 typedef struct vertex_2d_s {

@@ -343,6 +343,10 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode )
 	if (bmodel->render_model.num_geometries == 0)
 		return;
 
+	// HACK
+	if (bmodel->render_model.geometries == NULL)
+		return;
+
 	for (int i = 0; i < bmodel->render_model.num_geometries; ++i) {
 		texture_t *t = R_TextureAnimation(ent, bmodel->render_model.geometries[i].surf);
 		if (t->gl_texturenum < 0)

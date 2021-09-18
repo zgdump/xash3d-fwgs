@@ -67,7 +67,7 @@ void VID_InitDefaultResolution( void )
 R_SaveVideoMode
 =================
 */
-void R_SaveVideoMode( int w, int h , int render_w, int render_h )
+void R_SaveVideoMode( int w, int h , int render_w, int render_h, qboolean is_recreate_window )
 {
 	host.window_center_x = w / 2;
 	host.window_center_y = h / 2;
@@ -85,7 +85,10 @@ void R_SaveVideoMode( int w, int h , int render_w, int render_h )
 		refState.wideScreen = true;
 	else refState.wideScreen = false;
 
-	SCR_VidInit( false ); // tell client.dll that vid_mode has changed
+    if ( !is_recreate_window )
+	{
+		SCR_VidInit( false ); // tell client.dll that vid_mode has changed
+	}
 }
 
 /*
@@ -126,6 +129,7 @@ void VID_CheckChanges( void )
 		if ( host.rendermode_changed )
 		{
 			R_Init( true );
+			SCR_VidInit( false );
 		}
 
 		if ( VID_SetMode( false ) )

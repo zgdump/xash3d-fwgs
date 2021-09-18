@@ -22,13 +22,13 @@ GNU General Public License for more details.
 
 // window management
 void VID_RestoreScreenResolution( void );
-qboolean  VID_CreateWindow( int width, int height, qboolean fullscreen );
+qboolean  VID_CreateWindow( int width, int height, qboolean fullscreen, qboolean is_recreate_window );
 void      VID_DestroyWindow( void );
 void GL_InitExtensions( void );
 qboolean GL_CreateContext( void );
 qboolean GL_UpdateContext( void );
 qboolean GL_DeleteContext( void );
-void VID_SaveWindowSize( int width, int height );
+void VID_SaveWindowSize( int width, int height, qboolean is_recreate_window );
 
 // joystick events
 extern SDL_Joystick *g_joy;

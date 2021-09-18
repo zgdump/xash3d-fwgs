@@ -613,7 +613,7 @@ qboolean R_VkInit( void )
 	vkGetInstanceProcAddr = gEngine.XVK_GetVkGetInstanceProcAddr();
 	if (!vkGetInstanceProcAddr)
 	{
-		gEngine.Con_Printf( S_ERROR "Cannot get vkGetInstanceProcAddr address\n" );
+		gEngine.Con_Printf( S_ERROR "Cannot get vkGetInstanceProcAddr address: %s\n" );
 		return false;
 	}
 

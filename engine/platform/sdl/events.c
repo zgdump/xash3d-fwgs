@@ -627,7 +627,7 @@ static void SDLash_EventFilter( SDL_Event *event )
 			if( vid_fullscreen->value )
 				break;
 
-			VID_SaveWindowSize( event->window.data1, event->window.data2 );
+			VID_SaveWindowSize( event->window.data1, event->window.data2, false );
 			break;
 		}
 		default:
