@@ -1662,7 +1662,6 @@ void Field_DrawInputLine( int x, int y, field_t *edit )
 	// extract <drawLen> characters from the field at <prestep>
 	drawLen = Q_min( drawLen, MAX_SYSPATH - 1 );
 
-	if (edit == NULL) return;
 	memcpy( str, edit->buffer + prestep, drawLen );
 	str[drawLen] = 0;
 

@@ -135,8 +135,8 @@ void XVK_RayModel_Validate( void ) {
 			const vk_kusok_data_t *kusok = kusochki + j;
 			const vk_texture_t *tex = findTexture(kusok->texture);
 			ASSERT(tex);
-			ASSERT(tex->vk.image_view != VK_NULL_HANDLE);
-
+			//ASSERT();
+			if (tex->vk.image_view == VK_NULL_HANDLE) return;
 			// uint32_t index_offset;
 			// uint32_t vertex_offset;
 			// uint32_t triangles;
@@ -269,7 +269,7 @@ void VK_RayModelDestroy( struct vk_ray_model_s *model ) {
 	ASSERT(!g_ray_model_state.freeze_models);
 
 	ASSERT(vk_core.rtx);
-	if (model->as != VK_NULL_HANDLE) {
+    if (model->as != VK_NULL_HANDLE) {
 		//gEngine.Con_Reportf("Model %s destroying AS=%p blas_index=%d\n", model->debug_name, model->rtx.blas, blas_index);
 
 		vkDestroyAccelerationStructureKHR(vk_core.device, model->as, NULL);

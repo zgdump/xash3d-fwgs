@@ -4048,7 +4048,7 @@ qboolean CL_LoadProgs( const char *name )
 	CL_InitViewBeams ();
 	CL_InitTempEnts ();
 
-	if( !R_InitRenderAPI())	// Xash3D extension
+	if( !R_InitRenderAPI( false ))	// Xash3D extension
 		Con_Reportf( S_WARN "CL_LoadProgs: couldn't get render API\n" );
 
 	if( !Mobile_Init() ) // Xash3D FWGS extension: mobile interface

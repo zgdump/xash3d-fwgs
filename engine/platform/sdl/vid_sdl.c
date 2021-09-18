@@ -1096,6 +1096,7 @@ rserr_t R_ChangeDisplaySettings( int width, int height, qboolean fullscreen, qbo
 
 	Con_Reportf( "R_ChangeDisplaySettings: Setting video mode to %dx%d %s\n", width, height, fullscreen ? "fullscreen" : "windowed" );
 
+	//fullscreen = false;
 	refState.fullScreen = fullscreen;
 
 	if( !host.hWnd )
@@ -1228,7 +1229,7 @@ void R_Free_Video( void )
 
 	VID_DestroyWindow ();
 
-	//R_FreeVideoModes();
+	R_FreeVideoModes();
 
 	ref.dllFuncs.GL_ClearExtensions();
 

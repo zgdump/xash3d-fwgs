@@ -968,7 +968,7 @@ void CL_ClearAllRemaps( void );
 //
 // cl_render.c
 //
-qboolean R_InitRenderAPI( void );
+qboolean R_InitRenderAPI( qboolean );
 int CL_RenderGetParm( const int parm, const int arg, const qboolean checkRef );
 lightstyle_t *CL_GetLightStyle( int number );
 int R_FatPVS( const vec3_t org, float radius, byte *visbuffer, qboolean merge, qboolean fullvis );

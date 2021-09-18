@@ -49,7 +49,7 @@ extern convar_t	*r_decals;
 extern convar_t	*r_adjust_fov;
 extern convar_t *gl_clear;
 
-qboolean R_Init( void );
+qboolean R_Init( qboolean );
 void R_Shutdown( void );
 void R_UpdateRefState( void );
 

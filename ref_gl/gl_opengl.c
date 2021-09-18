@@ -987,7 +987,7 @@ void R_Shutdown( void )
 		return;
 
 	GL_RemoveCommands();
-	//R_ShutdownImages();
+	R_ShutdownImages();
 
 	Mem_FreePool( &r_temppool );
 

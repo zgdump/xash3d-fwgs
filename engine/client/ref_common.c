@@ -498,16 +498,16 @@ void R_Shutdown( void )
 	model_t *mod;
 
 	// release SpriteTextures
-	for( i = 1, mod = clgame.sprites; i < MAX_CLIENT_SPRITES; i++, mod++ )
-	{
-		if( !mod->name[0] ) continue;
-		Mod_FreeModel( mod );
-	}
-	memset( clgame.sprites, 0, sizeof( clgame.sprites ));
+	//for( i = 1, mod = clgame.sprites; i < MAX_CLIENT_SPRITES; i++, mod++ )
+	//{
+	//	if( !mod->name[0] ) continue;
+	//	Mod_FreeModel( mod );
+	//}
+	//memset( clgame.sprites, 0, sizeof( clgame.sprites ));
 
 	// correctly free all models before render unload
 	// change this if need add online render changing
-	Mod_FreeAll();
+	//Mod_FreeAll();
 	R_UnloadProgs();
 	ref.initialized = false;
 }
@@ -642,29 +642,31 @@ void R_CollectRendererNames( void )
 
 static test = false;
 
-qboolean R_Init( void )
+qboolean R_Init( qboolean is_render_changed )
 {
 	qboolean success = false;
 	string requested;
 
-	gl_vsync = Cvar_Get( "gl_vsync", "0", FCVAR_ARCHIVE,  "enable vertical syncronization" );
-	gl_showtextures = Cvar_Get( "r_showtextures", "0", FCVAR_CHEAT, "show all uploaded textures" );
-	r_adjust_fov = Cvar_Get( "r_adjust_fov", "1", FCVAR_ARCHIVE, "making FOV adjustment for wide-screens" );
-	r_decals = Cvar_Get( "r_decals", "4096", FCVAR_ARCHIVE, "sets the maximum number of decals" );
-	gl_wgl_msaa_samples = Cvar_Get( "gl_wgl_msaa_samples", "0", FCVAR_GLCONFIG, "samples number for multisample anti-aliasing" );
-	gl_clear = Cvar_Get( "gl_clear", "0", FCVAR_ARCHIVE, "clearing screen after each frame" );
-	r_showtree = Cvar_Get( "r_showtree", "0", FCVAR_ARCHIVE, "build the graph of visible BSP tree" );
-	r_refdll = Cvar_Get( "r_refdll", "", FCVAR_RENDERINFO|FCVAR_WINRESTART, "choose renderer implementation, if supported" );
+	gl_vsync = Cvar_Get("gl_vsync", "0", FCVAR_ARCHIVE, "enable vertical syncronization");
+	gl_showtextures = Cvar_Get("r_showtextures", "0", FCVAR_CHEAT, "show all uploaded textures");
+	r_adjust_fov = Cvar_Get("r_adjust_fov", "1", FCVAR_ARCHIVE, "making FOV adjustment for wide-screens");
+	r_decals = Cvar_Get("r_decals", "4096", FCVAR_ARCHIVE, "sets the maximum number of decals");
+	gl_wgl_msaa_samples = Cvar_Get("gl_wgl_msaa_samples", "0", FCVAR_GLCONFIG, "samples number for multisample anti-aliasing");
+	gl_clear = Cvar_Get("gl_clear", "0", FCVAR_ARCHIVE, "clearing screen after each frame");
+	r_showtree = Cvar_Get("r_showtree", "0", FCVAR_ARCHIVE, "build the graph of visible BSP tree");
+	r_refdll = Cvar_Get("r_refdll", "", FCVAR_RENDERINFO | FCVAR_WINRESTART, "choose renderer implementation, if supported");
 
 	// cvars that are expected to exist by client.dll
 	// refdll should just get pointer to them
-	Cvar_Get( "r_drawentities", "1", FCVAR_CHEAT, "render entities" );
-	Cvar_Get( "cl_himodels", "1", FCVAR_ARCHIVE, "draw high-resolution player models in multiplayer" );
+	Cvar_Get("r_drawentities", "1", FCVAR_CHEAT, "render entities");
+	Cvar_Get("cl_himodels", "1", FCVAR_ARCHIVE, "draw high-resolution player models in multiplayer");
 
 	// cvars are created, execute video config
-	Cbuf_AddText( "exec video.cfg" );
-	Cbuf_Execute();
-
+	if (!test)
+	{
+		Cbuf_AddText("exec video.cfg");
+		Cbuf_Execute();
+	}
 	// Set screen resolution and fullscreen mode if passed in on command line.
 	// this is done after executing video.cfg, as the command line values should take priority.
 	SetWidthAndHeightFromCommandLine();
@@ -722,7 +724,16 @@ qboolean R_Init( void )
 		return false;
 	}
 
-	SCR_Init();
+	if (!is_render_changed)
+	{
+		SCR_Init();
+	}
+	else
+	{
+		R_UpdateRefState();
+		ref.dllFuncs.R_NewMap();
+		ref.dllFuncs.CL_InitStudioAPI();
+	}
 
 	return true;
 }
