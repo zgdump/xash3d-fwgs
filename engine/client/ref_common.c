@@ -393,7 +393,7 @@ static ref_api_t gEngfuncs =
 #endif
 };
 
-static void R_UnloadProgs( void )
+static void R_UnloadProgs( qboolean is_render_recreate )
 {
 	if( !ref.hInstance ) return;
 
@@ -405,11 +405,14 @@ static void R_UnloadProgs( void )
 	COM_FreeLibrary( ref.hInstance );
 	ref.hInstance = NULL;
 
-	//memset( &refState, 0, sizeof( refState ));
-	//memset( &ref.dllFuncs, 0, sizeof( ref.dllFuncs ));
+	memset( &refState, 0, sizeof( refState ));
+	memset( &ref.dllFuncs, 0, sizeof( ref.dllFuncs ));
 
-	//Cvar_Unlink( FCVAR_RENDERINFO | FCVAR_GLCONFIG );
-	//Cmd_Unlink( CMD_REFDLL );
+    if ( !is_render_recreate )
+	{
+		Cvar_Unlink( FCVAR_RENDERINFO | FCVAR_GLCONFIG );
+		Cmd_Unlink( CMD_REFDLL );
+	}
 }
 
 static void CL_FillTriAPIFromRef( triangleapi_t *dst, const ref_interface_t *src )
@@ -436,13 +439,13 @@ static void CL_FillTriAPIFromRef( triangleapi_t *dst, const ref_interface_t *src
 	dst->FogParams         = src->FogParams;
 }
 
-static qboolean R_LoadProgs( const char *name )
+static qboolean R_LoadProgs( const char *name, qboolean is_render_recreate )
 {
 	extern triangleapi_t gTriApi;
 	static ref_api_t gpEngfuncs;
 	REFAPI GetRefAPI; // single export
 
-	if( ref.hInstance ) R_UnloadProgs();
+	if( ref.hInstance ) R_UnloadProgs( is_render_recreate );
 
 	FS_AllowDirectPaths( true );
 	if( !(ref.hInstance = COM_LoadLibrary( name, false, true ) ))
@@ -492,23 +495,23 @@ static qboolean R_LoadProgs( const char *name )
 	return true;
 }
 
-void R_Shutdown( void )
+void R_Shutdown( qboolean is_render_recreate )
 {
 	int i;
 	model_t *mod;
 
 	// release SpriteTextures
-	//for( i = 1, mod = clgame.sprites; i < MAX_CLIENT_SPRITES; i++, mod++ )
-	//{
-	//	if( !mod->name[0] ) continue;
-	//	Mod_FreeModel( mod );
-	//}
-	//memset( clgame.sprites, 0, sizeof( clgame.sprites ));
+	for( i = 1, mod = clgame.sprites; i < MAX_CLIENT_SPRITES; i++, mod++ )
+	{
+		if( !mod->name[0] ) continue;
+		Mod_FreeModel( mod );
+	}
+	memset( clgame.sprites, 0, sizeof( clgame.sprites ));
 
 	// correctly free all models before render unload
 	// change this if need add online render changing
-	//Mod_FreeAll();
-	R_UnloadProgs();
+	Mod_FreeAll();
+	R_UnloadProgs( is_render_recreate );
 	ref.initialized = false;
 }
 
@@ -539,7 +542,7 @@ static void R_GetRendererName( char *dest, size_t size, const char *opt )
 	}
 }
 
-static qboolean R_LoadRenderer( const char *refopt )
+static qboolean R_LoadRenderer( const char *refopt, qboolean is_render_recreate )
 {
 	string refdll;
 
@@ -547,9 +550,9 @@ static qboolean R_LoadRenderer( const char *refopt )
 
 	Con_Printf( "Loading renderer: %s -> %s\n", refopt, refdll );
 
-	if( !R_LoadProgs( refdll ))
+	if( !R_LoadProgs( refdll, is_render_recreate ))
 	{
-		R_Shutdown();
+		R_Shutdown( is_render_recreate );
 		Sys_Warn( S_ERROR "Can't initialize %s renderer!\n", refdll );
 		return false;
 	}
@@ -640,8 +643,6 @@ void R_CollectRendererNames( void )
 	ref.numRenderers = cur;
 }
 
-static test = false;
-
 qboolean R_Init( qboolean is_render_changed )
 {
 	qboolean success = false;
@@ -661,43 +662,44 @@ qboolean R_Init( qboolean is_render_changed )
 	Cvar_Get("r_drawentities", "1", FCVAR_CHEAT, "render entities");
 	Cvar_Get("cl_himodels", "1", FCVAR_ARCHIVE, "draw high-resolution player models in multiplayer");
 
-	// cvars are created, execute video config
-	if (!test)
+	// cvars are created, execute video config if no render changes
+	if ( !is_render_changed )
 	{
 		Cbuf_AddText("exec video.cfg");
 		Cbuf_Execute();
 	}
+	
 	// Set screen resolution and fullscreen mode if passed in on command line.
 	// this is done after executing video.cfg, as the command line values should take priority.
 	SetWidthAndHeightFromCommandLine();
 	SetFullscreenModeFromCommandLine();
 
 	R_CollectRendererNames();
-
-	requested[0] = '\0';
-	if (test)
+	
+	// Render is changed, try to load it
+	if ( is_render_changed )
 	{
-		Q_strncpy(requested, "vk", sizeof(requested));
-		test = false;
+		success = R_LoadRenderer( r_refdll->string, true );
 	}
-	else
+	
+	// Render is not changed and no -ref param
+	// Or selected render could not be loaded
+	if ( !success )
 	{
-		Q_strncpy(requested, "gl", sizeof(requested));
-		test = true;
+		requested[0] = '\0';
+		if( !Sys_GetParmFromCmdLine( "-ref", requested ) && COM_CheckString( r_refdll->string ) )
+		{
+			// r_refdll is set to empty by default, so we can change hardcoded defaults just in case
+			Q_strncpy(requested, r_refdll->string, sizeof(requested));
+		}
+
+		if ( requested[0] )
+		{
+			// Save selected renderer to cvar. Thats fixes video mode in settings
+			Cvar_Set( "r_refdll", requested );
+			success = R_LoadRenderer( requested, false );
+		}
 	}
-
-	//if( !Sys_GetParmFromCmdLine( "-ref", requested ) && COM_CheckString( r_refdll->string ) )
-	//{
-	//	// r_refdll is set to empty by default, so we can change hardcoded defaults just in case
-	//	Q_strncpy(requested, r_refdll->string, sizeof(requested));
-	//}
-
-	//if ( requested[0] )
-	//{
-		// Save selected renderer to cvar. Thats fixes video mode in settings
-        Cvar_Set( "r_refdll", requested );
-		success = R_LoadRenderer( requested );
-	//}
 
 	if( !success )
 	{
@@ -710,7 +712,7 @@ qboolean R_Init( qboolean is_render_changed )
 			if( !Q_strcmp( requested, ref.shortNames[i] ) )
 				continue;
 
-			success = R_LoadRenderer( ref.shortNames[i] );
+			success = R_LoadRenderer( ref.shortNames[i], false );
 
 			// yay, found working one
 			if( success )
@@ -724,15 +726,15 @@ qboolean R_Init( qboolean is_render_changed )
 		return false;
 	}
 
-	if (!is_render_changed)
-	{
-		SCR_Init();
-	}
-	else
+	SCR_Init();
+
+	if ( is_render_changed )
 	{
 		R_UpdateRefState();
-		ref.dllFuncs.R_NewMap();
+
+		// Reinitialize render
 		ref.dllFuncs.CL_InitStudioAPI();
+		ref.dllFuncs.R_NewMap();  // If no map now???
 	}
 
 	return true;

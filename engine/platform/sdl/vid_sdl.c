@@ -846,9 +846,9 @@ VID_DestroyWindow
 */
 void VID_DestroyWindow( void )
 {
-	//GL_DeleteContext();
+	GL_DeleteContext();
 
-	//VID_RestoreScreenResolution();
+	VID_RestoreScreenResolution();
 	if( host.hWnd )
 	{
 #if SDL_VERSION_ATLEAST( 2, 0, 0 )
@@ -1181,19 +1181,19 @@ qboolean VID_SetMode( qboolean recreate_window )
 	SetBits( gl_vsync->flags, FCVAR_CHANGED );
 	fullscreen = Cvar_VariableInteger("fullscreen") != 0;
 
-	if(( err = R_ChangeDisplaySettings( iScreenWidth, iScreenHeight, fullscreen, recreate_window )) == rserr_ok )
+    err = R_ChangeDisplaySettings( iScreenWidth, iScreenHeight, fullscreen, recreate_window );
+	if( err == rserr_ok || err == rserr_reinit_renderer )
 	{
 		sdlState.prev_width = iScreenWidth;
 		sdlState.prev_height = iScreenHeight;
+
+		if ( err == rserr_reinit_renderer ) Con_Printf( "Re-init renderer" );
+		
+		return true;
 	}
 	else
 	{
-		if ( err == rserr_reinit_renderer )
-		{
-			Con_Printf( "Re-init renderer" );
-			return true;
-		}
-		else if( err == rserr_invalid_fullscreen )
+		if( err == rserr_invalid_fullscreen )
 		{
 			Cvar_SetValue( "fullscreen", 0 );
 			Con_Reportf( S_ERROR  "VID_SetMode: fullscreen unavailable in this mode\n" );
@@ -1215,6 +1215,7 @@ qboolean VID_SetMode( qboolean recreate_window )
 			return false;
 		}
 	}
+
 	return true;
 }
 
@@ -1234,6 +1235,7 @@ void R_Free_Video( void )
 	ref.dllFuncs.GL_ClearExtensions();
 
 #if SDL_VERSION_ATLEAST( 2, 0, 0 )
+	//FIXME
 	//SDL_VideoQuit();
 #endif
 }

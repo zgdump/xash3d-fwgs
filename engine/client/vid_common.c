@@ -125,10 +125,10 @@ void VID_CheckChanges( void )
 	{
 		if ( host.rendermode_changed )
 		{
-			SCR_VidInit( true );
-			//VID_SetMode( true );
+			R_Init( true );
 		}
-		else if ( VID_SetMode( false ) )
+
+		if ( VID_SetMode( false ) )
 		{
 			SCR_VidInit( false );
 		}

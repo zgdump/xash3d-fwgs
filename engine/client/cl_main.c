@@ -3121,7 +3121,7 @@ void CL_Shutdown( void )
 	FS_Delete( "demoheader.tmp" ); // remove tmp file
 	SCR_FreeCinematic (); // release AVI's *after* client.dll because custom renderer may use them
 	S_Shutdown ();
-	R_Shutdown ();
+	R_Shutdown ( false );
 
 	Con_Shutdown ();
 }

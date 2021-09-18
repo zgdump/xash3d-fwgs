@@ -774,22 +774,13 @@ void SCR_SizeDown_f( void )
 	Cvar_SetValue( "viewsize", Q_max( scr_viewsize->value - 10, 30 ));
 }
 
-static test = false;
-
 /*
 ==================
 SCR_VidInit
 ==================
 */
-void SCR_VidInit( qboolean recreate_renderer )
+void SCR_VidInit()
 {
-	if (recreate_renderer)
-	{
-		test = true;
-		R_Init( recreate_renderer );
-		//return;
-	}
-
 	if( !ref.initialized ) // don't call VidInit too soon
 		return;
 
@@ -804,24 +795,16 @@ void SCR_VidInit( qboolean recreate_renderer )
 		gameui.globals->scrHeight = refState.height;
 	}
 
-	if (!test)
-	{
-		VGui_Startup(NULL, refState.width, refState.height); // initialized already, so pass NULL
+	VGui_Startup(NULL, refState.width, refState.height); // initialized already, so pass NULL
 
-	    CL_ClearSpriteTextures(); // now all hud sprites are invalid
+	CL_ClearSpriteTextures(); // now all hud sprites are invalid
 
-		// vid_state has changed
-		if (gameui.hInstance) gameui.dllFuncs.pfnVidInit();
-		if (clgame.hInstance) clgame.dllFuncs.pfnVidInit();
+	// vid_state has changed
+	if (gameui.hInstance) gameui.dllFuncs.pfnVidInit();
+	if (clgame.hInstance) clgame.dllFuncs.pfnVidInit();
 
-		// restart console size
-		Con_VidInit();
-	}
-	else
-	{
-		CL_ClearSpriteTextures(); // now all hud sprites are invalid
-		Con_VidInit();  // restart console size
-	}
+	// restart console size
+	Con_VidInit();
 }
 
 /*
@@ -859,10 +842,10 @@ void SCR_Init( void )
 		host.allow_console = true; // we need console, because menu is missing
 	}
 
-	SCR_VidInit( false );
-	//SCR_LoadCreditsFont ();
-	//SCR_RegisterTextures ();
-	SCR_InstallParticlePalette ();
+	SCR_VidInit();
+	SCR_LoadCreditsFont();
+    SCR_RegisterTextures();
+	SCR_InstallParticlePalette();
 	SCR_InitCinematic();
 	CL_InitNetgraph();
 

@@ -875,7 +875,7 @@ void CL_ParseServerTime( sizebuf_t *msg );
 //
 // cl_scrn.c
 //
-void SCR_VidInit( qboolean recreate_renderer );
+void SCR_VidInit();
 void SCR_TileClear( void );
 void SCR_DirtyScreen( void );
 void SCR_AddDirtyPoint( int x, int y );
