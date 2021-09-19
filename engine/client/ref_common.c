@@ -405,6 +405,8 @@ static void R_UnloadProgs( qboolean is_render_recreate )
 	COM_FreeLibrary( ref.hInstance );
 	ref.hInstance = NULL;
 
+	memset( &ref, 0, sizeof(struct ref_state_s) );
+
 	if ( !is_render_recreate ) 
 		memset( &refState, 0, sizeof( refState ));
 	memset( &ref.dllFuncs, 0, sizeof( ref.dllFuncs ));
@@ -734,8 +736,8 @@ qboolean R_Init( qboolean is_render_changed )
 		R_UpdateRefState();
 
 		// Reinitialize render
-		ref.dllFuncs.CL_InitStudioAPI();
 		ref.dllFuncs.R_NewMap();  // If no map now???
+		ref.dllFuncs.CL_InitStudioAPI();
 	}
 
 	return true;

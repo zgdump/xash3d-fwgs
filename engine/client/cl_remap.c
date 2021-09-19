@@ -214,8 +214,8 @@ void CL_UpdateAliasTexture( cl_entity_t *entity, unsigned short *texture, int sk
 	tx = entity->model->textures[skinnum];
 	if( !tx ) return; // missing texture ?
 
-	if( *texture == 0 )
-	{
+	//if( *texture == 0 )
+	//{
 		Q_snprintf( texname, sizeof( texname ), "%s:remap%i_%i", entity->model->name, skinnum, entity->index );
 		skin.width = tx->width;
 		skin.height = tx->height;
@@ -228,7 +228,7 @@ void CL_UpdateAliasTexture( cl_entity_t *entity, unsigned short *texture, int sk
 		skin.palette = skin.buffer + skin.size;
 		pic = FS_CopyImage( &skin ); // because GL_LoadTextureInternal will freed a rgbdata_t at end
 		*texture = GL_LoadTextureInternal( texname, pic, TF_KEEP_SOURCE );
-	}
+	//}
 
 	// and now we can remap with internal routines
 	ref.dllFuncs.GL_ProcessTexture( *texture, -1.0f, topcolor, bottomcolor );

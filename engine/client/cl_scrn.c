@@ -582,8 +582,8 @@ qboolean SCR_LoadFixedWidthFont( const char *fontname )
 {
 	int	i, fontWidth;
 
-	if( cls.creditsFont.valid )
-		return true; // already loaded
+	//if( cls.creditsFont.valid )
+	//	return true; // already loaded
 
 	if( !FS_FileExists( fontname, false ))
 		return false;
@@ -614,8 +614,8 @@ qboolean SCR_LoadVariableWidthFont( const char *fontname )
 	fs_offset_t	length;
 	qfont_t	*src;
 
-	if( cls.creditsFont.valid )
-		return true; // already loaded
+	//if( cls.creditsFont.valid )
+	//	return true; // already loaded
 
 	if( !FS_FileExists( fontname, false ))
 		return false;
@@ -814,7 +814,7 @@ SCR_Init
 */
 void SCR_Init( void )
 {
-	if( scr_init ) return;
+	//if( scr_init ) return;
 
 	scr_centertime = Cvar_Get( "scr_centertime", "2.5", 0, "centerprint hold time" );
 	cl_levelshot_name = Cvar_Get( "cl_levelshot_name", "*black", 0, "contains path to current levelshot" );

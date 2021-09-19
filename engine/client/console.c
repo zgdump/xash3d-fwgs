@@ -549,8 +549,8 @@ static qboolean Con_LoadFixedWidthFont( const char *fontname, cl_font_t *font )
 {
 	int	i, fontWidth;
 
-	if( font->valid )
-		return true; // already loaded
+	//if( font->valid )
+	//	return true; // already loaded
 
 	if( !FS_FileExists( fontname, false ))
 		return false;
@@ -586,8 +586,8 @@ static qboolean Con_LoadVariableWidthFont( const char *fontname, cl_font_t *font
 	fs_offset_t	length;
 	qfont_t	*src;
 
-	if( font->valid )
-		return true; // already loaded
+	//if( font->valid )
+	//	return true; // already loaded
 
 	if( !FS_FileExists( fontname, false ))
 		return false;
@@ -636,7 +636,7 @@ static void Con_LoadConsoleFont( int fontNumber, cl_font_t *font )
 	const char *path = NULL;
 	dword crc = 0;
 
-	if( font->valid ) return; // already loaded
+	//if( font->valid ) return; // already loaded
 
 	// replace default fonts.wad textures by current charset's font
 	if( !CRC32_File( &crc, "fonts.wad" ) || crc == 0x3c0a0029 )
@@ -2389,13 +2389,13 @@ void Con_VidInit( void )
 		if( FS_FileExists( "gfx/shell/conback.bmp", false ) || FS_FileExists( "gfx/shell/conback.tga", false ))
 			con.background = ref.dllFuncs.GL_LoadTexture( "gfx/shell/conback", NULL, 0, TF_IMAGE );
 
-		if( !con.background )
-		{
+		//if( !con.background )
+		//{
 			if( FS_FileExists( "cached/conback640", false ))
 				con.background = ref.dllFuncs.GL_LoadTexture( "cached/conback640", NULL, 0, TF_IMAGE );
 			else if( FS_FileExists( "cached/conback", false ))
 				con.background = ref.dllFuncs.GL_LoadTexture( "cached/conback", NULL, 0, TF_IMAGE );
-		}
+		//}
 	}
 	else
 	{
@@ -2403,13 +2403,13 @@ void Con_VidInit( void )
 		if( FS_FileExists( "gfx/shell/loading.bmp", false ) || FS_FileExists( "gfx/shell/loading.tga", false ))
 			con.background = ref.dllFuncs.GL_LoadTexture( "gfx/shell/loading", NULL, 0, TF_IMAGE );
 
-		if( !con.background )
-		{
+		//if( !con.background )
+		//{
 			if( FS_FileExists( "cached/loading640", false ))
 				con.background = ref.dllFuncs.GL_LoadTexture( "cached/loading640", NULL, 0, TF_IMAGE );
 			else if( FS_FileExists( "cached/loading", false ))
 				con.background = ref.dllFuncs.GL_LoadTexture( "cached/loading", NULL, 0, TF_IMAGE );
-		}
+		//}
 	}
 
 

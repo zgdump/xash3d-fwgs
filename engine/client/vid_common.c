@@ -129,7 +129,12 @@ void VID_CheckChanges( void )
 		if ( host.rendermode_changed )
 		{
 			R_Init( true );
-			SCR_VidInit( false );
+			//SCR_VidInit( false );
+
+			host.rendermode_changed = false;
+			host.renderinfo_changed = false;
+
+			return;
 		}
 
 		if ( VID_SetMode( false ) )
