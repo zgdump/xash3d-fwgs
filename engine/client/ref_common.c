@@ -405,7 +405,8 @@ static void R_UnloadProgs( qboolean is_render_recreate )
 	COM_FreeLibrary( ref.hInstance );
 	ref.hInstance = NULL;
 
-	memset( &refState, 0, sizeof( refState ));
+	if ( !is_render_recreate ) 
+		memset( &refState, 0, sizeof( refState ));
 	memset( &ref.dllFuncs, 0, sizeof( ref.dllFuncs ));
 
     if ( !is_render_recreate )
