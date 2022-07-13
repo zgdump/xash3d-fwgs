@@ -888,7 +888,7 @@ qboolean CL_DemoReadMessage( byte *buffer, size_t *length )
 	qboolean		swallowmessages = true;
 	static int	tdlastdemoframe = 0;
 	byte		*userbuf = NULL;
-	size_t		size;
+	size_t		size = 0;
 	byte		cmd;
 
 	if( !cls.demofile )
@@ -952,7 +952,7 @@ qboolean CL_DemoReadMessage( byte *buffer, size_t *length )
 			CL_DemoMoveToNextSection();
 			return false; // header is ended, skip frame
 		case dem_userdata:
-			FS_Read( cls.demofile, &size, sizeof( int ));
+			FS_Read( cls.demofile, &size, sizeof( size_t ));
 			userbuf = Mem_Malloc( cls.mempool, size );
 			FS_Read( cls.demofile, userbuf, size );
 

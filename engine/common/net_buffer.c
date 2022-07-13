@@ -227,7 +227,7 @@ qboolean MSG_WriteBits( sizebuf_t *sb, const void *pData, int nBits )
 	int	nBitsLeft = nBits;
 
 	// get output dword-aligned.
-	while((( dword )pOut & 3 ) != 0 && nBitsLeft >= 8 )
+	while((( uintptr_t )pOut & 3 ) != 0 && nBitsLeft >= 8 )
 	{
 		MSG_WriteUBitLong( sb, *pOut, 8 );
 
@@ -408,19 +408,26 @@ int MSG_ReadOneBit( sizebuf_t *sb )
 
 uint MSG_ReadUBitLong( sizebuf_t *sb, int numbits )
 {
-	int	idword1;
-	uint	dword1, ret;
+	uint idword1;
+	uint dword1, ret;
+
+	Con_Printf("^1_____^7 ---------------------------------- \n");
 
 	if( numbits == 8 )
 	{
 		int leftBits = MSG_GetNumBitsLeft( sb );
+		Con_Printf("^1__1__^7 leftBits %d\n", leftBits);
 
-		if( leftBits >= 0 && leftBits < 8 )
+		if (leftBits >= 0 && leftBits < 8)
+		{
+			Con_Printf("^1__2__^7 endOfMessage\n");
 			return 0;	// end of message
+		}
 	}
 
 	if(( sb->iCurBit + numbits ) > sb->nDataBits )
 	{
+		Con_Printf("^1__3__^7 overflow %d %d %d %d\n", sb->iCurBit, numbits, sb->iCurBit + numbits, sb->nDataBits);
 		sb->bOverflow = true;
 		sb->iCurBit = sb->nDataBits;
 		return 0;
@@ -428,29 +435,46 @@ uint MSG_ReadUBitLong( sizebuf_t *sb, int numbits )
 
 	Assert( numbits > 0 && numbits <= 32 );
 
+	Con_Printf("^1__4__^7 numbits %d\n", numbits);
+
 	// Read the current dword.
 	idword1 = sb->iCurBit >> 5;
+	Con_Printf("^1__5__^7 idword1 %d\n", idword1);
 	dword1 = ((uint *)sb->pData)[idword1];
+	Con_Printf("^1__6__^7 dword1 %d\n", dword1);
 	dword1 >>= ( sb->iCurBit & 31 );	// get the bits we're interested in.
+	Con_Printf("^1__7__^7 dword1 %d\n", dword1);
 
 	sb->iCurBit += numbits;
+	Con_Printf("^1__8__^7 sb->iCurBit %d\n", sb->iCurBit);
 	ret = dword1;
+	Con_Printf("^1__9__^7 ret %d\n", ret);
 
 	// Does it span this dword?
 	if(( sb->iCurBit - 1 ) >> 5 == idword1 )
 	{
-		if( numbits != 32 )
+		Con_Printf("^1__10__^7 Does it span this dword? %d %d %d\n", sb->iCurBit - 1, (sb->iCurBit - 1) >> 5, idword1);
+
+		if (numbits != 32)
+		{
 			ret &= ExtraMasks[numbits];
+			Con_Printf("^1__11__^7 ret %d\n", ret);
+		}
 	}
 	else
 	{
 		int	nExtraBits = sb->iCurBit & 31;
-		uint	dword2 = ((uint *)sb->pData)[idword1+1] & ExtraMasks[nExtraBits];
+		Con_Printf("^1__12__^7 nExtraBits %d %d\n", sb->iCurBit, sb->iCurBit & 31);
+
+		uint dword2 = ((uint *)sb->pData)[idword1+1] & ExtraMasks[nExtraBits];
+		Con_Printf("^1__13__^7 dword2 %d\n", dword2);
 
 		// no need to mask since we hit the end of the dword.
 		// shift the second dword's part into the high bits.
 		ret |= (dword2 << ( numbits - nExtraBits ));
+		Con_Printf("^1__14__^7 ret %d\n", ret);
 	}
+
 	return ret;
 }
 
@@ -486,7 +510,7 @@ qboolean MSG_ReadBits( sizebuf_t *sb, void *pOutData, int nBits )
 	int	nBitsLeft = nBits;
 
 	// get output dword-aligned.
-	while((( dword )pOut & 3) != 0 && nBitsLeft >= 8 )
+	while((( uintptr_t )pOut & 3) != 0 && nBitsLeft >= 8 )
 	{
 		*pOut = (byte)MSG_ReadUBitLong( sb, 8 );
 		++pOut;
@@ -559,7 +583,9 @@ uint MSG_ReadBitLong( sizebuf_t *sb, int numbits, qboolean bSigned )
 
 int MSG_ReadCmd( sizebuf_t *sb, netsrc_t type )
 {
+	//if (sb->nDataBits == 524288)  __debugbreak();
 	int	cmd = MSG_ReadUBitLong( sb, sizeof( byte ) << 3 );
+	//if (cmd == 0) __debugbreak();
 
 #ifdef DEBUG_NET_MESSAGES_READ
 	if( type == NS_SERVER )
