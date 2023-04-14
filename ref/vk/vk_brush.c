@@ -538,7 +538,7 @@ static qboolean loadBrushSurfaces( model_sizes_t sizes, const model_t *mod ) {
 			int index_count = 0;
 			vec3_t tangent;
 			int tex_id = surf->texinfo->texture->gl_texturenum;
-			const xvk_patch_surface_t *const psurf = R_VkPatchGetSurface(i);
+			const xvk_patch_surface_t *const psurf = R_VkPatchGetSurface(surface_index);
 
 			if (!renderableSurface(surf, surface_index))
 				continue;
