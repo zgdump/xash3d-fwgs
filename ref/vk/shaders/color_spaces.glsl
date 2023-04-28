@@ -1,4 +1,4 @@
-#define SRGB_FAST_APPROXIMATION 0
+#define SRGB_FAST_APPROXIMATION
 
 #ifdef SRGB_FAST_APPROXIMATION
 #define LINEARtoSRGB OECF_sRGBFast
@@ -31,6 +31,9 @@ vec4 sRGB_OECF(const vec4 sRGB)
 }
 vec3 sRGB_OECFFast(const vec3 sRGB) {
 	return pow(sRGB, vec3(2.2));
+}
+float sRGB_OECFFast(const float sRGB) {
+	return pow(sRGB, 2.2);
 }
 vec4 sRGB_OECFFast(const vec4 sRGB) {
 	return vec4(pow(sRGB.rgb, vec3(2.2)), sRGB.w);
