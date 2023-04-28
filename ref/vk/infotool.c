@@ -50,7 +50,8 @@ void XVK_CameraDebugPrintCenterEntity( void ) {
 	);
 
 	p += Q_snprintf(p, end - p,
-		"entity index: %d, name: %s\n",
+		"entity (dynamic index: %d, info: %d), name: %s\n",
+		ent ? ent->index : -1,
 		(physent && physent->info > 0) ? physent->info : -1,
 		(ent && ent->model) ? ent->model->name : "N/A");
 
