@@ -19,7 +19,11 @@ typedef struct vk_ray_model_s {
 	uint32_t kusochki_offset;
 	qboolean dynamic;
 	qboolean taken;
-	qboolean kusochki_updated_this_frame;
+
+	// TODO remove with the split of Kusok in Model+Material+Kusok
+	uint32_t material_mode;
+	vec4_t color;
+	matrix4x4 prev_transform;
 
 	struct {
 		uint32_t as_offset;

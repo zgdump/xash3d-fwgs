@@ -299,7 +299,9 @@ vk_ray_model_t* VK_RayModelCreate( vk_ray_model_init_t args ) {
 			} else {
 				ray_model->kusochki_offset = kusochki_count_offset;
 				ray_model->dynamic = args.model->dynamic;
-				ray_model->kusochki_updated_this_frame = false;
+				ray_model->material_mode = -1;
+				Vector4Set(ray_model->color, 1, 1, 1, 1);
+				Matrix4x4_LoadIdentity(ray_model->prev_transform);
 
 				if (vk_core.debug)
 					validateModel(ray_model);
@@ -356,6 +358,40 @@ static void computeConveyorSpeed(const color24 rendercolor, int tex_index, vec2_
 	speed[1] = sy * flRate;
 }
 
+static qboolean uploadKusochki(const vk_ray_model_t *const model, const vk_render_model_t *const render_model, uint32_t material_mode) {
+	const vk_staging_buffer_args_t staging_args = {
+		.buffer = g_ray_model_state.kusochki_buffer.buffer,
+		.offset = model->kusochki_offset * sizeof(vk_kusok_data_t),
+		.size = render_model->num_geometries * sizeof(vk_kusok_data_t),
+		.alignment = 16,
+	};
+	const vk_staging_region_t kusok_staging = R_VkStagingLockForBuffer(staging_args);
+
+	if (!kusok_staging.ptr) {
+		gEngine.Con_Printf(S_ERROR "Couldn't allocate staging for %d kusochkov for model %s\n", model->num_geoms, render_model->debug_name);
+		return false;
+	}
+
+	vk_kusok_data_t *const kusochki = kusok_staging.ptr;
+
+	for (int i = 0; i < render_model->num_geometries; ++i) {
+		vk_render_geometry_t *geom = render_model->geometries + i;
+		applyMaterialToKusok(kusochki + i, geom, render_model->color, material_mode);
+		Matrix4x4_ToArrayFloatGL(render_model->prev_transform, (float*)(kusochki + i)->model.prev_transform);
+	}
+
+	/* gEngine.Con_Reportf("model %s: geom=%d kuoffs=%d kustoff=%d kustsz=%d sthndl=%d\n", */
+	/* 		render_model->debug_name, */
+	/* 		render_model->num_geometries, */
+	/* 		model->kusochki_offset, */
+	/* 		staging_args.offset, staging_args.size, */
+	/* 		kusok_staging.handle */
+	/* 		); */
+
+	R_VkStagingUnlock(kusok_staging.handle);
+	return true;
+}
+
 void VK_RayFrameAddModel( vk_ray_model_t *model, const vk_render_model_t *render_model, const matrix3x4 *transform_row) {
 	vk_ray_draw_model_t* draw_model = g_ray_model_state.frame.models + g_ray_model_state.frame.num_models;
 
@@ -368,11 +404,7 @@ void VK_RayFrameAddModel( vk_ray_model_t *model, const vk_render_model_t *render
 		return;
 	}
 
-	{
-		ASSERT(model->as != VK_NULL_HANDLE);
-		draw_model->model = model;
-		memcpy(draw_model->transform_row, *transform_row, sizeof(draw_model->transform_row));
-	}
+	ASSERT(model->as != VK_NULL_HANDLE);
 
 	uint32_t material_mode = MATERIAL_MODE_OPAQUE;
 	switch (render_model->render_type) {
@@ -399,45 +431,25 @@ void VK_RayFrameAddModel( vk_ray_model_t *model, const vk_render_model_t *render
 			gEngine.Host_Error("Unexpected render type %d\n", render_model->render_type);
 	}
 
-	draw_model->material_mode = material_mode;
+	// Re-upload kusochki if needed
+	// TODO all of this will not be required when model data is split out from Kusok struct
+#define Vector4Compare(v1,v2) ((v1)[0]==(v2)[0] && (v1)[1]==(v2)[1] && (v1)[2]==(v2)[2] && (v1)[3]==(v2)[3])
+	const qboolean upload_kusochki = (model->material_mode != material_mode
+			|| !Vector4Compare(model->color, render_model->color)
+			|| memcmp(model->prev_transform, render_model->prev_transform, sizeof(matrix4x4)) != 0);
 
 // TODO optimize:
 // - collect list of geoms for which we could update anything (animated textues, uvs, etc)
 // - update only those through staging
 // - also consider tracking whether the main model color has changed (that'd need to update everything yay)
-	if (!model->kusochki_updated_this_frame)
-	{
-		const vk_staging_buffer_args_t staging_args = {
-			.buffer = g_ray_model_state.kusochki_buffer.buffer,
-			.offset = model->kusochki_offset * sizeof(vk_kusok_data_t),
-			.size = render_model->num_geometries * sizeof(vk_kusok_data_t),
-			.alignment = 16,
-		};
-		const vk_staging_region_t kusok_staging = R_VkStagingLockForBuffer(staging_args);
 
-		if (!kusok_staging.ptr) {
-			gEngine.Con_Printf(S_ERROR "Couldn't allocate staging for %d kusochkov for model %s\n", model->num_geoms, render_model->debug_name);
+	if (upload_kusochki) {
+		model->material_mode = material_mode;
+		Vector4Copy(render_model->color, model->color);
+		Matrix4x4_Copy(model->prev_transform, render_model->prev_transform);
+		if (!uploadKusochki(model, render_model, material_mode)) {
 			return;
 		}
-
-		vk_kusok_data_t *const kusochki = kusok_staging.ptr;
-
-		for (int i = 0; i < render_model->num_geometries; ++i) {
-			vk_render_geometry_t *geom = render_model->geometries + i;
-			applyMaterialToKusok(kusochki + i, geom, render_model->color, material_mode);
-			Matrix4x4_ToArrayFloatGL(render_model->prev_transform, (float*)(kusochki + i)->model.prev_transform);
-		}
-
-		/* gEngine.Con_Reportf("model %s: geom=%d kuoffs=%d kustoff=%d kustsz=%d sthndl=%d\n", */
-		/* 		render_model->debug_name, */
-		/* 		render_model->num_geometries, */
-		/* 		model->kusochki_offset, */
-		/* 		staging_args.offset, staging_args.size, */
-		/* 		kusok_staging.handle */
-		/* 		); */
-
-		R_VkStagingUnlock(kusok_staging.handle);
-		model->kusochki_updated_this_frame = true;
 	}
 
 	for (int i = 0; i < render_model->dynamic_polylights_count; ++i) {
@@ -446,6 +458,10 @@ void VK_RayFrameAddModel( vk_ray_model_t *model, const vk_render_model_t *render
 		polylight->dynamic = true;
 		RT_LightAddPolygon(polylight);
 	}
+
+	draw_model->model = model;
+	memcpy(draw_model->transform_row, *transform_row, sizeof(draw_model->transform_row));
+	draw_model->material_mode = material_mode;
 
 	g_ray_model_state.frame.num_models++;
 }
@@ -462,7 +478,6 @@ void XVK_RayModel_ClearForNextFrame( void ) {
 	for (int i = 0; i < g_ray_model_state.frame.num_models; ++i) {
 		vk_ray_draw_model_t *model = g_ray_model_state.frame.models + i;
 		ASSERT(model->model);
-		model->model->kusochki_updated_this_frame = false;
 
 		if (!model->model->dynamic)
 			continue;
