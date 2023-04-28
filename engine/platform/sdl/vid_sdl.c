@@ -257,6 +257,7 @@ vidmode_t *R_GetVideoMode( int num )
 
 static void R_InitVideoModes( void )
 {
+	char buf[MAX_VA_STRING];
 #if SDL_VERSION_ATLEAST( 2, 0, 0 )
 	int displayIndex = 0; // TODO: handle multiple displays somehow
 	int i, modes;
@@ -296,7 +297,8 @@ static void R_InitVideoModes( void )
 
 		vidmodes[num_vidmodes].width = mode.w;
 		vidmodes[num_vidmodes].height = mode.h;
-		vidmodes[num_vidmodes].desc = copystring( va( "%ix%i", mode.w, mode.h ));
+		Q_snprintf( buf, sizeof( buf ), "%ix%i", mode.w, mode.h );
+		vidmodes[num_vidmodes].desc = copystring( buf );
 
 		num_vidmodes++;
 	}
@@ -331,7 +333,8 @@ static void R_InitVideoModes( void )
 
 		vidmodes[num_vidmodes].width = mode->w;
 		vidmodes[num_vidmodes].height = mode->h;
-		vidmodes[num_vidmodes].desc = copystring( va( "%ix%i", mode->w, mode->h ));
+		Q_snprintf( buf, sizeof( buf ), "%ix%i", mode->w, mode->h );
+		vidmodes[num_vidmodes].desc = copystring( buf );
 
 		num_vidmodes++;
 	}
@@ -425,6 +428,14 @@ void *GL_GetProcAddress( const char *name )
 {
 	void *func = SDL_GL_GetProcAddress( name );
 
+#if XASH_PSVITA
+	// try to find in main module
+	if( !func )
+	{
+		func = dlsym( NULL, name );
+	}
+#endif
+
 	if( !func )
 	{
 		Con_Reportf( S_ERROR "GL_GetProcAddress failed for %s\n", name );
@@ -481,7 +492,7 @@ qboolean GL_DeleteContext( void )
 GL_CreateContext
 =================
 */
-qboolean GL_CreateContext( void )
+static qboolean GL_CreateContext( void )
 {
 #if SDL_VERSION_ATLEAST(2, 0, 0)
 	if( ( glw_state.context = SDL_GL_CreateContext( host.hWnd ) ) == NULL)
@@ -498,7 +509,7 @@ qboolean GL_CreateContext( void )
 GL_UpdateContext
 =================
 */
-qboolean GL_UpdateContext( void )
+static qboolean GL_UpdateContext( void )
 {
 #if SDL_VERSION_ATLEAST( 2, 0, 0 )
 	if( SDL_GL_MakeCurrent( host.hWnd, glw_state.context ))
@@ -609,7 +620,7 @@ static void WIN_SetWindowIcon( HICON ico )
 
 	if( SDL_GetWindowWMInfo( host.hWnd, &wminfo ) )
 	{
-		SetClassLongPtr( wminfo.info.win.window, GCLP_HICON, (LONG)ico );
+		SetClassLongPtr( wminfo.info.win.window, GCLP_HICON, (LONG_PTR)ico );
 	}
 }
 #endif
@@ -733,9 +744,8 @@ qboolean VID_CreateWindow( int width, int height, qboolean fullscreen )
 
 	if( !iconLoaded )
 	{
-		Q_strcpy( iconpath, GI->iconpath );
-		COM_StripExtension( iconpath );
-		COM_DefaultExtension( iconpath, ".tga" );
+		Q_strncpy( iconpath, GI->iconpath, sizeof( iconpath ));
+		COM_ReplaceExtension( iconpath, ".tga", sizeof( iconpath ));
 
 		icon = FS_LoadImage( iconpath, NULL, 0 );
 

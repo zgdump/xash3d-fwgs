@@ -69,6 +69,7 @@ Then you can use another oneliner to query all variables:
 #undef XASH_IRIX
 #undef XASH_JS
 #undef XASH_LINUX
+#undef XASH_LINUX_UNKNOWN
 #undef XASH_LITTLE_ENDIAN
 #undef XASH_MIPS
 #undef XASH_MOBILE_PLATFORM
@@ -83,6 +84,7 @@ Then you can use another oneliner to query all variables:
 #undef XASH_WIN32
 #undef XASH_X86
 #undef XASH_NSWITCH
+#undef XASH_PSVITA
 
 //================================================================
 //
@@ -98,10 +100,17 @@ Then you can use another oneliner to query all variables:
 #else // POSIX compatible
 	#define XASH_POSIX 1
 	#if defined __linux__
-		#define XASH_LINUX 1
 		#if defined __ANDROID__
 			#define XASH_ANDROID 1
+		#else
+			#include <features.h>
+			// if our system libc has features.h header
+			// try to detect it to not confuse other libcs with built with glibc game libraries
+			#if !defined __GLIBC__
+				#define XASH_LINUX_UNKNOWN 1
+			#endif
 		#endif
+		#define XASH_LINUX 1
 	#elif defined __FreeBSD__
 		#define XASH_FREEBSD 1
 	#elif defined __NetBSD__
@@ -122,12 +131,14 @@ Then you can use another oneliner to query all variables:
 		#endif // TARGET_OS_IOS
 	#elif defined __SWITCH__
 		#define XASH_NSWITCH 1
+	#elif defined __vita__
+		#define XASH_PSVITA 1
 	#else
 		#error
 	#endif
 #endif
 
-#if XASH_ANDROID || defined XASH_IOS || defined XASH_NSWITCH
+#if XASH_ANDROID || defined XASH_IOS || defined XASH_NSWITCH || defined XASH_PSVITA
 	#define XASH_MOBILE_PLATFORM 1
 #endif
 

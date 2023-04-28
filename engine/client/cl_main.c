@@ -23,6 +23,7 @@ GNU General Public License for more details.
 #include "library.h"
 #include "vid_common.h"
 #include "pm_local.h"
+#include "sequence.h"
 
 #define MAX_TOTAL_CMDS		32
 #define MAX_CMD_BUFFER		8000
@@ -149,16 +150,6 @@ qboolean CL_DisableVisibility( void )
 	return cls.envshot_disable_vis;
 }
 
-qboolean CL_IsBackgroundDemo( void )
-{
-	return ( cls.demoplayback && cls.demonum != -1 );
-}
-
-qboolean CL_IsBackgroundMap( void )
-{
-	return ( cl.background && !cls.demoplayback );
-}
-
 char *CL_Userinfo( void )
 {
 	return cls.userinfo;
@@ -239,6 +230,9 @@ void CL_SignonReply( void )
 		if( cl.proxy_redirect && !cls.spectator )
 			CL_Disconnect();
 		cl.proxy_redirect = false;
+
+		if( cls.demoplayback )
+			Sequence_OnLevelLoad( clgame.mapname );
 		break;
 	}
 }
@@ -1029,9 +1023,9 @@ void CL_SendConnectPacket( void )
 		Cvar_SetCheatState();
 		Cvar_FullSet( "sv_cheats", "0", FCVAR_READ_ONLY | FCVAR_SERVER );
 
-		Info_SetValueForKey( protinfo, "d", va( "%d", input_devices ), sizeof( protinfo ) );
+		Info_SetValueForKeyf( protinfo, "d", sizeof( protinfo ),  "%d", input_devices );
 		Info_SetValueForKey( protinfo, "v", XASH_VERSION, sizeof( protinfo ) );
-		Info_SetValueForKey( protinfo, "b", va( "%d", Q_buildnum() ), sizeof( protinfo ) );
+		Info_SetValueForKeyf( protinfo, "b", sizeof( protinfo ), "%d", Q_buildnum( ));
 		Info_SetValueForKey( protinfo, "o", Q_buildos(), sizeof( protinfo ) );
 		Info_SetValueForKey( protinfo, "a", Q_buildarch(), sizeof( protinfo ) );
 	}
@@ -1065,7 +1059,7 @@ void CL_SendConnectPacket( void )
 
 		Info_SetValueForKey( protinfo, "uuid", key, sizeof( protinfo ));
 		Info_SetValueForKey( protinfo, "qport", qport, sizeof( protinfo ));
-		Info_SetValueForKey( protinfo, "ext", va("%d", extensions), sizeof( protinfo ));
+		Info_SetValueForKeyf( protinfo, "ext", sizeof( protinfo ), "%d", extensions);
 
 		Netchan_OutOfBandPrint( NS_CLIENT, adr, "connect %i %i \"%s\" \"%s\"\n", PROTOCOL_VERSION, cls.challenge, protinfo, cls.userinfo );
 		Con_Printf( "Trying to connect by modern protocol\n" );
@@ -1084,7 +1078,7 @@ Resend a connect message if the last one has timed out
 void CL_CheckForResend( void )
 {
 	netadr_t adr;
-	int res;
+	net_gai_state_t res;
 	qboolean bandwidthTest;
 
 	if( cls.internetservers_wait )
@@ -1117,13 +1111,13 @@ void CL_CheckForResend( void )
 
 	res = NET_StringToAdrNB( cls.servername, &adr );
 
-	if( !res )
+	if( res == NET_EAI_NONAME )
 	{
 		CL_Disconnect();
 		return;
 	}
 
-	if( res == 2 )
+	if( res == NET_EAI_AGAIN )
 	{
 		cls.connect_time = MAX_HEARTBEAT;
 		return;
@@ -1300,15 +1294,15 @@ void CL_Rcon_f( void )
 
 	NET_Config( true, false );	// allow remote
 
-	Q_strcat( message, "rcon " );
-	Q_strcat( message, rcon_password.string );
-	Q_strcat( message, " " );
+	Q_strncat( message, "rcon ", sizeof( message ));
+	Q_strncat( message, rcon_password.string, sizeof( message ));
+	Q_strncat( message, " ", sizeof( message ) );
 
 	for( i = 1; i < Cmd_Argc(); i++ )
 	{
 		Cmd_Escape( command, Cmd_Argv( i ), sizeof( command ));
-		Q_strcat( message, command );
-		Q_strcat( message, " " );
+		Q_strncat( message, command, sizeof( message ));
+		Q_strncat( message, " ", sizeof( message ));
 	}
 
 	if( cls.state >= ca_connected )
@@ -2086,7 +2080,7 @@ void CL_ConnectionlessPacket( netadr_t from, sizebuf_t *msg )
 
 		if( NET_CompareAdr( from, cls.legacyserver ))
 		{
-			Cbuf_AddText( va( "connect %s legacy\n", NET_AdrToString( from )));
+			Cbuf_AddTextf( "connect %s legacy\n", NET_AdrToString( from ));
 			memset( &cls.legacyserver, 0, sizeof( cls.legacyserver ));
 		}
 	}
@@ -2589,7 +2583,7 @@ void CL_ServerCommand( qboolean reliable, const char *fmt, ... )
 		return;
 
 	va_start( argptr, fmt );
-	Q_vsprintf( string, fmt, argptr );
+	Q_vsnprintf( string, sizeof( string ), fmt, argptr );
 	va_end( argptr );
 
 	if( reliable )
@@ -2862,6 +2856,7 @@ void CL_InitLocal( void )
 	Cvar_RegisterVariable( &cl_test_bandwidth );
 
 	Voice_RegisterCvars();
+	VGui_RegisterCvars();
 
 	// register our variables
 	cl_crosshair = Cvar_Get( "crosshair", "1", FCVAR_ARCHIVE, "show weapon chrosshair" );
@@ -3123,6 +3118,7 @@ void CL_Init( void )
 	VID_Init();	// init video
 	S_Init();	// init sound
 	Voice_Init( VOICE_DEFAULT_CODEC, 3 ); // init voice
+	Sequence_Init();
 
 	// unreliable buffer. unsed for unreliable commands and voice stream
 	MSG_Init( &cls.datagram, "cls.datagram", cls.datagram_buf, sizeof( cls.datagram_buf ));

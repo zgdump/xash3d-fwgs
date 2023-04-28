@@ -90,7 +90,9 @@ wavdata_t *FS_LoadSound( const char *filename, const byte *buffer, size_t size )
 	{
 		if( anyformat || !Q_stricmp( ext, format->ext ))
 		{
-			Q_sprintf( path, format->formatstring, loadname, "", format->ext );
+			Q_snprintf( path, sizeof( path ),
+				format->formatstring, loadname, "", format->ext );
+
 			f = FS_LoadFile( path, &filesize, false );
 			if( f && filesize > 0 )
 			{
@@ -175,7 +177,9 @@ stream_t *FS_OpenStream( const char *filename )
 	{
 		if( anyformat || !Q_stricmp( ext, format->ext ))
 		{
-			Q_sprintf( path, format->formatstring, loadname, "", format->ext );
+			Q_snprintf( path, sizeof( path ),
+				format->formatstring, loadname, "", format->ext );
+
 			if(( stream = format->openfunc( path )) != NULL )
 			{
 				stream->format = format;
@@ -280,7 +284,6 @@ void FS_FreeStream( stream_t *stream )
 }
 
 #if XASH_ENGINE_TESTS
-
 #define IMPLEMENT_SOUNDLIB_FUZZ_TARGET( export, target ) \
 int EXPORT export( const uint8_t *Data, size_t Size ) \
 { \

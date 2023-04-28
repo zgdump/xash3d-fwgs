@@ -39,6 +39,10 @@ static cvar_filter_quirks_t cvar_filter_quirks[] =
 		"ricochet",
 		"r_drawviewmodel",
 	},
+	{
+		"dod",
+		"cl_dodmusic" // Day of Defeat Beta 1.3 cvar
+	},
 };
 
 static cvar_filter_quirks_t *cvar_active_filter_quirks = NULL;
@@ -95,9 +99,15 @@ Cvar_BuildAutoDescription
 build cvar auto description that based on the setup flags
 ============
 */
-const char *Cvar_BuildAutoDescription( int flags )
+const char *Cvar_BuildAutoDescription( const char *szName, int flags )
 {
 	static char	desc[256];
+
+	if( FBitSet( flags, FCVAR_GLCONFIG ))
+	{
+		Q_snprintf( desc, sizeof( desc ), CVAR_GLCONFIG_DESCRIPTION, szName );
+		return desc;
+	}
 
 	desc[0] = '\0';
 
@@ -467,6 +477,23 @@ convar_t *Cvar_Get( const char *name, const char *value, int flags, const char *
 #endif
 
 	return var;
+}
+
+/*
+============
+Cvar_Getf
+============
+*/
+convar_t *Cvar_Getf( const char *var_name, int flags, const char *description, const char *format, ... )
+{
+	char value[MAX_VA_STRING];
+	va_list args;
+
+	va_start( args, format );
+	Q_vsnprintf( value, sizeof( value ), format, args );
+	va_end( args );
+
+	return Cvar_Get( var_name, value, flags, description );
 }
 
 /*
@@ -1063,7 +1090,7 @@ void Cvar_Toggle_f( void )
 
 	v = !Cvar_VariableInteger( Cmd_Argv( 1 ));
 
-	Cvar_Set( Cmd_Argv( 1 ), va( "%i", v ));
+	Cvar_Set( Cmd_Argv( 1 ), v ? "1" : "0" );
 }
 
 /*
@@ -1092,8 +1119,8 @@ void Cvar_Set_f( void )
 		len = Q_strlen( Cmd_Argv(i) + 1 );
 		if( l + len >= MAX_CMD_TOKENS - 2 )
 			break;
-		Q_strcat( combined, Cmd_Argv( i ));
-		if( i != c-1 ) Q_strcat( combined, " " );
+		Q_strncat( combined, Cmd_Argv( i ), sizeof( combined ));
+		if( i != c-1 ) Q_strncat( combined, " ", sizeof( combined ));
 		l += len;
 	}
 
@@ -1145,7 +1172,6 @@ void Cvar_List_f( void )
 {
 	convar_t	*var;
 	const char	*match = NULL;
-	char	*value;
 	int	count = 0;
 	size_t	matchlen = 0;
 
@@ -1157,6 +1183,8 @@ void Cvar_List_f( void )
 
 	for( var = cvar_vars; var; var = var->next )
 	{
+		char value[MAX_VA_STRING];
+
 		if( var->name[0] == '@' )
 			continue;	// never shows system cvars
 
@@ -1164,12 +1192,12 @@ void Cvar_List_f( void )
 			continue;
 
 		if( Q_colorstr( var->string ))
-			value = va( "\"%s\"", var->string );
-		else value = va( "\"^2%s^7\"", var->string );
+			Q_snprintf( value, sizeof( value ), "\"%s\"", var->string );
+		else Q_snprintf( value, sizeof( value ), "\"^2%s^7\"", var->string );
 
 		if( FBitSet( var->flags, FCVAR_EXTENDED|FCVAR_ALLOCATED ))
 			Con_Printf( " %-*s %s ^3%s^7\n", 32, var->name, value, var->desc );
-		else Con_Printf( " %-*s %s ^3%s^7\n", 32, var->name, value, Cvar_BuildAutoDescription( var->flags ));
+		else Con_Printf( " %-*s %s ^3%s^7\n", 32, var->name, value, Cvar_BuildAutoDescription( var->name, var->flags ));
 
 		count++;
 	}

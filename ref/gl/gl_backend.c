@@ -55,7 +55,7 @@ void R_Speeds_Printf( const char *msg, ... )
 	char	text[2048];
 
 	va_start( argptr, msg );
-	Q_vsprintf( text, msg, argptr );
+	Q_vsnprintf( text, sizeof( text ), msg, argptr );
 	va_end( argptr );
 
 	Q_strncat( r_speeds_msg, text, sizeof( r_speeds_msg ));
@@ -114,18 +114,6 @@ void GL_BackendEndFrame( void )
 	}
 
 	memset( &r_stats, 0, sizeof( r_stats ));
-}
-
-/*
-=================
-GL_LoadTexMatrix
-=================
-*/
-void GL_LoadTexMatrix( const matrix4x4 m )
-{
-	pglMatrixMode( GL_TEXTURE );
-	GL_LoadMatrix( m );
-	glState.texIdentityMatrix[glState.activeTMU] = false;
 }
 
 /*
@@ -590,9 +578,8 @@ qboolean VID_CubemapShot( const char *base, uint size, const float *vieworg, qbo
 	r_shot->buffer = buffer;
 
 	// make sure what we have right extension
-	Q_strncpy( basename, base, MAX_STRING );
-	COM_StripExtension( basename );
-	COM_DefaultExtension( basename, ".tga" );
+	Q_strncpy( basename, base, sizeof( basename ));
+	COM_ReplaceExtension( basename, ".tga", sizeof( basename ));
 
 	// write image as 6 sides
 	result = gEngfuncs.FS_SaveImage( basename, r_shot );
@@ -701,7 +688,7 @@ rebuild_page:
 		if( FBitSet( image->flags, TF_DEPTHMAP ) && !FBitSet( image->flags, TF_NOCOMPARE ))
 			pglTexParameteri( image->target, GL_TEXTURE_COMPARE_MODE_ARB, GL_COMPARE_R_TO_TEXTURE_ARB );
 
-		COM_FileBase( image->name, shortname );
+		COM_FileBase( image->name, shortname, sizeof( shortname ));
 		if( Q_strlen( shortname ) > 18 )
 		{
 			// cutoff too long names, it looks ugly

@@ -169,7 +169,7 @@ int WAI_PREFIX(getModulePath)(char* out, int capacity, int* dirname_length)
   return length;
 }
 
-#elif defined(__linux__) || defined(__CYGWIN__) || defined(__sun) || defined(WAI_USE_PROC_SELF_EXE)
+#elif defined(__linux__) || defined(__CYGWIN__) || defined(__sun) || defined(__serenity__) || defined(WAI_USE_PROC_SELF_EXE)
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -795,7 +795,7 @@ int WAI_PREFIX(getModulePath)(char* out, int capacity, int* dirname_length)
   return length;
 }
 
-#elif defined(__sgi) || defined(__SWITCH__)
+#elif defined(__sgi) || defined(__SWITCH__) || defined(__vita__)
 
 /* 
  * These functions are stubbed for now to get the code compiling.

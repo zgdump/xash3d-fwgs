@@ -1,6 +1,7 @@
 /*
 dir.c - caseinsensitive directory operations
 Copyright (C) 2022 Alibek Omarov, Velaron
+Copyright (C) 2023 Xash3D FWGS contributors
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -21,7 +22,9 @@ GNU General Public License for more details.
 #include <stddef.h>
 #if XASH_POSIX
 #include <unistd.h>
+#if !XASH_PSVITA
 #include <sys/ioctl.h>
+#endif
 #endif
 #if XASH_LINUX
 #include <linux/fs.h>
@@ -52,7 +55,7 @@ typedef struct dir_s
 
 static qboolean Platform_GetDirectoryCaseSensitivity( const char *dir )
 {
-#if XASH_WIN32
+#if XASH_WIN32 || XASH_PSVITA || XASH_NSWITCH
 	return false;
 #elif XASH_LINUX && defined( FS_IOC_GETFLAGS )
 	int flags = 0;
