@@ -54,10 +54,9 @@ static void GL_BackendEndFrame_UNUSED( void )
 }
 
 // debug
-static void R_ShowTextures( void )
+static void R_ShowTextures_UNUSED( void )
 {
-	PRINT_NOT_IMPLEMENTED();
-	//PRINT_NOT_IMPLEMENTED();
+	/* Unused in Vulkan renderer. No need to debug textures this way */
 }
 
 // texture management
@@ -364,9 +363,15 @@ static void		GL_OrthoBounds( const float *mins, const float *maxs )
 }
 
 // get visdata for current frame from custom renderer
-static byte*		Mod_GetCurrentVis( void )
-{
-	PRINT_NOT_IMPLEMENTED();
+static byte* Mod_GetCurrentVis( void ) {
+	// ref_soft just returns NULL here
+	// Not sure if we need to copy what ref_gl does. What it does is:
+	// - Setup camera and call R_MarkLeaves() in R_RenderScene()
+	// - R_MarkLeaves() sets RI.visbytes
+	//   will be eventually needed for culling in traditional renderer, see:
+	//   - https://github.com/w23/xash3d-fwgs/pull/96
+	//   - https://github.com/w23/xash3d-fwgs/issues/93
+	// - Return RI.visbytes here (if not using custom rendering)
 	return NULL;
 }
 
@@ -489,7 +494,7 @@ static const ref_interface_t gReffuncs =
 	CL_AddCustomBeam,
 	R_ProcessEntData,
 
-	R_ShowTextures,
+	.R_ShowTextures = R_ShowTextures_UNUSED,
 
 	R_GetTextureOriginalBuffer,
 	VK_LoadTextureFromBuffer,
@@ -576,7 +581,7 @@ static const ref_interface_t gReffuncs =
 	VK_RenderFrame,
 	GL_OrthoBounds,
 	.R_SpeedsMessage = R_SpeedsMessage,
-	Mod_GetCurrentVis,
+	.Mod_GetCurrentVis = Mod_GetCurrentVis,
 	R_NewMap,
 	R_ClearScene,
 	R_GetProcAddress,
