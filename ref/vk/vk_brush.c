@@ -805,9 +805,12 @@ void VK_BrushModelDestroy( model_t *mod ) {
 		return;
 
 	VK_RenderModelDestroy(&bmodel->render_model);
-	Mem_Free(bmodel->animated_indexes);
-	Mem_Free(bmodel->surface_to_geometry_index);
-	Mem_Free(bmodel->render_model.geometries);
+	if (bmodel->animated_indexes)
+		Mem_Free(bmodel->animated_indexes);
+	if (bmodel->surface_to_geometry_index)
+		Mem_Free(bmodel->surface_to_geometry_index);
+	if (bmodel->render_model.geometries)
+		Mem_Free(bmodel->render_model.geometries);
 	Mem_Free(bmodel);
 	mod->cache.data = NULL;
 }
