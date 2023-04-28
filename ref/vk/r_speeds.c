@@ -88,7 +88,7 @@ static void speedsPrintf( const char *msg, ... ) {
 	char	text[MAX_SPEEDS_MESSAGE];
 
 	va_start( argptr, msg );
-	Q_vsprintf( text, msg, argptr );
+	Q_vsnprintf( text, sizeof( text ), msg, argptr );
 	va_end( argptr );
 
 	speedsStrcat(text);
