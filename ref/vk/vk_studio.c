@@ -593,14 +593,14 @@ StudioEstimateFrame
 
 ====================
 */
-float R_StudioEstimateFrame( cl_entity_t *e, mstudioseqdesc_t *pseqdesc )
+float R_StudioEstimateFrame( cl_entity_t *e, mstudioseqdesc_t *pseqdesc, double time )
 {
 	double	dfdt, f;
 
 	if( g_studio.interpolate )
 	{
-		if( g_studio.time < e->curstate.animtime ) dfdt = 0.0;
-		else dfdt = (g_studio.time - e->curstate.animtime) * e->curstate.framerate * pseqdesc->fps;
+		if( time < e->curstate.animtime ) dfdt = 0.0;
+		else dfdt = (time - e->curstate.animtime) * e->curstate.framerate * pseqdesc->fps;
 	}
 	else dfdt = 0;
 
@@ -850,7 +850,7 @@ void R_StudioMergeBones( cl_entity_t *e, model_t *m_pSubModel )
 
 	pseqdesc = (mstudioseqdesc_t *)((byte *)m_pStudioHeader + m_pStudioHeader->seqindex) + e->curstate.sequence;
 
-	f = R_StudioEstimateFrame( e, pseqdesc );
+	f = R_StudioEstimateFrame( e, pseqdesc, g_studio.time );
 
 	panim = gEngine.R_StudioGetAnim( m_pStudioHeader, m_pSubModel, pseqdesc );
 	R_StudioCalcRotations( e, pos, q, pseqdesc, panim, f );
@@ -916,7 +916,7 @@ void R_StudioSetupBones( cl_entity_t *e )
 
 	pseqdesc = (mstudioseqdesc_t *)((byte *)m_pStudioHeader + m_pStudioHeader->seqindex) + e->curstate.sequence;
 
-	f = R_StudioEstimateFrame( e, pseqdesc );
+	f = R_StudioEstimateFrame( e, pseqdesc, g_studio.time );
 
 	panim = gEngine.R_StudioGetAnim( m_pStudioHeader, RI.currentmodel, pseqdesc );
 	R_StudioCalcRotations( e, pos, q, pseqdesc, panim, f );
@@ -2464,7 +2464,7 @@ static void R_StudioClientEvents( void )
 	if( pseqdesc->numevents == 0 )
 		return;
 
-	end = R_StudioEstimateFrame( e, pseqdesc );
+	end = R_StudioEstimateFrame( e, pseqdesc, g_studio.time );
 	start = end - e->curstate.framerate * gpGlobals->frametime * pseqdesc->fps;
 	pevent = (mstudioevent_t *)((byte *)m_pStudioHeader + pseqdesc->eventindex);
 
