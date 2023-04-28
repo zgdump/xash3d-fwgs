@@ -358,6 +358,43 @@ static void computeConveyorSpeed(const color24 rendercolor, int tex_index, vec2_
 	speed[1] = sy * flRate;
 }
 
+static qboolean uploadKusochkiSubset(const vk_ray_model_t *const model, const vk_render_model_t *const render_model, uint32_t material_mode, const int *geom_indexes, int geom_indexes_count) {
+	// TODO can we sort all animated geometries (in brush) to have only a single range here?
+	for (int i = 0; i < geom_indexes_count; ++i) {
+		const int index = geom_indexes[i];
+
+		const vk_staging_buffer_args_t staging_args = {
+			.buffer = g_ray_model_state.kusochki_buffer.buffer,
+			.offset = (model->kusochki_offset + index) * sizeof(vk_kusok_data_t),
+			.size = sizeof(vk_kusok_data_t),
+			.alignment = 16,
+		};
+		const vk_staging_region_t kusok_staging = R_VkStagingLockForBuffer(staging_args);
+
+		if (!kusok_staging.ptr) {
+			gEngine.Con_Printf(S_ERROR "Couldn't allocate staging for %d kusochek for model %s\n", 1, render_model->debug_name);
+			return false;
+		}
+
+		vk_kusok_data_t *const kusochki = kusok_staging.ptr;
+
+		vk_render_geometry_t *geom = render_model->geometries + index;
+		applyMaterialToKusok(kusochki + 0, geom, render_model->color, material_mode);
+		Matrix4x4_ToArrayFloatGL(render_model->prev_transform, (float*)(kusochki + 0)->model.prev_transform);
+
+		/* gEngine.Con_Reportf("model %s: geom=%d kuoffs=%d kustoff=%d kustsz=%d sthndl=%d\n", */
+		/* 		render_model->debug_name, */
+		/* 		render_model->num_geometries, */
+		/* 		model->kusochki_offset, */
+		/* 		staging_args.offset, staging_args.size, */
+		/* 		kusok_staging.handle */
+		/* 		); */
+
+		R_VkStagingUnlock(kusok_staging.handle);
+	}
+	return true;
+}
+
 static qboolean uploadKusochki(const vk_ray_model_t *const model, const vk_render_model_t *const render_model, uint32_t material_mode) {
 	const vk_staging_buffer_args_t staging_args = {
 		.buffer = g_ray_model_state.kusochki_buffer.buffer,
@@ -450,6 +487,9 @@ void VK_RayFrameAddModel( vk_ray_model_t *model, const vk_render_model_t *render
 		if (!uploadKusochki(model, render_model, material_mode)) {
 			return;
 		}
+	} else {
+		if (!uploadKusochkiSubset(model, render_model, material_mode, render_model->geometries_changed, render_model->geometries_changed_count))
+			return;
 	}
 
 	for (int i = 0; i < render_model->dynamic_polylights_count; ++i) {

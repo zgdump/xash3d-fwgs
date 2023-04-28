@@ -116,6 +116,9 @@ typedef struct vk_render_model_s {
 	int num_geometries;
 	vk_render_geometry_t *geometries;
 
+	int geometries_changed_count;
+	int *geometries_changed;
+
 	// This model will be one-frame only, its buffers are not preserved between frames
 	qboolean dynamic;
 
