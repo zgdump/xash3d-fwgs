@@ -403,15 +403,42 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 		return;
 	}
 
-	if (render_mode == kRenderTransColor) {
-		Vector4Set(bmodel->render_model.color,
-			ent->curstate.rendercolor.r / 255.f,
-			ent->curstate.rendercolor.g / 255.f,
-			ent->curstate.rendercolor.b / 255.f,
-			blend);
-	} else {
-		// Other render modes are not affected by entity current state color
-		Vector4Set(bmodel->render_model.color, 1, 1, 1, blend);
+	Vector4Set(bmodel->render_model.color, 1.f, 1.f, 1.f, 1.f);
+	vk_render_type_e render_type = kVkRenderTypeSolid;
+	switch (render_mode) {
+		case kRenderNormal:
+			Vector4Set(bmodel->render_model.color, 1.f, 1.f, 1.f, 1.f);
+			render_type = kVkRenderTypeSolid;
+			break;
+		case kRenderTransColor:
+			render_type = kVkRenderType_A_1mA_RW;
+			Vector4Set(bmodel->render_model.color,
+				ent->curstate.rendercolor.r / 255.f,
+				ent->curstate.rendercolor.g / 255.f,
+				ent->curstate.rendercolor.b / 255.f,
+				blend);
+			break;
+		case kRenderTransAdd:
+			Vector4Set(bmodel->render_model.color, blend, blend, blend, 1.f);
+			render_type = kVkRenderType_A_1_R;
+			break;
+		case kRenderTransAlpha:
+			if( gEngine.EngineGetParm( PARM_QUAKE_COMPATIBLE, 0 ))
+			{
+				render_type = kVkRenderType_A_1mA_RW;
+				Vector4Set(bmodel->render_model.color, 1.f, 1.f, 1.f, blend);
+			}
+			else
+			{
+				Vector4Set(bmodel->render_model.color, 1.f, 1.f, 1.f, 1.f);
+				render_type = kVkRenderType_AT;
+			}
+			break;
+		case kRenderTransTexture:
+		case kRenderGlow:
+			render_type = kVkRenderType_A_1mA_R;
+			Vector4Set(bmodel->render_model.color, 1.f, 1.f, 1.f, blend);
+			break;
 	}
 
 	// Only Normal and TransAlpha have lightmaps
@@ -450,7 +477,7 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 		}
 	}
 
-	bmodel->render_model.render_type = brushRenderModeToRenderType(render_mode);
+	bmodel->render_model.render_type = render_type;
 	VK_RenderModelDraw(ent, &bmodel->render_model);
 }
 
