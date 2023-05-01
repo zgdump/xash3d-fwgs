@@ -40,6 +40,10 @@ GNU General Public License for more details.
 #include <switch.h>
 #endif
 
+#if XASH_PSVITA
+#include <vitasdk.h>
+#endif
+
 #include "menu_int.h" // _UPDATE_PAGE macro
 
 #include "library.h"
@@ -129,6 +133,11 @@ const char *Sys_GetCurrentUser( void )
 
 	if( GetUserName( s_userName, &size ))
 		return s_userName;
+#elif XASH_PSVITA
+	static string username;
+	sceAppUtilSystemParamGetString( SCE_SYSTEM_PARAM_ID_USERNAME, username, sizeof( username ) - 1 );
+	if( COM_CheckStringEmpty( username ))
+		return username;
 #elif XASH_POSIX && !XASH_ANDROID && !XASH_NSWITCH
 	uid_t uid = geteuid();
 	struct passwd *pw = getpwuid( uid );
@@ -613,6 +622,12 @@ qboolean Sys_NewInstance( const char *gamedir )
 	newargs[i++] = strdup( "-changegame" );
 	newargs[i] = NULL;
 
+#if XASH_PSVITA
+	// under normal circumstances it's always going to be the same path
+	exe = strdup( "app0:/eboot.bin" );
+	Host_Shutdown( );
+	sceAppMgrLoadExec( exe, newargs, NULL );
+#else
 	exelen = wai_getExecutablePath( NULL, 0, NULL );
 	exe = malloc( exelen + 1 );
 	wai_getExecutablePath( exe, exelen, NULL );
@@ -621,6 +636,7 @@ qboolean Sys_NewInstance( const char *gamedir )
 	Host_Shutdown();
 
 	execv( exe, newargs );
+#endif
 
 	// if execv returned, it's probably an error
 	printf( "execv failed: %s", strerror( errno ));

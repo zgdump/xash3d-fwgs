@@ -75,16 +75,6 @@ static void pfnStudioEvent( const mstudioevent_t *event, const cl_entity_t *e )
 	clgame.dllFuncs.pfnStudioEvent( event, e );
 }
 
-static efrag_t* pfnGetEfragsFreeList( void )
-{
-	return clgame.free_efrags;
-}
-
-static void pfnSetEfragsFreeList( efrag_t *list )
-{
-	clgame.free_efrags = list;
-}
-
 static model_t *pfnGetDefaultSprite( enum ref_defaultsprite_e spr )
 {
 	switch( spr )
@@ -225,7 +215,7 @@ static qboolean R_DoResetGamma( void )
 static qboolean R_Init_Video_( const int type )
 {
 	host.apply_opengl_config = true;
-	Cbuf_AddText( va( "exec %s.cfg", ref.dllFuncs.R_GetConfigName()));
+	Cbuf_AddTextf( "exec %s.cfg", ref.dllFuncs.R_GetConfigName());
 	Cbuf_Execute();
 	host.apply_opengl_config = false;
 
@@ -527,7 +517,7 @@ static void R_GetRendererName( char *dest, size_t size, const char *opt )
 	else
 	{
 		// full path
-		Q_strcpy( dest, opt );
+		Q_strncpy( dest, opt, size );
 	}
 }
 
@@ -571,66 +561,68 @@ static void SetWidthAndHeightFromCommandLine( void )
 static void SetFullscreenModeFromCommandLine( void )
 {
 #if !XASH_MOBILE_PLATFORM
-	if ( Sys_CheckParm("-fullscreen") )
+	if( Sys_CheckParm( "-fullscreen" ))
 	{
 		Cvar_Set( "fullscreen", "1" );
 	}
-	else if ( Sys_CheckParm( "-windowed" ) )
+	else if( Sys_CheckParm( "-windowed" ))
 	{
 		Cvar_Set( "fullscreen", "0" );
 	}
 #endif
 }
 
-void R_CollectRendererNames( void )
+static void R_CollectRendererNames( void )
 {
-	const char *renderers[] = DEFAULT_RENDERERS;
-	int i, cur;
-
-	cur = 0;
-	for( i = 0; i < DEFAULT_RENDERERS_LEN; i++ )
+	// ordering is important!
+	static const char *shortNames[] =
 	{
-		string temp;
-		void *dll, *pfn;
+#if XASH_REF_GL_ENABLED
+		"gl",
+#endif
+#if XASH_REF_NANOGL_ENABLED
+		"gles1",
+#endif
+#if XASH_REF_GLWES_ENABLED
+		"gles2",
+#endif
+#if XASH_REF_GL4ES_ENABLED
+		"gl4es",
+#endif
+#if XASH_REF_SOFT_ENABLED
+		"soft",
+#endif
+#if XASH_REF_VULKAN_ENABLED
+		"vk"
+#endif
+	};
 
-		R_GetRendererName( temp, sizeof( temp ), renderers[i] );
+	// ordering is important here too!
+	static const char *readableNames[ARRAYSIZE( shortNames )] =
+	{
+#if XASH_REF_GL_ENABLED
+		"OpenGL",
+#endif
+#if XASH_REF_NANOGL_ENABLED
+		"GLES1 (NanoGL)",
+#endif
+#if XASH_REF_GLWES_ENABLED
+		"GLES2 (gl-wes-v2)",
+#endif
+#if XASH_REF_GL4ES_ENABLED
+		"GL4ES",
+#endif
+#if XASH_REF_SOFT_ENABLED
+		"Software",
+#endif
+#if XASH_REF_VULKAN_ENABLED
+		"Vulkan"
+#endif
+	};
 
-		dll = COM_LoadLibrary( temp, false, true );
-		if( !dll )
-		{
-			Con_Reportf( "R_CollectRendererNames: can't load library %s: %s\n", temp, COM_GetLibraryError() );
-			continue;
-		}
-
-		pfn = COM_GetProcAddress( dll, GET_REF_API );
-		if( !pfn )
-		{
-			Con_Reportf( "R_CollectRendererNames: can't find API entry point in %s\n", temp );
-			COM_FreeLibrary( dll );
-			continue;
-		}
-
-		Q_strncpy( ref.shortNames[cur], renderers[i], sizeof( ref.shortNames[cur] ));
-
-		pfn = COM_GetProcAddress( dll, GET_REF_HUMANREADABLE_NAME );
-		if( !pfn ) // just in case
-		{
-			Con_Reportf( "R_CollectRendererNames: can't find GetHumanReadableName export in %s\n", temp );
-			Q_strncpy( ref.readableNames[cur], renderers[i], sizeof( ref.readableNames[cur] ));
-		}
-		else
-		{
-			REF_HUMANREADABLE_NAME GetHumanReadableName = (REF_HUMANREADABLE_NAME)pfn;
-
-			GetHumanReadableName( ref.readableNames[cur], sizeof( ref.readableNames[cur] ));
-		}
-
-		Con_Printf( "Found renderer %s: %s\n", ref.shortNames[cur], ref.readableNames[cur] );
-
-		cur++;
-		COM_FreeLibrary( dll );
-	}
-	ref.numRenderers = cur;
+	ref.numRenderers = ARRAYSIZE( shortNames );
+	ref.shortNames = shortNames;
+	ref.readableNames = readableNames;
 }
 
 const ref_device_t *R_GetRenderDevice( unsigned int idx )
@@ -746,30 +738,28 @@ qboolean R_Init( void )
 	// 1. Command line `-ref` argument.
 	// 2. `ref_dll` cvar.
 	// 3. Detected renderers in `DEFAULT_RENDERERS` order.
-	requested[0] = '\0';
-	if( !Sys_GetParmFromCmdLine( "-ref", requested ) && COM_CheckString( r_refdll->string ) )
-		// r_refdll is set to empty by default, so we can change hardcoded defaults just in case
-		Q_strncpy( requested, r_refdll->string, sizeof( requested ) );
+	requested[0] = 0;
 
-	if ( requested[0] )
+	if( !success && Sys_GetParmFromCmdLine( "-ref", requested ))
 		success = R_LoadRenderer( requested );
+
+	if( !success && COM_CheckString( r_refdll->string ))
+	{
+		Q_strncpy( requested, r_refdll->string, sizeof( requested ));
+		success = R_LoadRenderer( requested );
+	}
 
 	if( !success )
 	{
 		int i;
 
-		// cycle through renderers that we collected in CollectRendererNames
-		for( i = 0; i < ref.numRenderers; i++ )
+		for( i = 0; i < ref.numRenderers && !success; i++ )
 		{
 			// skip renderer that was requested but failed to load
-			if( !Q_strcmp( requested, ref.shortNames[i] ) )
+			if( !Q_strcmp( requested, ref.shortNames[i] ))
 				continue;
 
 			success = R_LoadRenderer( ref.shortNames[i] );
-
-			// yay, found working one
-			if( success )
-				break;
 		}
 	}
 

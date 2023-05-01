@@ -120,6 +120,18 @@ void Cbuf_AddText( const char *text )
 	Cbuf_AddTextToBuffer( &cmd_text, text );
 }
 
+void Cbuf_AddTextf( const char *fmt, ... )
+{
+	va_list va;
+	char buf[MAX_VA_STRING];
+
+	va_start( va, fmt );
+	Q_vsnprintf( buf, sizeof( buf ), fmt, va );
+	va_end( va );
+
+	Cbuf_AddText( buf );
+}
+
 /*
 ============
 Cbuf_AddFilteredText
@@ -1150,13 +1162,13 @@ void Cmd_ForwardToServer( void )
 	str[0] = 0;
 	if( Q_stricmp( Cmd_Argv( 0 ), "cmd" ))
 	{
-		Q_strcat( str, Cmd_Argv( 0 ));
-		Q_strcat( str, " " );
+		Q_strncat( str, Cmd_Argv( 0 ), sizeof( str ));
+		Q_strncat( str, " ", sizeof( str ));
 	}
 
 	if( Cmd_Argc() > 1 )
-		Q_strcat( str, Cmd_Args( ));
-	else Q_strcat( str, "\n" );
+		Q_strncat( str, Cmd_Args( ), sizeof( str ));
+	else Q_strncat( str, "\n", sizeof( str ));
 
 	MSG_WriteString( &cls.netchan.message, str );
 }
@@ -1254,21 +1266,21 @@ static void Cmd_Apropos_f( void )
 	cmdalias_t *alias;
 	const char *partial;
 	int count = 0;
-	qboolean ispattern;
+	char buf[MAX_VA_STRING];
 
-	if( Cmd_Argc() > 1 )
-	{
-		partial = Cmd_Args();
-	}
-	else
+	if( Cmd_Argc() < 2 )
 	{
 		Msg( "apropos what?\n" );
 		return;
 	}
 
-	ispattern = partial && Q_strpbrk( partial, "*?" );
-	if( !ispattern )
-		partial = va( "*%s*", partial );
+	partial = Cmd_Args();
+
+	if( !Q_strpbrk( partial, "*?" ))
+	{
+		Q_snprintf( buf, sizeof( buf ), "*%s*", partial );
+		partial = buf;
+	}
 
 	for( var = (convar_t*)Cvar_GetList(); var; var = var->next )
 	{

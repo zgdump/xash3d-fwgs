@@ -425,6 +425,7 @@ void FS_Shutdown( void );
 void Cbuf_Init( void );
 void Cbuf_Clear( void );
 void Cbuf_AddText( const char *text );
+void Cbuf_AddTextf( const char *text, ... ) _format( 1 );
 void Cbuf_AddFilteredText( const char *text );
 void Cbuf_InsertText( const char *text );
 void Cbuf_ExecStuffCmds( void );
@@ -565,6 +566,7 @@ int FS_GetStreamPos( stream_t *stream );
 void FS_FreeStream( stream_t *stream );
 qboolean Sound_Process( wavdata_t **wav, int rate, int width, uint flags );
 uint Sound_GetApproxWavePlayLen( const char *filepath );
+qboolean Sound_SupportedFileFormat( const char *fileext );
 
 //
 // host.c
@@ -636,6 +638,7 @@ void COM_HexConvert( const char *pszInput, int nInputLength, byte *pOutput );
 int COM_SaveFile( const char *filename, const void *data, int len );
 byte* COM_LoadFileForMe( const char *filename, int *pLength );
 qboolean COM_IsSafeFileToDownload( const char *filename );
+const char *COM_GetResourceTypeName( resourcetype_t restype );
 cvar_t *pfnCVarGetPointer( const char *szVarName );
 int pfnDrawConsoleString( int x, int y, char *string );
 void pfnDrawSetTextColor( float r, float g, float b );
@@ -777,8 +780,6 @@ int SV_GetMaxClients( void );
 qboolean CL_IsRecordDemo( void );
 qboolean CL_IsTimeDemo( void );
 qboolean CL_IsPlaybackDemo( void );
-qboolean CL_IsBackgroundDemo( void );
-qboolean CL_IsBackgroundMap( void );
 qboolean SV_Initialized( void );
 qboolean CL_LoadProgs( const char *name );
 void CL_ProcessFile( qboolean successfully_received, const char *filename );
@@ -818,6 +819,7 @@ const char *Info_ValueForKey( const char *s, const char *key );
 void Info_RemovePrefixedKeys( char *start, char prefix );
 qboolean Info_RemoveKey( char *s, const char *key );
 qboolean Info_SetValueForKey( char *s, const char *key, const char *value, int maxsize );
+qboolean Info_SetValueForKeyf( char *s, const char *key, int maxsize, const char *format, ... ) _format( 4 );
 qboolean Info_SetValueForStarKey( char *s, const char *key, const char *value, int maxsize );
 qboolean Info_IsValid( const char *s );
 void Info_WriteVars( file_t *f );
@@ -843,6 +845,7 @@ void COM_NormalizeAngles( vec3_t angles );
 int COM_FileSize( const char *filename );
 void COM_FreeFile( void *buffer );
 int COM_CompareFileTime( const char *filename1, const char *filename2, int *iCompare );
+char *va( const char *format, ... ) _format( 1 );
 
 // soundlib shared exports
 qboolean S_Init( void );
@@ -855,7 +858,6 @@ void S_StopAllSounds( qboolean ambient );
 // gamma routines
 void BuildGammaTable( float gamma, float brightness );
 byte LightToTexGamma( byte b );
-byte TextureToGamma( byte b );
 
 //
 // identification.c
@@ -871,6 +873,10 @@ void NET_InitMasters( void );
 void NET_SaveMasters( void );
 qboolean NET_SendToMasters( netsrc_t sock, size_t len, const void *data );
 qboolean NET_IsMasterAdr( netadr_t adr );
+void NET_MasterHeartbeat( void );
+void NET_MasterClear( void );
+void NET_MasterShutdown( void );
+qboolean NET_GetMaster( netadr_t from, uint *challenge, double *last_heartbeat );
 
 #ifdef REF_DLL
 #error "common.h in ref_dll"

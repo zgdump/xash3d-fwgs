@@ -977,7 +977,7 @@ static int CheckSkybox( const char *name )
 {
 	const char	*skybox_ext[] = { "png", "dds", "tga", "bmp" };
 	int		i, j, num_checked_sides;
-	const char	*sidename;
+	char		sidename[MAX_VA_STRING];
 
 	// search for skybox images
 	for( i = 0; i < ARRAYSIZE(skybox_ext); i++ )
@@ -986,7 +986,7 @@ static int CheckSkybox( const char *name )
 		for( j = 0; j < 6; j++ )
 		{
 			// build side name
-			sidename = va( "%s%s.%s", name, g_skybox_info[j].suffix, skybox_ext[i] );
+			Q_snprintf( sidename, sizeof( sidename ), "%s%s.%s", name, g_skybox_info[j].suffix, skybox_ext[i] );
 			if( gEngine.fsapi->FileExists( sidename, false ))
 				num_checked_sides++;
 
@@ -998,7 +998,7 @@ static int CheckSkybox( const char *name )
 		for( j = 0; j < 6; j++ )
 		{
 			// build side name
-			sidename = va( "%s_%s.%s", name, g_skybox_info[j].suffix, skybox_ext[i] );
+			Q_snprintf( sidename, sizeof( sidename ), "%s_%s.%s", name, g_skybox_info[j].suffix, skybox_ext[i] );
 			if( gEngine.fsapi->FileExists( sidename, false ))
 				num_checked_sides++;
 		}

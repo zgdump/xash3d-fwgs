@@ -105,18 +105,6 @@ static void R_ClearAllDecals( void )
 	PRINT_NOT_IMPLEMENTED();
 }
 
-// studio interface
-static float R_StudioEstimateFrame( cl_entity_t *e, mstudioseqdesc_t *pseqdesc )
-{
-	PRINT_NOT_IMPLEMENTED();
-	return 1.f;
-}
-
-static void R_StudioLerpMovement( cl_entity_t *e, double time, vec3_t origin, vec3_t angles )
-{
-	PRINT_NOT_IMPLEMENTED();
-}
-
 // bmodel
 static void R_InitSkyClouds( struct mip_s *mt, struct texture_s *tx, qboolean custom_palette )
 {
@@ -623,9 +611,4 @@ int EXPORT GetRefAPI( int version, ref_interface_t *funcs, ref_api_t *engfuncs, 
 	gpGlobals = globals;
 
 	return REF_API_VERSION;
-}
-
-void EXPORT GetRefHumanReadableName( char *out, size_t size )
-{
-	Q_strncpy( out, "Vulkan", size );
 }

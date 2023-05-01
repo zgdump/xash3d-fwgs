@@ -87,7 +87,7 @@ typedef struct touchbuttonlist_s
 	touch_button_t *last;
 } touchbuttonlist_t;
 
-struct touch_s
+static struct touch_s
 {
 	qboolean initialized;
 	qboolean config_loaded;
@@ -340,7 +340,7 @@ static void Touch_ExportConfig_f( void )
 
 	if( Q_strstr( name, "touch_presets/" ))
 	{
-		COM_FileBase( name, profilebase );
+		COM_FileBase( name, profilebase, sizeof( profilebase ));
 		Q_snprintf( profilename, sizeof( profilebase ), "touch_profiles/%s (copy).cfg", profilebase );
 	}
 	else Q_strncpy( profilename, name, sizeof( profilename ));
@@ -737,7 +737,7 @@ static void Touch_ReloadConfig_f( void )
 	touch.edit = touch.selection = NULL;
 	touch.resize_finger = touch.move_finger = touch.look_finger = touch.wheel_finger = -1;
 
-	Cbuf_AddText( va("exec %s\n", touch_config_file->string ) );
+	Cbuf_AddTextf( "exec %s\n", touch_config_file->string );
 }
 
 static touch_button_t *Touch_AddButton( touchbuttonlist_t *list,
@@ -1111,7 +1111,7 @@ static void Touch_InitConfig( void )
 	//pfnGetScreenInfo( NULL ); //HACK: update hud screen parameters like iHeight
 	if( FS_FileExists( touch_config_file->string, true ) )
 	{
-		Cbuf_AddText( va( "exec \"%s\"\n", touch_config_file->string ) );
+		Cbuf_AddTextf( "exec \"%s\"\n", touch_config_file->string );
 		Cbuf_Execute();
 	}
 	else
@@ -1498,9 +1498,9 @@ static void Touch_EditMove( touchEventType type, int fingerID, float x, float y,
 				touch.hidebutton->flags &= ~TOUCH_FL_HIDE;
 
 				if( FBitSet( button->flags, TOUCH_FL_HIDE ))
-					Q_strcpy( touch.hidebutton->texturefile, "touch_default/edit_show" );
+					Q_strncpy( touch.hidebutton->texturefile, "touch_default/edit_show", sizeof( touch.hidebutton->texturefile ));
 				else
-					Q_strcpy( touch.hidebutton->texturefile, "touch_default/edit_hide" );
+					Q_strncpy( touch.hidebutton->texturefile, "touch_default/edit_hide", sizeof( touch.hidebutton->texturefile ));
 			}
 		}
 		if( type == event_motion ) // shutdown button move

@@ -19,6 +19,7 @@ GNU General Public License for more details.
 #include "library.h"
 #include "voice.h"
 #include "pm_local.h"
+#include "sequence.h"
 
 #if XASH_LOW_MEMORY != 2
 int SV_UPDATE_BACKUP = SINGLEPLAYER_BACKUP;
@@ -276,11 +277,20 @@ model_t *SV_ModelHandle( int modelindex )
 	return sv.models[modelindex];
 }
 
+static resourcetype_t SV_DetermineResourceType( const char *filename )
+{
+	if( !Q_strncmp( filename, DEFAULT_SOUNDPATH, sizeof( DEFAULT_SOUNDPATH ) - 1 ) && Sound_SupportedFileFormat( COM_FileExtension( filename )))
+		return t_sound;
+	else
+		return t_generic;
+}
+
 void SV_ReadResourceList( const char *filename )
 {
-	string	token;
+	string token;
 	byte *afile;
 	char *pfile;
+	resourcetype_t restype;
 
 	afile = FS_LoadFile( filename, NULL, false );
 	if( !afile ) return;
@@ -295,8 +305,23 @@ void SV_ReadResourceList( const char *filename )
 		if( !COM_IsSafeFileToDownload( token ))
 			continue;
 
-		Con_DPrintf( "  %s\n", token );
-		SV_GenericIndex( token );
+		COM_FixSlashes( token );
+		restype = SV_DetermineResourceType( token );
+		Con_DPrintf( "  %s (%s)\n", token, COM_GetResourceTypeName( restype ));
+		switch( restype )
+		{
+			// TODO do we need to handle other resource types specifically too?
+			case t_sound:
+			{
+				const char *filepath = token;
+				filepath += sizeof( DEFAULT_SOUNDPATH ) - 1; // skip "sound/" part
+				SV_SoundIndex( filepath );
+				break;
+			}
+			default:
+				SV_GenericIndex( token );
+				break;
+		}
 	}
 
 	Con_DPrintf( "----------------------------------\n" );
@@ -315,7 +340,7 @@ void SV_CreateGenericResources( void )
 	string	filename;
 
 	Q_strncpy( filename, sv.model_precache[1], sizeof( filename ));
-	COM_ReplaceExtension( filename, ".res" );
+	COM_ReplaceExtension( filename, ".res", sizeof( filename ));
 	COM_FixSlashes( filename );
 
 	SV_ReadResourceList( filename );
@@ -628,7 +653,7 @@ void SV_ActivateServer( int runPhysics )
 		const char *cycle = Cvar_VariableString( "mapchangecfgfile" );
 
 		if( COM_CheckString( cycle ))
-			Cbuf_AddText( va( "exec %s\n", cycle ));
+			Cbuf_AddTextf( "exec %s\n", cycle );
 	}
 }
 
@@ -920,6 +945,9 @@ qboolean SV_SpawnServer( const char *mapname, const char *startspot, qboolean ba
 	current_skill = bound( 0, current_skill, 3 );
 	Cvar_SetValue( "skill", (float)current_skill );
 
+	// enforce hpk_maxsize
+	HPAK_CheckSize( CUSTOM_RES_PATH );
+
 	// force normal player collisions for single player
 	if( svs.maxclients == 1 )
 		Cvar_SetValue( "sv_clienttrace", 1 );
@@ -945,7 +973,7 @@ qboolean SV_SpawnServer( const char *mapname, const char *startspot, qboolean ba
 	if( svs.maxclients == 1 ) Cvar_SetValue( "sv_clienttrace", 1 );
 
 	// make sure what server name doesn't contain path and extension
-	COM_FileBase( mapname, sv.name );
+	COM_FileBase( mapname, sv.name, sizeof( sv.name ));
 
 	// precache and static commands can be issued during map initialization
 	Host_SetServerState( ss_loading );
@@ -969,7 +997,7 @@ qboolean SV_SpawnServer( const char *mapname, const char *startspot, qboolean ba
 
 	for( i = WORLD_INDEX; i < sv.worldmodel->numsubmodels; i++ )
 	{
-		Q_sprintf( sv.model_precache[i+1], "*%i", i );
+		Q_snprintf( sv.model_precache[i+1], sizeof( sv.model_precache[i+1] ), "*%i", i );
 		sv.models[i+1] = Mod_ForName( sv.model_precache[i+1], false, false );
 		SetBits( sv.model_precache_flags[i+1], RES_FATALIFMISSING );
 	}
@@ -987,8 +1015,10 @@ qboolean SV_SpawnServer( const char *mapname, const char *startspot, qboolean ba
 		SV_InitEdict( ent );
 	}
 
+	Sequence_OnLevelLoad( sv.name );
+
 	// heartbeats will always be sent to the id master
-	svs.last_heartbeat = MAX_HEARTBEAT; // send immediately
+	NET_MasterClear();
 
 	// get actual movevars
 	SV_UpdateMovevars( true );

@@ -1123,7 +1123,7 @@ void R_BeamDraw( BEAM *pbeam, float frametime )
 
 	// FIXME VK what is our vk_render matrix state now? do we have all matrices set properly?
 	// TODO this can be done only once for all beams, i.e. before calling CL_DrawEFX
-	VK_RenderStateSetMatrixModel( matrix4x4_identity );
+	VK_RenderStateSetMatrixModel( m_matrix4x4_identity );
 
 	// TODO gl renderer has per-vertex color that is updated using brightness and whatever
 	VK_RenderDebugLabelBegin( "beam" );

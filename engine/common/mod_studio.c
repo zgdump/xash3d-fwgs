@@ -429,7 +429,7 @@ void *R_StudioGetAnim( studiohdr_t *m_pStudioHeader, model_t *m_pSubModel, mstud
 	{
 		string	filepath, modelname, modelpath;
 
-		COM_FileBase( m_pSubModel->name, modelname );
+		COM_FileBase( m_pSubModel->name, modelname, sizeof( modelname ));
 		COM_ExtractFilePath( m_pSubModel->name, modelpath );
 
 		// NOTE: here we build real sub-animation filename because stupid user may rename model without recompile
@@ -848,10 +848,13 @@ Mod_LoadStudioModel
 */
 void Mod_LoadStudioModel( model_t *mod, const void *buffer, qboolean *loaded )
 {
+	char poolname[MAX_VA_STRING];
 	studiohdr_t	*phdr;
 
+	Q_snprintf( poolname, sizeof( poolname ), "^2%s^7", loadmodel->name );
+
 	if( loaded ) *loaded = false;
-	loadmodel->mempool = Mem_AllocPool( va( "^2%s^7", loadmodel->name ));
+	loadmodel->mempool = Mem_AllocPool( poolname );
 	loadmodel->type = mod_studio;
 
 	phdr = R_StudioLoadHeader( mod, buffer );

@@ -499,7 +499,7 @@ void CL_BatchResourceRequest( qboolean initialize )
 				if( !FBitSet( p->ucFlags, RES_REQUESTED ))
 				{
 					MSG_BeginClientCmd( &msg, clc_stringcmd );
-					MSG_WriteString( &msg, va( "dlfile !MD5%s", MD5_Print( p->rgucMD5_hash ) ) );
+					MSG_WriteStringf( &msg, "dlfile !MD5%s", MD5_Print( p->rgucMD5_hash ));;
 					SetBits( p->ucFlags, RES_REQUESTED );
 				}
 				break;
@@ -587,7 +587,7 @@ int CL_EstimateNeededResources( void )
 	return nTotalSize;
 }
 
-void CL_StartResourceDownloading( const char *pszMessage, qboolean bCustom )
+static void CL_StartResourceDownloading( const char *pszMessage, qboolean bCustom )
 {
 	resourceinfo_t	ri;
 
@@ -603,6 +603,8 @@ void CL_StartResourceDownloading( const char *pszMessage, qboolean bCustom )
 	}
 	else
 	{
+		HTTP_ResetProcessState();
+
 		cls.state = ca_validate;
 		cls.dl.custom = false;
 	}
@@ -848,6 +850,8 @@ void CL_ParseServerData( sizebuf_t *msg, qboolean legacy )
 	char	gamefolder[MAX_QPATH];
 	qboolean	background;
 	int	i;
+
+	HPAK_CheckSize( CUSTOM_RES_PATH );
 
 	Con_Reportf( "%s packet received.\n", legacy ? "Legacy serverdata" : "Serverdata" );
 
@@ -1236,11 +1240,9 @@ CL_ParseSetAngle
 set the view angle to this absolute value
 ================
 */
-void CL_ParseSetAngle( sizebuf_t *msg )
+static void CL_ParseSetAngle( sizebuf_t *msg )
 {
-	cl.viewangles[0] = MSG_ReadBitAngle( msg, 16 );
-	cl.viewangles[1] = MSG_ReadBitAngle( msg, 16 );
-	cl.viewangles[2] = MSG_ReadBitAngle( msg, 16 );
+	MSG_ReadVec3Angles( msg, cl.viewangles );
 }
 
 /*
@@ -1543,6 +1545,42 @@ void CL_SendConsistencyInfo( sizebuf_t *msg )
 
 /*
 ==================
+CL_StartDark
+==================
+*/
+static void CL_StartDark( void )
+{
+	if( Cvar_VariableValue( "v_dark" ))
+	{
+		screenfade_t		*sf = &clgame.fade;
+		float			fadetime = 5.0f;
+		client_textmessage_t	*title;
+
+		title = CL_TextMessageGet( "GAMETITLE" );
+		if( Host_IsQuakeCompatible( ))
+			fadetime = 1.0f;
+
+		if( title )
+		{
+			// get settings from titles.txt
+			sf->fadeEnd = title->holdtime + title->fadeout;
+			sf->fadeReset = title->fadeout;
+		}
+		else sf->fadeEnd = sf->fadeReset = fadetime;
+
+		sf->fadeFlags = FFADE_IN;
+		sf->fader = sf->fadeg = sf->fadeb = 0;
+		sf->fadealpha = 255;
+		sf->fadeSpeed = (float)sf->fadealpha / sf->fadeReset;
+		sf->fadeReset += cl.time;
+		sf->fadeEnd += sf->fadeReset;
+
+		Cvar_SetValue( "v_dark", 0.0f );
+	}
+}
+
+/*
+==================
 CL_RegisterResources
 
 Clean up and move to next part of sequence.
@@ -1590,6 +1628,9 @@ void CL_RegisterResources( sizebuf_t *msg )
 			// tell rendering system we have a new set of models.
 			ref.dllFuncs.R_NewMap ();
 
+			// check if this map must start from dark screen
+			CL_StartDark ();
+
 			CL_SetupOverviewParams();
 
 			// release unused SpriteTextures
@@ -1607,7 +1648,7 @@ void CL_RegisterResources( sizebuf_t *msg )
 			// done with all resources, issue prespawn command.
 			// Include server count in case server disconnects and changes level during d/l
 			MSG_BeginClientCmd( msg, clc_stringcmd );
-			MSG_WriteString( msg, va( "spawn %i", cl.servercount ));
+			MSG_WriteStringf( msg, "spawn %i", cl.servercount );
 		}
 	}
 	else
@@ -1852,10 +1893,17 @@ Set screen shake
 */
 void CL_ParseScreenShake( sizebuf_t *msg )
 {
-	clgame.shake.amplitude = (float)(word)MSG_ReadShort( msg ) * (1.0f / (float)(1<<12));
-	clgame.shake.duration = (float)(word)MSG_ReadShort( msg ) * (1.0f / (float)(1<<12));
-	clgame.shake.frequency = (float)(word)MSG_ReadShort( msg ) * (1.0f / (float)(1<<8));
-	clgame.shake.time = cl.time + Q_max( clgame.shake.duration, 0.01f );
+	float amplitude = (float)(word)MSG_ReadShort( msg ) * ( 1.0f / (float)( 1 << 12 ));
+	float duration  = (float)(word)MSG_ReadShort( msg ) * ( 1.0f / (float)( 1 << 12 ));
+	float frequency = (float)(word)MSG_ReadShort( msg ) * ( 1.0f / (float)( 1 << 8 ));
+
+	// don't overwrite larger existing shake
+	if( amplitude > clgame.shake.amplitude )
+		clgame.shake.amplitude = amplitude;
+
+	clgame.shake.duration = duration;
+	clgame.shake.time = cl.time + clgame.shake.duration;
+	clgame.shake.frequency = frequency;
 	clgame.shake.next_shake = 0.0f; // apply immediately
 }
 
@@ -1998,10 +2046,10 @@ void CL_ParseExec( sizebuf_t *msg )
 	{
 		Cbuf_AddText( "exec mapdefault.cfg\n" );
 
-		COM_FileBase( clgame.mapname, mapname );
+		COM_FileBase( clgame.mapname, mapname, sizeof( mapname ));
 
 		if ( COM_CheckString( mapname ) )
-			Cbuf_AddText( va( "exec %s.cfg\n", mapname ) );
+			Cbuf_AddTextf( "exec %s.cfg\n", mapname );
 	}
 }
 
@@ -2241,6 +2289,7 @@ void CL_ParseServerMessage( sizebuf_t *msg, qboolean normal_message )
 				else cls.state = ca_connecting;
 				cl.background = old_background;
 				cls.connect_time = MAX_HEARTBEAT;
+				cls.connect_retry = 0;
 			}
 			break;
 		case svc_setview:
@@ -2665,15 +2714,14 @@ CL_ParseResourceList
 void CL_LegacyParseResourceList( sizebuf_t *msg )
 {
 	int	i = 0;
-
 	static struct
 	{
 		int  rescount;
 		int  restype[MAX_LEGACY_RESOURCES];
 		char resnames[MAX_LEGACY_RESOURCES][MAX_QPATH];
 	} reslist;
-	memset( &reslist, 0, sizeof( reslist ));
 
+	memset( &reslist, 0, sizeof( reslist ));
 	reslist.rescount = MSG_ReadWord( msg ) - 1;
 
 	if( reslist.rescount > MAX_LEGACY_RESOURCES )
@@ -2690,14 +2738,21 @@ void CL_LegacyParseResourceList( sizebuf_t *msg )
 		return;
 	}
 
+	HTTP_ResetProcessState();
+
 	host.downloadcount = 0;
 
 	for( i = 0; i < reslist.rescount; i++ )
 	{
+		char soundpath[MAX_VA_STRING];
 		const char *path;
 
 		if( reslist.restype[i] == t_sound )
-			path = va( DEFAULT_SOUNDPATH "%s", reslist.resnames[i] );
+		{
+			Q_snprintf( soundpath, sizeof( soundpath ), DEFAULT_SOUNDPATH "%s", reslist.resnames[i] );
+
+			path = soundpath;
+		}
 		else path = reslist.resnames[i];
 
 		if( FS_FileExists( path, false ))
@@ -2816,6 +2871,7 @@ void CL_ParseLegacyServerMessage( sizebuf_t *msg, qboolean normal_message )
 				else cls.state = ca_connecting;
 				cl.background = old_background;
 				cls.connect_time = MAX_HEARTBEAT;
+				cls.connect_retry = 0;
 			}
 			break;
 		case svc_setview:
@@ -2881,7 +2937,7 @@ void CL_ParseLegacyServerMessage( sizebuf_t *msg, qboolean normal_message )
 			cl.frames[cl.parsecountmod].graphdata.sound += MSG_GetNumBytesRead( msg ) - bufStart;
 			break;
 		case svc_spawnstatic:
-			CL_ParseStaticEntity( msg );
+			CL_LegacyParseStaticEntity( msg );
 			break;
 		case svc_event_reliable:
 			CL_ParseReliableEvent( msg );
@@ -3078,7 +3134,7 @@ void CL_LegacyPrecache_f( void )
 	// done with all resources, issue prespawn command.
 	// Include server count in case server disconnects and changes level during d/l
 	MSG_BeginClientCmd( &cls.netchan.message, clc_stringcmd );
-	MSG_WriteString( &cls.netchan.message, va( "begin %i", spawncount ));
+	MSG_WriteStringf( &cls.netchan.message, "begin %i", spawncount );
 	cls.signon = SIGNONS;
 }
 

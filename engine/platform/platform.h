@@ -57,6 +57,14 @@ void NSwitch_Init( void );
 void NSwitch_Shutdown( void );
 #endif
 
+#if XASH_PSVITA
+void PSVita_Init( void );
+void PSVita_Shutdown( void );
+qboolean PSVita_GetBasePath( char *buf, const size_t buflen );
+int PSVita_GetArgv( int in_argc, char **in_argv, char ***out_argv );
+void PSVita_InputUpdate( void );
+#endif
+
 /*
 ==============================================================================
 
@@ -141,7 +149,7 @@ qboolean SW_CreateBuffer( int width, int height, uint *stride, uint *bpp, uint *
 //
 // in_evdev.c
 //
-#ifdef XASH_USE_EVDEV
+#if XASH_USE_EVDEV
 void Evdev_SetGrab( qboolean grab );
 void Evdev_Shutdown( void );
 void Evdev_Init( void );

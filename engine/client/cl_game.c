@@ -200,7 +200,7 @@ CL_InitCDAudio
 Initialize CD playlist
 ====================
 */
-void CL_InitCDAudio( const char *filename )
+static void CL_InitCDAudio( const char *filename )
 {
 	byte *afile;
 	char *pfile;
@@ -221,8 +221,13 @@ void CL_InitCDAudio( const char *filename )
 	// format: trackname\n [num]
 	while(( pfile = COM_ParseFile( pfile, token, sizeof( token ))) != NULL )
 	{
-		if( !Q_stricmp( token, "blank" )) token[0] = '\0';
-		Q_strncpy( clgame.cdtracks[c], token, sizeof( clgame.cdtracks[0] ));
+		if( !Q_stricmp( token, "blank" ))
+			clgame.cdtracks[c][0] = '\0';
+		else
+		{
+			Q_snprintf( clgame.cdtracks[c], sizeof( clgame.cdtracks[c] ),
+				"media/%s", token );
+		}
 
 		if( ++c > MAX_CDTRACKS - 1 )
 		{
@@ -590,7 +595,11 @@ static void CL_InitTitles( const char *filename )
 	// initialize text messages (game_text)
 	for( i = 0; i < MAX_TEXTCHANNELS; i++ )
 	{
-		cl_textmessage[i].pName = _copystring( clgame.mempool, va( TEXT_MSGNAME, i ), __FILE__, __LINE__ );
+		char name[MAX_VA_STRING];
+
+		Q_snprintf( name, sizeof( name ), TEXT_MSGNAME, i );
+
+		cl_textmessage[i].pName = _copystring( clgame.mempool, name, __FILE__, __LINE__ );
 		cl_textmessage[i].pMessage = cl_textbuffer[i];
 	}
 
@@ -1060,23 +1069,18 @@ void CL_LinkUserMessage( char *pszName, const int svc_num, int iSize )
 	CL_ClearUserMessage( pszName, svc_num );
 }
 
-void CL_FreeEntity( cl_entity_t *pEdict )
-{
-	Assert( pEdict != NULL );
-	R_RemoveEfrags( pEdict );
-	CL_KillDeadBeams( pEdict );
-}
-
 void CL_ClearWorld( void )
 {
-	cl_entity_t	*worldmodel;
+	if( clgame.entities ) // check if we have entities, legacy protocol support kinda breaks this logic
+	{
+		cl_entity_t *worldmodel = clgame.entities;
 
-	worldmodel = clgame.entities;
-	worldmodel->curstate.modelindex = 1;	// world model
-	worldmodel->curstate.solid = SOLID_BSP;
-	worldmodel->curstate.movetype = MOVETYPE_PUSH;
-	worldmodel->model = cl.worldmodel;
-	worldmodel->index = 0;
+		worldmodel->curstate.modelindex = 1;	// world model
+		worldmodel->curstate.solid = SOLID_BSP;
+		worldmodel->curstate.movetype = MOVETYPE_PUSH;
+		worldmodel->model = cl.worldmodel;
+		worldmodel->index = 0;
+	}
 
 	world.max_recursion = 0;
 
@@ -1368,7 +1372,7 @@ pfnSPR_Frames
 */
 int EXPORT pfnSPR_Frames( HSPRITE hPic )
 {
-	int	numFrames;
+	int	numFrames = 0;
 
 	ref.dllFuncs.R_GetSpriteParms( NULL, NULL, &numFrames, 0, CL_GetSpritePointer( hPic ));
 
@@ -1383,7 +1387,7 @@ pfnSPR_Height
 */
 static int GAME_EXPORT pfnSPR_Height( HSPRITE hPic, int frame )
 {
-	int	sprHeight;
+	int	sprHeight = 0;
 
 	ref.dllFuncs.R_GetSpriteParms( NULL, &sprHeight, NULL, frame, CL_GetSpritePointer( hPic ));
 
@@ -1398,7 +1402,7 @@ pfnSPR_Width
 */
 static int GAME_EXPORT pfnSPR_Width( HSPRITE hPic, int frame )
 {
-	int	sprWidth;
+	int	sprWidth = 0;
 
 	ref.dllFuncs.R_GetSpriteParms( &sprWidth, NULL, NULL, frame, CL_GetSpritePointer( hPic ));
 
@@ -1413,7 +1417,13 @@ pfnSPR_Set
 */
 static void GAME_EXPORT pfnSPR_Set( HSPRITE hPic, int r, int g, int b )
 {
-	clgame.ds.pSprite = CL_GetSpritePointer( hPic );
+	const model_t *sprite = CL_GetSpritePointer( hPic );
+
+	// a1ba: do not alter the state if invalid HSPRITE was passed
+	if( !sprite )
+		return;
+
+	clgame.ds.pSprite = sprite;
 	clgame.ds.spriteColor[0] = bound( 0, r, 255 );
 	clgame.ds.spriteColor[1] = bound( 0, g, 255 );
 	clgame.ds.spriteColor[2] = bound( 0, b, 255 );
@@ -1717,14 +1727,12 @@ pfnServerCmd
 */
 static int GAME_EXPORT pfnServerCmd( const char *szCmdString )
 {
-	string	buf;
-
 	if( !COM_CheckString( szCmdString ))
 		return 0;
 
 	// just like the client typed "cmd xxxxx" at the console
-	Q_snprintf( buf, sizeof( buf ) - 1, "cmd %s\n", szCmdString );
-	Cbuf_AddText( buf );
+	MSG_BeginClientCmd( &cls.netchan.message, clc_stringcmd );
+	MSG_WriteString( &cls.netchan.message, szCmdString );
 
 	return 1;
 }
@@ -1852,7 +1860,11 @@ client_textmessage_t *CL_TextMessageGet( const char *pName )
 	// first check internal messages
 	for( i = 0; i < MAX_TEXTCHANNELS; i++ )
 	{
-		if( !Q_strcmp( pName, va( TEXT_MSGNAME, i )))
+		char name[MAX_VA_STRING];
+
+		Q_snprintf( name, sizeof( name ), TEXT_MSGNAME, i );
+
+		if( !Q_strcmp( pName, name ))
 			return cl_textmessage + i;
 	}
 
@@ -2112,58 +2124,52 @@ pfnCalcShake
 */
 void GAME_EXPORT pfnCalcShake( void )
 {
-	int	i;
-	float	fraction, freq;
-	float	localAmp;
+	screen_shake_t *const shake = &clgame.shake;
+	float frametime, fraction, freq;
+	int i;
 
-	if( clgame.shake.time == 0 )
-		return;
-
-	if(( cl.time > clgame.shake.time ) || clgame.shake.amplitude <= 0 || clgame.shake.frequency <= 0 )
+	if( cl.time > shake->time || shake->amplitude <= 0 || shake->frequency <= 0 || shake->duration <= 0 )
 	{
-		memset( &clgame.shake, 0, sizeof( clgame.shake ));
+		// reset shake
+		if( shake->time != 0 )
+		{
+			shake->time = 0;
+			shake->applied_angle = 0;
+			VectorClear( shake->applied_offset );
+		}
+
 		return;
 	}
 
-	if( cl.time > clgame.shake.next_shake )
-	{
-		// higher frequency means we recalc the extents more often and perturb the display again
-		clgame.shake.next_shake = cl.time + ( 1.0f / clgame.shake.frequency );
+	frametime = cl_clientframetime();
 
-		// compute random shake extents (the shake will settle down from this)
+	if( cl.time > shake->next_shake )
+	{
+		// get next shake time based on frequency over duration
+		shake->next_shake = (float)cl.time + shake->frequency / shake->duration;
+
+		// randomize each shake
 		for( i = 0; i < 3; i++ )
-			clgame.shake.offset[i] = COM_RandomFloat( -clgame.shake.amplitude, clgame.shake.amplitude );
-		clgame.shake.angle = COM_RandomFloat( -clgame.shake.amplitude * 0.25f, clgame.shake.amplitude * 0.25f );
+			shake->offset[i] = COM_RandomFloat( -shake->amplitude, shake->amplitude );
+		shake->angle = COM_RandomFloat( -shake->amplitude * 0.25f, shake->amplitude * 0.25f );
 	}
 
-	// ramp down amplitude over duration (fraction goes from 1 to 0 linearly with slope 1/duration)
-	fraction = ( clgame.shake.time - cl.time ) / clgame.shake.duration;
+	// get initial fraction and frequency values over the duration
+	fraction = ((float)cl.time - shake->time ) / shake->duration;
+	freq = fraction != 0.0f ? ( shake->frequency / fraction ) * shake->frequency : 0.0f;
 
-	// ramp up frequency over duration
-	if( fraction )
-	{
-		freq = ( clgame.shake.frequency / fraction );
-	}
-	else
-	{
-		freq = 0;
-	}
+	// quickly approach zero but apply time over sine wave
+	fraction *= fraction * sin( cl.time * freq );
 
-	// square fraction to approach zero more quickly
-	fraction *= fraction;
+	// apply shake offset
+	for( i = 0; i < 3; i++ )
+		shake->applied_offset[i] = shake->offset[i] * fraction;
 
-	// Sine wave that slowly settles to zero
-	fraction = fraction * sin( cl.time * freq );
+	// apply roll angle
+	shake->applied_angle = shake->angle * fraction;
 
-	// add to view origin
-	VectorScale( clgame.shake.offset, fraction, clgame.shake.applied_offset );
-
-	// add to roll
-	clgame.shake.applied_angle = clgame.shake.angle * fraction;
-
-	// drop amplitude a bit, less for higher frequency shakes
-	localAmp = clgame.shake.amplitude * ( host.frametime / ( clgame.shake.duration * clgame.shake.frequency ));
-	clgame.shake.amplitude -= localAmp;
+	// decrease amplitude, but slower on longer shakes or higher frequency
+	shake->amplitude -= shake->amplitude * ( frametime / ( shake->frequency * shake->duration ));
 }
 
 /*
@@ -2174,8 +2180,11 @@ pfnApplyShake
 */
 void GAME_EXPORT pfnApplyShake( float *origin, float *angles, float factor )
 {
-	if( origin ) VectorMA( origin, factor, clgame.shake.applied_offset, origin );
-	if( angles ) angles[ROLL] += clgame.shake.applied_angle * factor;
+	if( origin )
+		VectorMA( origin, factor, clgame.shake.applied_offset, origin );
+
+	if( angles )
+		angles[ROLL] += clgame.shake.applied_angle * factor;
 }
 
 /*
@@ -2560,7 +2569,7 @@ const char *pfnGetGameDirectory( void )
 {
 	static char	szGetGameDir[MAX_SYSPATH];
 
-	Q_strcpy( szGetGameDir, GI->gamefolder );
+	Q_strncpy( szGetGameDir, GI->gamefolder, sizeof( szGetGameDir ));
 	return szGetGameDir;
 }
 
@@ -3359,8 +3368,7 @@ void GAME_EXPORT NetAPI_SendRequest( int context, int request, int flags, double
 			nr->resp.remote_address.port = MSG_BigShort( PORT_MASTER );
 
 		// grab the list from the master server
-		Q_strcpy( &fullquery[22], GI->gamefolder );
-		NET_SendPacket( NS_CLIENT, Q_strlen( GI->gamefolder ) + 23, fullquery, nr->resp.remote_address );
+		NET_SendPacket( NS_CLIENT, len, fullquery, nr->resp.remote_address );
 		clgame.request_type = NET_REQUEST_CLIENT;
 		clgame.master_request = nr; // holds the master request unitl the master acking
 	}

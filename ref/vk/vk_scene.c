@@ -600,12 +600,12 @@ static void drawEntity( cl_entity_t *ent, int render_mode )
 			break;
 
 		case mod_studio:
-			VK_RenderStateSetMatrixModel( matrix4x4_identity );
+			VK_RenderStateSetMatrixModel( m_matrix4x4_identity );
 			VK_StudioDrawModel( ent, render_mode, blend );
 			break;
 
 		case mod_sprite:
-			VK_RenderStateSetMatrixModel( matrix4x4_identity );
+			VK_RenderStateSetMatrixModel( m_matrix4x4_identity );
 			R_VkSpriteDrawModel( ent, blend );
 			break;
 
@@ -630,7 +630,7 @@ void VK_SceneRender( const ref_viewpass_t *rvp ) {
 
 	VK_RenderStateSetMatrixProjection( g_camera.projectionMatrix, g_camera.fov_y ); // FIXME why is this in degrees, not in radians? * M_PI_F / 360.0f );
 	VK_RenderStateSetMatrixView( g_camera.modelviewMatrix );
-	VK_RenderStateSetMatrixModel( matrix4x4_identity );
+	VK_RenderStateSetMatrixModel( m_matrix4x4_identity );
 
 	VK_RenderDebugLabelBegin( "opaque" );
 

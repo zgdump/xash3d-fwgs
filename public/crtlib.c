@@ -1,6 +1,7 @@
 /*
 crtlib.c - internal stdlib
 Copyright (C) 2011 Uncle Mike
+Copyright (c) QuakeSpasm contributors
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -22,20 +23,6 @@ GNU General Public License for more details.
 #include "stdio.h"
 #include "crtlib.h"
 #include "xash3d_mathlib.h"
-
-void Q_strnupr( const char *in, char *out, size_t size_out )
-{
-	if( size_out == 0 ) return;
-
-	while( *in && size_out > 1 )
-	{
-		if( *in >= 'a' && *in <= 'z' )
-			*out++ = *in++ + 'A' - 'a';
-		else *out++ = *in++;
-		size_out--;
-	}
-	*out = '\0';
-}
 
 void Q_strnlwr( const char *in, char *out, size_t size_out )
 {
@@ -504,18 +491,6 @@ int Q_snprintf( char *buffer, size_t buffersize, const char *format, ... )
 	return result;
 }
 
-int Q_sprintf( char *buffer, const char *format, ... )
-{
-	va_list	args;
-	int	result;
-
-	va_start( args, format );
-	result = Q_vsnprintf( buffer, 99999, format, args );
-	va_end( args );
-
-	return result;
-}
-
 void COM_StripColors( const char *in, char *out )
 {
 	while ( *in )
@@ -525,26 +500,6 @@ void COM_StripColors( const char *in, char *out )
 		else *out++ = *in++;
 	}
 	*out = '\0';
-}
-
-uint Q_hashkey( const char *string, uint hashSize, qboolean caseinsensitive )
-{
-	uint	i, hashKey = 0;
-
-	if( caseinsensitive )
-	{
-		for( i = 0; string[i]; i++)
-			hashKey += (i * 119) * Q_tolower( string[i] );
-	}
-	else
-	{
-		for( i = 0; string[i]; i++ )
-			hashKey += (i + 119) * (int)string[i];
-	}
-
-	hashKey = ((hashKey ^ (hashKey >> 10)) ^ (hashKey >> 20)) & (hashSize - 1);
-
-	return hashKey;
 }
 
 char *Q_pretifymem( float value, int digitsafterdecimal )
@@ -564,14 +519,14 @@ char *Q_pretifymem( float value, int digitsafterdecimal )
 	if( value > onemb )
 	{
 		value /= onemb;
-		Q_strcpy( suffix, " Mb" );
+		Q_strncpy( suffix, " Mb", sizeof( suffix ));
 	}
 	else if( value > onekb )
 	{
 		value /= onekb;
-		Q_strcpy( suffix, " Kb" );
+		Q_strncpy( suffix, " Kb", sizeof( suffix ));
 	}
-	else Q_strcpy( suffix, " bytes" );
+	else Q_strncpy( suffix, " bytes", sizeof( suffix ));
 
 	// clamp to >= 0
 	digitsafterdecimal = Q_max( digitsafterdecimal, 0 );
@@ -579,15 +534,15 @@ char *Q_pretifymem( float value, int digitsafterdecimal )
 	// if it's basically integral, don't do any decimals
 	if( fabs( value - (int)value ) < 0.00001f )
 	{
-		Q_sprintf( val, "%i%s", (int)value, suffix );
+		Q_snprintf( val, sizeof( val ), "%i%s", (int)value, suffix );
 	}
 	else
 	{
 		char fmt[32];
 
 		// otherwise, create a format string for the decimals
-		Q_sprintf( fmt, "%%.%if%s", digitsafterdecimal, suffix );
-		Q_sprintf( val, fmt, (double)value );
+		Q_snprintf( fmt, sizeof( fmt ), "%%.%if%s", digitsafterdecimal, suffix );
+		Q_snprintf( val, sizeof( val ), fmt, (double)value );
 	}
 
 	// copy from in to out
@@ -621,67 +576,40 @@ char *Q_pretifymem( float value, int digitsafterdecimal )
 
 /*
 ============
-va
-
-does a varargs printf into a temp buffer,
-so I don't need to have varargs versions
-of all text functions.
-============
-*/
-char *va( const char *format, ... )
-{
-	va_list		argptr;
-	static char	string[16][1024], *s;
-	static int	stringindex = 0;
-
-	s = string[stringindex];
-	stringindex = (stringindex + 1) & 15;
-	va_start( argptr, format );
-	Q_vsnprintf( s, sizeof( string[0] ), format, argptr );
-	va_end( argptr );
-
-	return s;
-}
-
-/*
-============
 COM_FileBase
 
 Extracts the base name of a file (no path, no extension, assumes '/' as path separator)
+a1ba: adapted and simplified version from QuakeSpasm
 ============
 */
-void COM_FileBase( const char *in, char *out )
+void COM_FileBase( const char *in, char *out, size_t size )
 {
-	int	len, start, end;
+	const char *dot, *slash, *s;
+	size_t len;
 
-	len = Q_strlen( in );
-	if( !len ) return;
+	if( unlikely( !COM_CheckString( in ) || size <= 1 ))
+	{
+		out[0] = 0;
+		return;
+	}
 
-	// scan backward for '.'
-	end = len - 1;
+	slash = in;
+	dot = NULL;
+	for( s = in; *s; s++ )
+	{
+		if( *s == '/' || *s == '\\' )
+			slash = s + 1;
 
-	while( end && in[end] != '.' && in[end] != '/' && in[end] != '\\' )
-		end--;
+		if( *s == '.' )
+			dot = s;
+	}
 
-	if( in[end] != '.' )
-		end = len-1; // no '.', copy to end
-	else end--; // found ',', copy to left of '.'
+	if( dot == NULL || dot < slash )
+		dot = s;
 
-	// scan backward for '/'
-	start = len - 1;
+	len = Q_min( size - 1, dot - slash );
 
-	while( start >= 0 && in[start] != '/' && in[start] != '\\' )
-		start--;
-
-	if( start < 0 || ( in[start] != '/' && in[start] != '\\' ))
-		start = 0;
-	else start++;
-
-	// length of new sting
-	len = end - start + 1;
-
-	// Copy partial string
-	Q_strncpy( out, &in[start], len + 1 );
+	memcpy( out, slash, len );
 	out[len] = 0;
 }
 
@@ -786,7 +714,7 @@ void COM_StripExtension( char *path )
 COM_DefaultExtension
 ==================
 */
-void COM_DefaultExtension( char *path, const char *extension )
+void COM_DefaultExtension( char *path, const char *extension, size_t size )
 {
 	const char	*src;
 	size_t		 len;
@@ -803,7 +731,7 @@ void COM_DefaultExtension( char *path, const char *extension )
 		src--;
 	}
 
-	Q_strcpy( &path[len], extension );
+	Q_strncpy( &path[len], extension, size - len );
 }
 
 /*
@@ -811,10 +739,10 @@ void COM_DefaultExtension( char *path, const char *extension )
 COM_ReplaceExtension
 ==================
 */
-void COM_ReplaceExtension( char *path, const char *extension )
+void COM_ReplaceExtension( char *path, const char *extension, size_t size )
 {
 	COM_StripExtension( path );
-	COM_DefaultExtension( path, extension );
+	COM_DefaultExtension( path, extension, size );
 }
 
 /*
@@ -861,7 +789,10 @@ void COM_PathSlashFix( char *path )
 	len = Q_strlen( path );
 
 	if( path[len - 1] != '\\' && path[len - 1] != '/' )
-		Q_strcpy( &path[len], "/" );
+	{
+		path[len] = '/';
+		path[len + 1] = '\0';
+	}
 }
 
 /*

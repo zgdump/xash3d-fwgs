@@ -1,7 +1,9 @@
 /*
 wad.c - WAD support for filesystem
+Copyright (C) 2003-2006 Mathieu Olivier
+Copyright (C) 2000-2007 DarkPlaces contributors
 Copyright (C) 2007 Uncle Mike
-Copyright (C) 2022 Alibek Omarov
+Copyright (C) 2015-2023 Xash3D FWGS contributors
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -457,17 +459,20 @@ static int FS_FindFile_WAD( searchpath_t *search, const char *path, char *fixedn
 	COM_ExtractFilePath( path, wadname );
 	wadfolder[0] = '\0';
 
-	if( COM_CheckStringEmpty( wadname ) )
+	if( COM_CheckStringEmpty( wadname ))
 	{
-		COM_FileBase( wadname, wadname );
-		Q_strncpy( wadfolder, wadname, sizeof( wadfolder ));
-		COM_DefaultExtension( wadname, ".wad" );
+		string wadbasename;
+
+		COM_FileBase( wadname, wadbasename, sizeof( wadbasename ));
+
+		Q_strncpy( wadfolder, wadbasename, sizeof( wadfolder ));
+		Q_snprintf( wadname, sizeof( wadname ), "%s.wad", wadbasename );
 		anywadname = false;
 	}
 
 	// make wadname from wad fullpath
-	COM_FileBase( search->filename, shortname );
-	COM_DefaultExtension( shortname, ".wad" );
+	COM_FileBase( search->filename, shortname, sizeof( shortname ));
+	COM_DefaultExtension( shortname, ".wad", sizeof( shortname ));
 
 	// quick reject by wadname
 	if( !anywadname && Q_stricmp( wadname, shortname ))
@@ -475,7 +480,7 @@ static int FS_FindFile_WAD( searchpath_t *search, const char *path, char *fixedn
 
 	// NOTE: we can't using long names for wad,
 	// because we using original wad names[16];
-	COM_FileBase( path, shortname );
+	COM_FileBase( path, shortname, sizeof( shortname ));
 
 	lump = W_FindLump( search->wad, shortname, type );
 
@@ -503,26 +508,30 @@ static void FS_Search_WAD( searchpath_t *search, stringlist_t *list, const char 
 	string	wadfolder, temp;
 	int j, i;
 	const char *slash, *backslash, *colon, *separator;
+	char buf[MAX_VA_STRING];
 
 	// quick reject by filetype
 	if( type == TYP_NONE )
 		return;
 
 	COM_ExtractFilePath( pattern, wadname );
-	COM_FileBase( pattern, wadpattern );
+	COM_FileBase( pattern, wadpattern, sizeof( wadpattern ));
 	wadfolder[0] = '\0';
 
 	if( COM_CheckStringEmpty( wadname ))
 	{
-		COM_FileBase( wadname, wadname );
-		Q_strncpy( wadfolder, wadname, sizeof( wadfolder ));
-		COM_DefaultExtension( wadname, ".wad" );
+		string wadbasename;
+
+		COM_FileBase( wadname, wadbasename, sizeof( wadbasename ));
+
+		Q_strncpy( wadfolder, wadbasename, sizeof( wadfolder ));
+		Q_snprintf( wadname, sizeof( wadname ), "%s.wad", wadbasename );
 		anywadname = false;
 	}
 
 	// make wadname from wad fullpath
-	COM_FileBase( search->filename, temp2 );
-	COM_DefaultExtension( temp2, ".wad" );
+	COM_FileBase( search->filename, temp2, sizeof( temp2 ));
+	COM_DefaultExtension( temp2, ".wad", sizeof( temp2 ));
 
 	// quick reject by wadname
 	if( !anywadname && Q_stricmp( wadname, temp2 ))
@@ -550,8 +559,9 @@ static void FS_Search_WAD( searchpath_t *search, stringlist_t *list, const char 
 				if( j == list->numstrings )
 				{
 					// build path: wadname/lumpname.ext
-					Q_snprintf( temp2, sizeof(temp2), "%s/%s", wadfolder, temp );
-					COM_DefaultExtension( temp2, va(".%s", W_ExtFromType( search->wad->lumps[i].type )));
+					Q_snprintf( temp2, sizeof( temp2 ), "%s/%s", wadfolder, temp );
+					Q_snprintf( buf, sizeof( buf ), ".%s", W_ExtFromType( search->wad->lumps[i].type ));
+					COM_DefaultExtension( temp2, buf, sizeof( temp2 ));
 					stringlistappend( list, temp2 );
 				}
 			}

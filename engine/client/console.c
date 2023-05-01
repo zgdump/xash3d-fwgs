@@ -214,37 +214,6 @@ void Con_ClearTyping( void )
 }
 
 /*
-============
-Con_StringLength
-
-skipped color prefixes
-============
-*/
-int Con_StringLength( const char *string )
-{
-	int		len;
-	const char	*p;
-
-	if( !string ) return 0;
-
-	len = 0;
-	p = string;
-
-	while( *p )
-	{
-		if( IsColorString( p ))
-		{
-			p += 2;
-			continue;
-		}
-		len++;
-		p++;
-	}
-
-	return len;
-}
-
-/*
 ================
 Con_MessageMode_f
 ================
@@ -1596,13 +1565,13 @@ void Key_Console( int key )
 	}
 
 	// console scrolling
-	if( key == K_PGUP )
+	if( key == K_PGUP || key == K_DPAD_UP )
 	{
 		Con_PageUp( 1 );
 		return;
 	}
 
-	if( key == K_PGDN )
+	if( key == K_PGDN || key == K_DPAD_DOWN )
 	{
 		Con_PageDown( 1 );
 		return;
@@ -2098,7 +2067,6 @@ void Con_DrawVersion( void )
 
 	Con_DrawStringLen( curbuild, &stringLen, &charH );
 	start = refState.width - stringLen * 1.05f;
-	stringLen = Con_StringLength( curbuild );
 	height -= charH * 1.05f;
 
 	Con_DrawString( start, height, curbuild, color );

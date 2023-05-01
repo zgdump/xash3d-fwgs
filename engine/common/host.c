@@ -114,6 +114,7 @@ void Sys_PrintUsage( void )
 #if XASH_WIN32
 	O("-noavi           ","disable AVI support")
 	O("-nointro         ","disable intro video")
+	O("-minidumps       ","enable writing minidumps when game crashed")
 #endif // XASH_WIN32
 
 #if XASH_DOS
@@ -345,10 +346,10 @@ void Host_ChangeGame_f( void )
 	}
 	else
 	{
-		const char *arg1 = va( "%s", Cmd_Argv( 1 ));
-		const char *arg2 = va( "change game to '%s'", FI->games[i]->title );
+		char finalmsg[MAX_VA_STRING];
 
-		Host_NewInstance( arg1, arg2 );
+		Q_snprintf( finalmsg, sizeof( finalmsg ), "change game to '%s'", FI->games[i]->title );
+		Host_NewInstance( Cmd_Argv( 1 ), finalmsg );
 	}
 }
 
@@ -383,9 +384,11 @@ void Host_Exec_f( void )
 			"pyro.cfg", "spy.cfg", "engineer.cfg", "civilian.cfg"
 		};
 		int i;
+		char temp[MAX_VA_STRING];
 		qboolean allow = false;
 
-		unprivilegedWhitelist[0] = va( "%s.cfg", clgame.mapname );
+		Q_snprintf( temp, sizeof( temp ), "%s.cfg", clgame.mapname );
+		unprivilegedWhitelist[0] = temp;
 
 		for( i = 0; i < ARRAYSIZE( unprivilegedWhitelist ); i++ )
 		{
@@ -412,7 +415,7 @@ void Host_Exec_f( void )
 	}
 
 	Q_strncpy( cfgpath, arg, sizeof( cfgpath ));
-	COM_DefaultExtension( cfgpath, ".cfg" ); // append as default
+	COM_DefaultExtension( cfgpath, ".cfg", sizeof( cfgpath )); // append as default
 
 	f = FS_LoadFile( cfgpath, &len, false );
 	if( !f )
@@ -506,7 +509,7 @@ qboolean Host_RegisterDecal( const char *name, int *count )
 	if( !COM_CheckString( name ))
 		return 0;
 
-	COM_FileBase( name, shortname );
+	COM_FileBase( name, shortname, sizeof( shortname ));
 
 	for( i = 1; i < MAX_DECALS && host.draw_decals[i][0]; i++ )
 	{
@@ -730,7 +733,7 @@ void GAME_EXPORT Host_Error( const char *error, ... )
 	va_list		argptr;
 
 	va_start( argptr, error );
-	Q_vsprintf( hosterror1, error, argptr );
+	Q_vsnprintf( hosterror1, sizeof( hosterror1 ), error, argptr );
 	va_end( argptr );
 
 	CL_WriteMessageHistory (); // before Q_error call
@@ -766,7 +769,7 @@ void GAME_EXPORT Host_Error( const char *error, ... )
 	recursive = true;
 	Q_strncpy( hosterror2, hosterror1, MAX_SYSPATH );
 	host.errorframe = host.framecount; // to avoid multply calls per frame
-	Q_sprintf( host.finalmsg, "Server crashed: %s", hosterror1 );
+	Q_snprintf( host.finalmsg, sizeof( host.finalmsg ), "Server crashed: %s", hosterror1 );
 
 	// clearing cmd buffer to prevent execute any commands
 	COM_InitHostState();
@@ -826,7 +829,7 @@ void Host_Userconfigd_f( void )
 
 	for( i = 0; i < t->numfilenames; i++ )
 	{
-		Cbuf_AddText( va("exec %s\n", t->filenames[i] ) );
+		Cbuf_AddTextf( "exec %s\n", t->filenames[i] );
 	}
 
 	Mem_Free( t );
@@ -1015,6 +1018,12 @@ void Host_InitCommon( int argc, char **argv, const char *progname, qboolean bCha
 #if TARGET_OS_IOS
 		const char *IOS_GetDocsDir();
 		Q_strncpy( host.rootdir, IOS_GetDocsDir(), sizeof(host.rootdir) );
+#elif XASH_PSVITA
+		if ( !PSVita_GetBasePath( host.rootdir, sizeof( host.rootdir ) ) )
+		{
+			Sys_Error( "couldn't find xash3d data directory" );
+			host.rootdir[0] = 0;
+		}
 #elif (XASH_SDL == 2) && !XASH_NSWITCH // GetBasePath not impl'd in switch-sdl2
 		char *szBasePath;
 
@@ -1166,10 +1175,10 @@ int EXPORT Host_Main( int argc, char **argv, const char *progname, int bChangeGa
 	con_gamemaps = Cvar_Get( "con_mapfilter", "1", FCVAR_ARCHIVE, "when true show only maps in game folder" );
 	Cvar_RegisterVariable( &sys_timescale );
 
-	build = Cvar_Get( "buildnum", va( "%i", Q_buildnum_compat()), FCVAR_READ_ONLY, "returns a current build number" );
-	ver = Cvar_Get( "ver", va( "%i/%s (hw build %i)", PROTOCOL_VERSION, XASH_COMPAT_VERSION, Q_buildnum_compat()), FCVAR_READ_ONLY, "shows an engine version" );
-	Cvar_Get( "host_ver", va( "%i " XASH_VERSION " %s %s %s", Q_buildnum(), Q_buildos(), Q_buildarch(), Q_buildcommit() ), FCVAR_READ_ONLY, "detailed info about this build" );
-	Cvar_Get( "host_lowmemorymode", va( "%i", XASH_LOW_MEMORY ), FCVAR_READ_ONLY, "indicates if engine compiled for low RAM consumption (0 - normal, 1 - low engine limits, 2 - low protocol limits)" );
+	build = Cvar_Getf( "buildnum", FCVAR_READ_ONLY, "returns a current build number", "%i", Q_buildnum_compat());
+	ver = Cvar_Getf( "ver", FCVAR_READ_ONLY, "shows an engine version", "%i/%s (hw build %i)", PROTOCOL_VERSION, XASH_COMPAT_VERSION, Q_buildnum_compat());
+	Cvar_Getf( "host_ver", FCVAR_READ_ONLY, "detailed info about this build", "%i " XASH_VERSION " %s %s %s", Q_buildnum(), Q_buildos(), Q_buildarch(), Q_buildcommit());
+	Cvar_Getf( "host_lowmemorymode", FCVAR_READ_ONLY, "indicates if engine compiled for low RAM consumption (0 - normal, 1 - low engine limits, 2 - low protocol limits)", "%i", XASH_LOW_MEMORY );
 
 	Mod_Init();
 	NET_Init();
@@ -1204,6 +1213,8 @@ int EXPORT Host_Main( int argc, char **argv, const char *progname, int bChangeGa
 	}
 	else Cmd_AddRestrictedCommand( "minimize", Host_Minimize_f, "minimize main window to tray" );
 
+	HPAK_CheckIntegrity( CUSTOM_RES_PATH );
+
 	host.errorframe = 0;
 
 	// post initializations
@@ -1214,7 +1225,7 @@ int EXPORT Host_Main( int argc, char **argv, const char *progname, int bChangeGa
 		Wcon_ShowConsole( false ); // hide console
 #endif
 		// execute startup config and cmdline
-		Cbuf_AddText( va( "exec %s.rc\n", SI.rcName ));
+		Cbuf_AddTextf( "exec %s.rc\n", SI.rcName );
 		Cbuf_Execute();
 		if( !host.config_executed )
 		{
@@ -1248,7 +1259,7 @@ int EXPORT Host_Main( int argc, char **argv, const char *progname, int bChangeGa
 
 		// execute server.cfg after commandline
 		// so we have a chance to set servercfgfile
-		Cbuf_AddText( va( "exec %s\n", Cvar_VariableString( "servercfgfile" )));
+		Cbuf_AddTextf( "exec %s\n", Cvar_VariableString( "servercfgfile" ));
 		Cbuf_Execute();
 	}
 

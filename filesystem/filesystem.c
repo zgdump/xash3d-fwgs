@@ -1,6 +1,9 @@
 /*
 filesystem.c - game filesystem based on DP fs
+Copyright (C) 2003-2006 Mathieu Olivier
+Copyright (C) 2000-2007 DarkPlaces contributors
 Copyright (C) 2007 Uncle Mike
+Copyright (C) 2015-2023 Xash3D FWGS contributors
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -30,9 +33,6 @@ GNU General Public License for more details.
 #endif
 #include <stdio.h>
 #include <stdarg.h>
-#if XASH_LINUX
-#include <sys/inotify.h>
-#endif
 #include "port.h"
 #include "const.h"
 #include "crtlib.h"
@@ -655,7 +655,7 @@ void FS_ParseGenericGameInfo( gameinfo_t *GameInfo, const char *buf, const qbool
 		{
 			pfile = COM_ParseFile( pfile, GameInfo->iconpath, sizeof( GameInfo->iconpath ));
 			COM_FixSlashes( GameInfo->iconpath );
-			COM_DefaultExtension( GameInfo->iconpath, ".ico" );
+			COM_DefaultExtension( GameInfo->iconpath, ".ico", sizeof( GameInfo->iconpath ));
 		}
 		else if( !Q_stricmp( token, "type" ))
 		{
@@ -819,7 +819,8 @@ void FS_ParseGenericGameInfo( gameinfo_t *GameInfo, const char *buf, const qbool
 	}
 
 	// make sure what gamedir is really exist
-	if( !FS_SysFolderExists( va( "%s/%s", fs_rootdir, GameInfo->falldir )))
+	Q_snprintf( token, sizeof( token ), "%s/%s", fs_rootdir, GameInfo->falldir );
+	if( !FS_SysFolderExists( token ))
 		GameInfo->falldir[0] = '\0';
 }
 
@@ -906,26 +907,55 @@ static qboolean FS_ReadGameInfo( const char *filepath, const char *gamedir, game
 
 /*
 ================
-FS_CheckForGameDir
+FS_CheckForQuakeGameDir
+
+Checks if game directory resembles Quake Engine game directory
+(some of checks may as well work with Xash gamedirs, it's not a bug)
 ================
 */
-static qboolean FS_CheckForGameDir( const char *gamedir )
+static qboolean FS_CheckForQuakeGameDir( const char *gamedir, qboolean direct )
 {
-	// if directory contain config.cfg it's 100% gamedir
-	if( FS_FileExists( va( "%s/config.cfg", gamedir ), false ))
-		return true;
-
-	// if directory contain progs.dat it's 100% gamedir
-	if( FS_FileExists( va( "%s/progs.dat", gamedir ), false ))
-		return true;
-
+	// if directory contain config.cfg or progs.dat it's 100% gamedir
 	// quake mods probably always archived but can missed config.cfg before first running
-	if( FS_FileExists( va( "%s/pak0.pak", gamedir ), false ))
-		return true;
+	const char *files[] = { "config.cfg", "progs.dat", "pak0.pak" };
+	int i;
 
-	// NOTE; adds here some additional checks if you wished
+	for( i = 0; i < sizeof( files ) / sizeof( files[0] ); i++ )
+	{
+		char	buf[MAX_VA_STRING];
+
+		Q_snprintf( buf, sizeof( buf ), "%s/%s", gamedir, files[i] );
+		if( direct ? FS_SysFileExists( buf ) : FS_FileExists( buf, false ))
+			return true;
+	}
 
 	return false;
+}
+
+/*
+===============
+FS_CheckForXashGameDir
+
+Checks if game directory resembles Xash3D game directory
+===============
+*/
+static qboolean FS_CheckForXashGameDir( const char *gamedir, qboolean direct )
+{
+	// if directory contain gameinfo.txt or liblist.gam it's 100% gamedir
+	const char *files[] = { "gameinfo.txt", "liblist.gam" };
+	int i;
+
+	for( i = 0; i < sizeof( files ) / sizeof( files[0] ); i++ )
+	{
+		char	buf[MAX_SYSPATH];
+
+		Q_snprintf( buf, sizeof( buf ), "%s/%s", gamedir, files[i] );
+		if( direct ? FS_SysFileExists( buf ) : FS_FileExists( buf, false ))
+			return true;
+	}
+
+	return false;
+
 }
 
 /*
@@ -984,7 +1014,7 @@ static qboolean FS_ParseGameInfo( const char *gamedir, gameinfo_t *GameInfo )
 		FS_ConvertGameInfo( gamedir, gameinfo_path, liblist_path );
 
 	// force to create gameinfo for specified game if missing
-	if(( FS_CheckForGameDir( gamedir ) || !Q_stricmp( fs_gamedir, gamedir )) && !FS_FileExists( gameinfo_path, false ))
+	if(( FS_CheckForQuakeGameDir( gamedir, false ) || !Q_stricmp( fs_gamedir, gamedir )) && !FS_FileExists( gameinfo_path, false ))
 	{
 		gameinfo_t tmpGameInfo;
 		memset( &tmpGameInfo, 0, sizeof( tmpGameInfo ));
@@ -1014,6 +1044,7 @@ void FS_AddGameHierarchy( const char *dir, uint flags )
 {
 	int i;
 	qboolean isGameDir = flags & FS_GAMEDIR_PATH;
+	char buf[MAX_VA_STRING];
 
 	GI->added = true;
 
@@ -1046,15 +1077,23 @@ void FS_AddGameHierarchy( const char *dir, uint flags )
 			newFlags |= FS_GAMERODIR_PATH;
 
 		FS_AllowDirectPaths( true );
-		FS_AddGameDirectory( va( "%s/%s/", fs_rodir, dir ), newFlags );
+		Q_snprintf( buf, sizeof( buf ), "%s/%s/", fs_rodir, dir );
+		FS_AddGameDirectory( buf, newFlags );
 		FS_AllowDirectPaths( false );
 	}
 
 	if( isGameDir )
-		FS_AddGameDirectory( va( "%s/downloaded/", dir ), FS_NOWRITE_PATH | FS_CUSTOM_PATH );
-	FS_AddGameDirectory( va( "%s/", dir ), flags );
+	{
+		Q_snprintf( buf, sizeof( buf ), "%s/downloaded/", dir );
+		FS_AddGameDirectory( buf, FS_NOWRITE_PATH | FS_CUSTOM_PATH );
+	}
+	Q_snprintf( buf, sizeof( buf ), "%s/", dir );
+	FS_AddGameDirectory( buf, flags );
 	if( isGameDir )
-		FS_AddGameDirectory( va( "%s/custom/", dir ), FS_NOWRITE_PATH | FS_CUSTOM_PATH );
+	{
+		Q_snprintf( buf, sizeof( buf ), "%s/custom/", dir );
+		FS_AddGameDirectory( buf, FS_NOWRITE_PATH | FS_CUSTOM_PATH );
+	}
 }
 
 /*
@@ -1072,8 +1111,12 @@ void FS_Rescan( void )
 
 #if XASH_IOS
 	{
-		FS_AddPak_Fullpath( va( "%sextras.pak", SDL_GetBasePath() ), NULL, extrasFlags );
-		FS_AddPak_Fullpath( va( "%sextras_%s.pak", SDL_GetBasePath(), GI->gamefolder ), NULL, extrasFlags );
+		char buf[MAX_VA_STRING];
+
+		Q_snprintf( buf, sizeof( buf ), "%sextras.pak", SDL_GetBasePath() );
+		FS_AddPak_Fullpath( buf, NULL, extrasFlags );
+		Q_snprintf( buf, sizeof( buf ), "%sextras_%s.pak", SDL_GetBasePath(), GI->gamefolder );
+		FS_AddPak_Fullpath( buf, NULL, extrasFlags );
 	}
 #else
 	str = getenv( "XASH3D_EXTRAS_PAK1" );
@@ -1107,7 +1150,7 @@ void FS_LoadGameInfo( const char *rootfolder )
 	// lock uplevel of gamedir for read\write
 	fs_ext_path = false;
 
-	if( rootfolder ) Q_strcpy( fs_gamedir, rootfolder );
+	if( rootfolder ) Q_strncpy( fs_gamedir, rootfolder, sizeof( fs_gamedir ));
 	Con_Reportf( "FS_LoadGameInfo( %s )\n", fs_gamedir );
 
 	// clear any old pathes
@@ -1186,7 +1229,7 @@ static qboolean FS_FindLibrary( const char *dllname, qboolean directpath, fs_dll
 	}
 	dllInfo->shortPath[i] = '\0';
 
-	COM_DefaultExtension( dllInfo->shortPath, "."OS_LIB_EXT );	// apply ext if forget
+	COM_DefaultExtension( dllInfo->shortPath, "."OS_LIB_EXT, sizeof( dllInfo->shortPath ));	// apply ext if forget
 
 	search = FS_FindFile( dllInfo->shortPath, &index, NULL, 0, false );
 
@@ -1293,6 +1336,7 @@ qboolean FS_InitStdio( qboolean caseinsensitive, const char *rootdir, const char
 	qboolean		hasBaseDir = false;
 	qboolean		hasGameDir = false;
 	int		i;
+	char		buf[MAX_VA_STRING];
 
 	FS_InitMemory();
 #if !XASH_WIN32
@@ -1320,17 +1364,21 @@ qboolean FS_InitStdio( qboolean caseinsensitive, const char *rootdir, const char
 		for( i = 0; i < dirs.numstrings; i++ )
 		{
 			char roPath[MAX_SYSPATH];
-			char rwPath[MAX_SYSPATH];
 
 			Q_snprintf( roPath, sizeof( roPath ), "%s/%s/", fs_rodir, dirs.strings[i] );
-			Q_snprintf( rwPath, sizeof( rwPath ), "%s/%s/", fs_rootdir, dirs.strings[i] );
 
 			// check if it's a directory
 			if( !FS_SysFolderExists( roPath ))
 				continue;
 
-			// no need to check folders here, FS_CreatePath will not fail
-			FS_CreatePath( rwPath );
+			// check if it's gamedir
+			if( FS_CheckForXashGameDir( roPath, true ) || FS_CheckForQuakeGameDir( roPath, true ))
+			{
+				char rwPath[MAX_SYSPATH];
+
+				Q_snprintf( rwPath, sizeof( rwPath ), "%s/%s/", fs_rootdir, dirs.strings[i] );
+				FS_CreatePath( rwPath );
+			}
 		}
 
 		stringlistfreecontents( &dirs );
@@ -1358,7 +1406,10 @@ qboolean FS_InitStdio( qboolean caseinsensitive, const char *rootdir, const char
 
 	// build list of game directories here
 	if( COM_CheckStringEmpty( fs_rodir ))
-		FS_AddGameDirectory( va( "%s/", fs_rodir ), FS_STATIC_PATH|FS_NOWRITE_PATH );
+	{
+		Q_snprintf( buf, sizeof( buf ), "%s/", fs_rodir );
+		FS_AddGameDirectory( buf, FS_STATIC_PATH|FS_NOWRITE_PATH );
+	}
 	FS_AddGameDirectory( "./", FS_STATIC_PATH );
 
 	for( i = 0; i < dirs.numstrings; i++ )
@@ -2013,7 +2064,7 @@ int FS_VPrintf( file_t *file, const char *format, va_list ap )
 	while( 1 )
 	{
 		tempbuff = (char *)Mem_Malloc( fs_mempool, buff_size );
-		len = Q_vsprintf( tempbuff, format, ap );
+		len = Q_vsnprintf( tempbuff, buff_size, format, ap );
 
 		if( len >= 0 && len < buff_size )
 			break;
@@ -2052,7 +2103,7 @@ FS_UnGetc
 Put a character back into the read buffer (only supports one character!)
 ====================
 */
-int FS_UnGetc( file_t *file, byte c )
+int FS_UnGetc( file_t *file, char c )
 {
 	// If there's already a character waiting to be read
 	if( file->ungetc != EOF )
@@ -2069,7 +2120,7 @@ FS_Gets
 Same as fgets
 ====================
 */
-int FS_Gets( file_t *file, byte *string, size_t bufsize )
+int FS_Gets( file_t *file, char *string, size_t bufsize )
 {
 	int	c, end = 0;
 
@@ -2091,7 +2142,7 @@ int FS_Gets( file_t *file, byte *string, size_t bufsize )
 		c = FS_Getc( file );
 
 		if( c != '\n' )
-			FS_UnGetc( file, (byte)c );
+			FS_UnGetc( file, c );
 	}
 
 	return c;

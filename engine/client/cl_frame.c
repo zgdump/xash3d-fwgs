@@ -241,7 +241,7 @@ CL_GetStudioEstimatedFrame
 
 ====================
 */
-float CL_GetStudioEstimatedFrame( cl_entity_t *ent )
+static float CL_GetStudioEstimatedFrame( cl_entity_t *ent )
 {
 	studiohdr_t	*pstudiohdr;
 	mstudioseqdesc_t	*pseqdesc;
@@ -255,7 +255,7 @@ float CL_GetStudioEstimatedFrame( cl_entity_t *ent )
 		{
 			sequence = bound( 0, ent->curstate.sequence, pstudiohdr->numseq - 1 );
 			pseqdesc = (mstudioseqdesc_t *)((byte *)pstudiohdr + pstudiohdr->seqindex) + sequence;
-			return ref.dllFuncs.R_StudioEstimateFrame( ent, pseqdesc );
+			return ref.dllFuncs.R_StudioEstimateFrame( ent, pseqdesc, cl.time );
 		}
 	}
 
@@ -654,6 +654,24 @@ FRAME PARSING
 
 =========================================================================
 */
+static qboolean CL_ParseEntityNumFromPacket( sizebuf_t *msg, int *newnum )
+{
+	if( cls.legacymode )
+	{
+		*newnum = MSG_ReadWord( msg );
+		if( *newnum == 0 )
+			return false;
+	}
+	else
+	{
+		*newnum = MSG_ReadUBitLong( msg, MAX_ENTITY_BITS );
+		if( *newnum == LAST_EDICT )
+			return false;
+	}
+
+	return true;
+}
+
 /*
 =================
 CL_FlushEntityPacket
@@ -674,8 +692,8 @@ void CL_FlushEntityPacket( sizebuf_t *msg )
 	// read it all, but ignore it
 	while( 1 )
 	{
-		newnum = MSG_ReadUBitLong( msg, MAX_ENTITY_BITS );
-		if( newnum == LAST_EDICT ) break; // done
+		if( !CL_ParseEntityNumFromPacket( msg, &newnum ))
+			break; // done
 
 		if( MSG_CheckOverflow( msg ))
 			Host_Error( "CL_FlushEntityPacket: overflow\n" );
@@ -847,21 +865,12 @@ int CL_ParsePacketEntities( sizebuf_t *msg, qboolean delta )
 
 	while( 1 )
 	{
-		int lastedict;
-		if( cls.legacymode )
-		{
-			newnum = MSG_ReadWord( msg );
-			lastedict = 0;
-		}
-		else
-		{
-			newnum = MSG_ReadUBitLong( msg, MAX_ENTITY_BITS );
-			lastedict = LAST_EDICT;
-		}
+		if( !CL_ParseEntityNumFromPacket( msg, &newnum ))
+			break; // done
 
-		if( newnum == lastedict ) break; // end of packet entities
 		if( MSG_CheckOverflow( msg ))
 			Host_Error( "CL_ParsePacketEntities: overflow\n" );
+
 		player = CL_IsPlayerIndex( newnum );
 
 		while( oldnum < newnum )
@@ -970,8 +979,24 @@ all the visible entities should pass this filter
 */
 qboolean CL_AddVisibleEntity( cl_entity_t *ent, int entityType )
 {
+	qboolean draw_player = true;
+
 	if( !ent || !ent->model )
 		return false;
+
+	// don't add the player in firstperson mode
+	if( RP_LOCALCLIENT( ent ))
+	{
+		cl.local.apply_effects = true;
+
+		if( !CL_IsThirdPerson( ) && ( ent->index == cl.viewentity ))
+		{
+			// we don't draw player in default renderer in firstperson mode
+			// but let the client.dll know about player entity anyway
+			// for use in custom renderers
+			draw_player = false;
+		}
+	}
 
 	// check for adding this entity
 	if( !clgame.dllFuncs.pfnAddEntity( entityType, ent, ent->model->name ))
@@ -982,14 +1007,8 @@ qboolean CL_AddVisibleEntity( cl_entity_t *ent, int entityType )
 		return false;
 	}
 
-	// don't add the player in firstperson mode
-	if( RP_LOCALCLIENT( ent ))
-	{
-		cl.local.apply_effects = true;
-
-		if( !CL_IsThirdPerson( ) && ( ent->index == cl.viewentity ))
-			return false;
-	}
+	if( !draw_player )
+		return false;
 
 	if( entityType == ET_BEAM )
 	{

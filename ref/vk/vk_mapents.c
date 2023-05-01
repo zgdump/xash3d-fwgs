@@ -209,7 +209,7 @@ static void fillLightFromProps( vk_light_entity_t *le, const entity_props_t *pro
 	}
 
 	if (have_fields & Field_target)
-		Q_strcpy(le->target_entity, props->target);
+		Q_strncpy( le->target_entity, props->target, sizeof( le->target_entity ));
 
 	if (have_fields & Field_origin)
 		VectorCopy(props->origin, le->origin);
@@ -317,7 +317,7 @@ static void addTargetEntity( const entity_props_t *props ) {
 		return;
 	}
 
-	Q_strcpy(target->targetname, props->targetname);
+	Q_strncpy( target->targetname, props->targetname, sizeof( target->targetname ));
 	VectorCopy(props->origin, target->origin);
 
 	g_map_entities.refs[g_map_entities.entity_count] = (xvk_mapent_ref_t){
@@ -329,7 +329,7 @@ static void addTargetEntity( const entity_props_t *props ) {
 }
 
 static void readWorldspawn( const entity_props_t *props ) {
-	Q_strcpy(g_map_entities.wadlist, props->wad);
+	Q_strncpy( g_map_entities.wadlist, props->wad, sizeof( g_map_entities.wadlist ));
 	g_map_entities.refs[g_map_entities.entity_count] = (xvk_mapent_ref_t){
 		.class = Worldspawn,
 		.index = -1,
@@ -348,7 +348,7 @@ static void readFuncWall( const entity_props_t *const props, uint32_t have_field
 
 	*e = (xvk_mapent_func_wall_t){0};
 
-	Q_strcpy(e->model, props->model);
+	Q_strncpy( e->model, props->model, sizeof( e->model ));
 
 	/* NOTE: not used
 	e->rendercolor.r = 255;

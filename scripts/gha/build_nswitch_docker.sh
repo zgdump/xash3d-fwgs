@@ -6,9 +6,10 @@ build_hlsdk()
 {
 	echo "Building HLSDK: $1 branch..."
 	git checkout $1
-	./waf configure -T release --nswitch || die_configure
+
+	# This is not our bug if HLSDK doesn't build with -Werrors enabled
+	./waf configure -T release --nswitch --disable-werror || die_configure
 	./waf build install --destdir=../pkgtemp/xash3d || die
-	./waf clean
 }
 
 echo "Setting up environment..."
@@ -44,8 +45,7 @@ echo "Building engine..."
 
 echo "Building HLSDK..."
 
-# TODO: replace with hlsdk-portable when PRs are merged
-pushd hlsdk-portable
+pushd hlsdk-portable || die
 build_hlsdk mobile_hacks valve
 build_hlsdk opfor gearbox
 build_hlsdk bshift bshift
