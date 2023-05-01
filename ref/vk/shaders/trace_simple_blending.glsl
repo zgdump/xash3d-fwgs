@@ -49,8 +49,12 @@ void traceSimpleBlending(vec3 pos, vec3 dir, float L, inout vec3 emissive, inout
 		}
 #else
 		const vec4 texture_color = texture(textures[nonuniformEXT(kusok.material.tex_base_color)], geom.uv);
-		float alpha = texture_color.a * kusok.model.color.a * geom.vertex_color.a;
-		vec3 color = kusok.model.color.rgb * texture_color.rgb * SRGBtoLINEAR(geom.vertex_color.rgb) * alpha;
+
+		// "Linearizing" alpha, while looking weird conceptually in the code, is necessary to make it look close to the original.
+		// TODO figure out whether texture alpha needs to be linearized too. Don't have good examples to look at.
+		// TODO this also makes sprites look dull, so likely kusok.model.color linearization should only apply to brush models, not sprites. This is better done when passing brush model to ray tracer.
+		float alpha = SRGBtoLINEAR(texture_color.a * kusok.model.color.a) * geom.vertex_color.a;
+		vec3 color = kusok.model.color.rgb * SRGBtoLINEAR(texture_color.rgb) * geom.vertex_color.rgb * alpha;
 
 		if (kusok.material.mode == MATERIAL_MODE_BLEND_GLOW) {
 			// Glow is additive + small overshoot
