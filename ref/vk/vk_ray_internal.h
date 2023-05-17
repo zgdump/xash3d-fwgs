@@ -4,7 +4,7 @@
 #include "vk_buffer.h"
 #include "vk_const.h"
 
-#define MAX_ACCELS 2048
+#define MAX_INSTANCES 2048
 #define MAX_KUSOCHKI 32768
 #define MODEL_CACHE_SIZE 2048
 
@@ -32,11 +32,11 @@ typedef struct vk_ray_model_s {
 
 typedef struct Kusok vk_kusok_data_t;
 
-typedef struct {
+typedef struct rt_draw_instance_s {
 	matrix3x4 transform_row;
 	vk_ray_model_t *model;
 	uint32_t material_mode; // MATERIAL_MODE_ from ray_interop.h
-} vk_ray_draw_model_t;
+} rt_draw_instance_t;
 
 typedef struct {
 	const char *debug_name;
@@ -66,9 +66,9 @@ typedef struct {
 
 	// Per-frame data that is accumulated between RayFrameBegin and End calls
 	struct {
-		int num_models;
-		int num_lighttextures;
-		vk_ray_draw_model_t models[MAX_ACCELS];
+		rt_draw_instance_t instances[MAX_INSTANCES];
+		int instances_count;
+
 		uint32_t scratch_offset; // for building dynamic blases
 	} frame;
 

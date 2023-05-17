@@ -84,77 +84,6 @@ static vk_ray_model_t *getModelFromCache(int num_geoms, int max_prims, const VkA
 	return model;
 }
 
-static void assertNoOverlap( uint32_t o1, uint32_t s1, uint32_t o2, uint32_t s2 ) {
-	uint32_t min_offset, min_size;
-	uint32_t max_offset;
-
-	if (o1 < o2) {
-		min_offset = o1;
-		min_size = s1;
-		max_offset = o2;
-	} else {
-		min_offset = o2;
-		min_size = s2;
-		max_offset = o1;
-	}
-
-	ASSERT(min_offset + min_size <= max_offset);
-}
-
-static void validateModelPair( const vk_ray_model_t *m1, const vk_ray_model_t *m2 ) {
-	if (m1 == m2) return;
-	if (!m2->num_geoms) return;
-	assertNoOverlap(m1->debug.as_offset, m1->size, m2->debug.as_offset, m2->size);
-	if (m1->taken && m2->taken)
-		assertNoOverlap(m1->kusochki_offset, m1->num_geoms, m2->kusochki_offset, m2->num_geoms);
-}
-
-static void validateModel( const vk_ray_model_t *model ) {
-	for (int j = 0; j < ARRAYSIZE(g_ray_model_state.models_cache); ++j) {
-		validateModelPair(model, g_ray_model_state.models_cache + j);
-	}
-}
-
-static void validateModels( void ) {
-	for (int i = 0; i < ARRAYSIZE(g_ray_model_state.models_cache); ++i) {
-		validateModel(g_ray_model_state.models_cache + i);
-	}
-}
-
-void XVK_RayModel_Validate( void ) {
-	const vk_kusok_data_t* kusochki = g_ray_model_state.kusochki_buffer.mapped;
-	ASSERT(g_ray_model_state.frame.num_models <= ARRAYSIZE(g_ray_model_state.frame.models));
-	for (int i = 0; i < g_ray_model_state.frame.num_models; ++i) {
-		const vk_ray_draw_model_t *draw_model = g_ray_model_state.frame.models + i;
-		const vk_ray_model_t *model = draw_model->model;
-		int num_geoms = 1; // TODO can't validate non-dynamic models because this info is lost
-		ASSERT(model);
-		ASSERT(model->as != VK_NULL_HANDLE);
-		ASSERT(model->kusochki_offset < MAX_KUSOCHKI);
-		ASSERT(model->geoms);
-		ASSERT(model->num_geoms > 0);
-		ASSERT(model->taken);
-		num_geoms = model->num_geoms;
-
-		for (int j = 0; j < num_geoms; j++) {
-			const vk_kusok_data_t *kusok = kusochki + j;
-			const vk_texture_t *tex = findTexture(kusok->material.tex_base_color);
-			ASSERT(tex);
-			ASSERT(tex->vk.image.view != VK_NULL_HANDLE);
-
-			// uint32_t index_offset;
-			// uint32_t vertex_offset;
-			// uint32_t triangles;
-		}
-
-		// Check for as model memory aliasing
-		for (int j = 0; j < g_ray_model_state.frame.num_models; ++j) {
-			const vk_ray_model_t *model2 = g_ray_model_state.frame.models[j].model;
-			validateModelPair(model, model2);
-		}
-	}
-}
-
 static void applyMaterialToKusok(vk_kusok_data_t* kusok, const vk_render_geometry_t *geom) {
 	const xvk_material_t *const mat = XVK_GetMaterialForTextureIndex( geom->texture );
 	ASSERT(mat);
@@ -295,9 +224,6 @@ vk_ray_model_t* VK_RayModelCreate( vk_ray_model_init_t args ) {
 				ray_model->material_mode = -1;
 				Vector4Set(ray_model->color, 1, 1, 1, 1);
 				Matrix4x4_LoadIdentity(ray_model->prev_transform);
-
-				if (vk_core.debug)
-					validateModel(ray_model);
 			}
 		}
 	}
@@ -422,19 +348,21 @@ static qboolean uploadKusochki(const vk_ray_model_t *const model, const vk_rende
 }
 
 void VK_RayFrameAddModel( vk_ray_model_t *model, const vk_render_model_t *render_model) {
-	vk_ray_draw_model_t* draw_model = g_ray_model_state.frame.models + g_ray_model_state.frame.num_models;
+	rt_draw_instance_t* draw_instance = g_ray_model_state.frame.instances + g_ray_model_state.frame.instances_count;
 
 	ASSERT(vk_core.rtx);
-	ASSERT(g_ray_model_state.frame.num_models <= ARRAYSIZE(g_ray_model_state.frame.models));
+	ASSERT(g_ray_model_state.frame.instances_count <= ARRAYSIZE(g_ray_model_state.frame.instances));
 	ASSERT(model->num_geoms == render_model->num_geometries);
 
-	if (g_ray_model_state.frame.num_models == ARRAYSIZE(g_ray_model_state.frame.models)) {
+	if (g_ray_model_state.frame.instances_count == ARRAYSIZE(g_ray_model_state.frame.instances)) {
 		gEngine.Con_Printf(S_ERROR "Ran out of AccelerationStructure slots\n");
 		return;
 	}
 
 	ASSERT(model->as != VK_NULL_HANDLE);
 
+	// TODO this material mapping is context dependent. I.e. different entity types might need different ray tracing behaviours for
+	// same render_mode/type and even texture.
 	uint32_t material_mode = MATERIAL_MODE_OPAQUE;
 	switch (render_model->render_type) {
 		case kVkRenderTypeSolid:
@@ -461,16 +389,11 @@ void VK_RayFrameAddModel( vk_ray_model_t *model, const vk_render_model_t *render
 	}
 
 	// Re-upload kusochki if needed
-	// TODO all of this will not be required when model data is split out from Kusok struct
+	// TODO all of this can be removed. We just need to make sure that kusochki have been uploaded once (for static models).
 #define Vector4Compare(v1,v2) ((v1)[0]==(v2)[0] && (v1)[1]==(v2)[1] && (v1)[2]==(v2)[2] && (v1)[3]==(v2)[3])
 	const qboolean upload_kusochki = (model->material_mode != material_mode
 			|| !Vector4Compare(model->color, render_model->color)
 			|| memcmp(model->prev_transform, render_model->prev_transform, sizeof(matrix4x4)) != 0);
-
-// TODO optimize:
-// - collect list of geoms for which we could update anything (animated textues, uvs, etc)
-// - update only those through staging
-// - also consider tracking whether the main model color has changed (that'd need to update everything yay)
 
 	if (upload_kusochki) {
 		model->material_mode = material_mode;
@@ -491,11 +414,11 @@ void VK_RayFrameAddModel( vk_ray_model_t *model, const vk_render_model_t *render
 		RT_LightAddPolygon(polylight);
 	}
 
-	draw_model->model = model;
-	draw_model->material_mode = material_mode;
-	Matrix3x4_Copy(draw_model->transform_row, render_model->transform);
+	draw_instance->model = model;
+	draw_instance->material_mode = material_mode;
+	Matrix3x4_Copy(draw_instance->transform_row, render_model->transform);
 
-	g_ray_model_state.frame.num_models++;
+	g_ray_model_state.frame.instances_count++;
 }
 
 void RT_RayModel_Clear(void) {
@@ -507,18 +430,18 @@ void XVK_RayModel_ClearForNextFrame( void ) {
 	// currently framectl waits for the queue to complete before returning
 	// so we can be sure here that previous frame is complete and we're free to
 	// destroy/reuse dynamic ASes from previous frame
-	for (int i = 0; i < g_ray_model_state.frame.num_models; ++i) {
-		vk_ray_draw_model_t *model = g_ray_model_state.frame.models + i;
-		ASSERT(model->model);
+	for (int i = 0; i < g_ray_model_state.frame.instances_count; ++i) {
+		rt_draw_instance_t *instance = g_ray_model_state.frame.instances + i;
+		ASSERT(instance->model);
 
-		if (!model->model->dynamic)
+		if (!instance->model->dynamic)
 			continue;
 
-		returnModelToCache(model->model);
-		model->model = NULL;
+		returnModelToCache(instance->model);
+		instance->model = NULL;
 	}
 
-	g_ray_model_state.frame.num_models = 0;
+	g_ray_model_state.frame.instances_count = 0;
 
 	// TODO N frames in flight
 	// HACK: blas caching requires persistent memory

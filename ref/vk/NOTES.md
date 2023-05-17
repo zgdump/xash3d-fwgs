@@ -69,3 +69,95 @@ However, there are several staging cmdbuf usages which are technically out-of-ba
 	TriGetMatrix,
 	TriFogParams,
 	TriCullFace,
+
+
+# Better BLAS management API
+
+~~
+BLAS:
+- geom_count => kusok.geom/material.size() == geom_count
+
+Model types:
+1. Fully static (brush model w/o animated textures; studio model w/o animations): singleton, fixed geoms and materials, uploaded only once
+2. Semi-static (brush model w/ animated textures): singleton, fixed geoms, may update materials, inplace (e.g. animated textures)
+3. Dynamic (beams, triapi, etc): singleton, may update both geoms and materials, inplace
+4. Template (sprites): used by multiple instances, fixed geom, multiple materials (colors, textures etc) instances/copies
+5. Update-from template (studo models): used by multiple dynamic models, deriving from it wvia BLAS UPDATE, dynamic geom+locations, fixed-ish materials.
+
+API ~
+1. RT_ModelCreate(geometries_count dynamic?static?) -> rt_model + preallocated mem
+2. RT_ModelBuild/Update(geometries[]) -> (blas + kusok.geom[])
+3. RT_ModelUpdateMaterials(model, geometries/textures/materials[]); -> (kusok.material[])
+4. RT_FrameAddModel(model + kusok.geom[] + kusok.material[] + render_type + xform + color)
+
+struct rt_model_s;
+typedef struct {
+	const struct rt_model_s* model;
+	vk_render_type_e render_type;
+	matrix3x4 transform, prev_transform;
+	vec4_t color;
+} rt_frame_add_model_args_t;
+void RT_FrameAddModel( rt_frame_add_model_args_t args );
+~~
+
+
+rt_instance_t/rt_blas_t:
+- VkAS blas
+	- VkASGeometry geom[] -> (vertex+index buffer address)
+	- VkASBuildRangeInfo ranges[] -> (vtxidx buffer offsets)
+	- ~~TODO: updateable: blas[2]? Ping-pong update, cannot do inplace?~~ Nope, can do inplace.
+- kusochki
+	- kusok[]
+		- geometry -> (vtxidx buffer offsets)
+			- TODO roughly the same data as VkASBuildRangeInfo, can reuse?
+		- material (currently embedded in kusok)
+			- static: tex[], scalar[]
+			- semi-dynamic:
+				- (a few) animated tex_base_color
+				- emissive
+					- animated with tex_base_color
+					- individual per-surface patches
+			- TODO: extract as a different modality not congruent with kusok data
+
+Usage cases for the above:
+1. (Fully+semi) static.
+  - Accept geom[] from above with vtx+idx refernces. Consider them static.
+	- Allocate static/fixed blas + kusok data once at map load.
+	- Allocate geom+ranges[] temporarily. Fill them with vtx+idx refs.
+	- Build BLAS (?: how does this work with lazy/deferred BLAS building wrt geom+ranges allocation)
+		- Similar to staging: collect everything + temp data, then commit.
+		- Needs BLAS manager, similar to vk_staging
+	- Generate Kusok data with current geoms and materials
+	- Free geom+ranges
+	- Each frame:
+		- (semi-static only) Update kusochki materials for animated textures
+		- Add blas+kusochki_offset (+dynamic color/xform/mmode) to TLAS
+2. Preallocated dynamic (triapi)
+  - Preallocate for fixed N geoms:
+		- geom+ranges[N].
+		- BLAS for N geometries
+		- kusochki[N]
+	- Each frame:
+		- Fill geom+ranges with geom data fed from outside
+		- Fill kusochki --//--
+		- Fast-Build BLAS as new
+		- Add to TLAS
+3. Dynamic with update (animated studio models, beams)
+	- When a new studio model entity is encountered:
+		- Allocate:
+			- AT FIXED OFFSET: vtx+idx block
+			- geom+ranges[N], BLAS for N, kusochki[N]
+	- Each frame:
+		- Fill geom+ranges with geom data
+		- Fill kusochki --//--
+		- First frame: BLAS as new
+		- Next frames: UPDATE BLAS in-place (depends on fixed offsets for vtx+idx)
+		- Add to TLAS
+4. Instanced (sprites, studio models w/o animations).
+	- Same as static, BUT potentially dynamic and different materials. I.e. have to have per-instance kusochki copies with slightly different material contents.
+	- I.e. each frame
+		- If modifying materials (e.g. different texture for sprites):
+			- allocate temporary (for this frame only) kusochki block
+			- fill geom+material kusochki data
+		- Add to TLAS w/ correct kusochki offset.
+

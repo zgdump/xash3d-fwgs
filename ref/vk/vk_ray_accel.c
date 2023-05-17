@@ -17,7 +17,7 @@ struct rt_vk_ray_accel_s g_accel = {0};
 
 static struct {
 	struct {
-		int blas_count;
+		int instances_count;
 		int accels_built;
 	} stats;
 } g_accel_;
@@ -150,9 +150,9 @@ static void createTlas( vk_combuf_t *combuf, VkDeviceAddress instances_addr ) {
 				},
 		},
 	};
-	const uint32_t tl_max_prim_counts[COUNTOF(tl_geom)] = { MAX_ACCELS }; //cmdbuf == VK_NULL_HANDLE ? MAX_ACCELS : g_ray_model_state.frame.num_models };
+	const uint32_t tl_max_prim_counts[COUNTOF(tl_geom)] = { MAX_INSTANCES }; //cmdbuf == VK_NULL_HANDLE ? MAX_ACCELS : g_ray_model_state.frame.instances_count };
 	const VkAccelerationStructureBuildRangeInfoKHR tl_build_range = {
-		.primitiveCount = g_ray_model_state.frame.num_models,
+		.primitiveCount = g_ray_model_state.frame.instances_count,
 	};
 	const as_build_args_t asrgs = {
 		.geoms = tl_geom,
@@ -172,12 +172,12 @@ static void createTlas( vk_combuf_t *combuf, VkDeviceAddress instances_addr ) {
 }
 
 void RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
-	ASSERT(g_ray_model_state.frame.num_models > 0);
+	ASSERT(g_ray_model_state.frame.instances_count > 0);
 	DEBUG_BEGIN(combuf->cmdbuf, "prepare tlas");
 
 	R_FlippingBuffer_Flip( &g_accel.tlas_geom_buffer_alloc );
 
-	const uint32_t instance_offset = R_FlippingBuffer_Alloc(&g_accel.tlas_geom_buffer_alloc, g_ray_model_state.frame.num_models, 1);
+	const uint32_t instance_offset = R_FlippingBuffer_Alloc(&g_accel.tlas_geom_buffer_alloc, g_ray_model_state.frame.instances_count, 1);
 	ASSERT(instance_offset != ALO_ALLOC_FAILED);
 
 	// Upload all blas instances references to GPU mem
@@ -185,23 +185,23 @@ void RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
 		const vk_staging_region_t headers_lock = R_VkStagingLockForBuffer((vk_staging_buffer_args_t){
 			.buffer = g_ray_model_state.model_headers_buffer.buffer,
 			.offset = 0,
-			.size = g_ray_model_state.frame.num_models * sizeof(struct ModelHeader),
+			.size = g_ray_model_state.frame.instances_count * sizeof(struct ModelHeader),
 			.alignment = 16,
 		});
 
 		ASSERT(headers_lock.ptr);
 
 		VkAccelerationStructureInstanceKHR* inst = ((VkAccelerationStructureInstanceKHR*)g_accel.tlas_geom_buffer.mapped) + instance_offset;
-		for (int i = 0; i < g_ray_model_state.frame.num_models; ++i) {
-			const vk_ray_draw_model_t* const model = g_ray_model_state.frame.models + i;
-			ASSERT(model->model);
-			ASSERT(model->model->as != VK_NULL_HANDLE);
+		for (int i = 0; i < g_ray_model_state.frame.instances_count; ++i) {
+			const rt_draw_instance_t* const instance = g_ray_model_state.frame.instances + i;
+			ASSERT(instance->model);
+			ASSERT(instance->model->as != VK_NULL_HANDLE);
 			inst[i] = (VkAccelerationStructureInstanceKHR){
-				.instanceCustomIndex = model->model->kusochki_offset,
+				.instanceCustomIndex = instance->model->kusochki_offset,
 				.instanceShaderBindingTableRecordOffset = 0,
-				.accelerationStructureReference = getASAddress(model->model->as), // TODO cache this addr
+				.accelerationStructureReference = getASAddress(instance->model->as), // TODO cache this addr
 			};
-			switch (model->material_mode) {
+			switch (instance->material_mode) {
 				case MATERIAL_MODE_OPAQUE:
 					inst[i].mask = GEOMETRY_BIT_OPAQUE;
 					inst[i].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_REGULAR,
@@ -225,21 +225,21 @@ void RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
 					inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR;
 					break;
 				default:
-					gEngine.Host_Error("Unexpected material mode %d\n", model->material_mode);
+					gEngine.Host_Error("Unexpected material mode %d\n", instance->material_mode);
 					break;
 			}
-			memcpy(&inst[i].transform, model->transform_row, sizeof(VkTransformMatrixKHR));
+			memcpy(&inst[i].transform, instance->transform_row, sizeof(VkTransformMatrixKHR));
 
 			struct ModelHeader *const header = ((struct ModelHeader*)headers_lock.ptr) + i;
-			header->mode = model->material_mode;
-			Vector4Copy(model->model->color, header->color);
-			Matrix4x4_ToArrayFloatGL(model->model->prev_transform, (float*)header->prev_transform);
+			header->mode = instance->material_mode;
+			Vector4Copy(instance->model->color, header->color);
+			Matrix4x4_ToArrayFloatGL(instance->model->prev_transform, (float*)header->prev_transform);
 		}
 
 		R_VkStagingUnlock(headers_lock.handle);
 	}
 
-	g_accel_.stats.blas_count = g_ray_model_state.frame.num_models;
+	g_accel_.stats.instances_count = g_ray_model_state.frame.instances_count;
 
 	// Barrier for building all BLASes
 	// BLAS building is now in cmdbuf, need to synchronize with results
@@ -250,7 +250,7 @@ void RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
 			.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR,
 			.buffer = g_accel.accels_buffer.buffer,
 			.offset = instance_offset * sizeof(VkAccelerationStructureInstanceKHR),
-			.size = g_ray_model_state.frame.num_models * sizeof(VkAccelerationStructureInstanceKHR),
+			.size = g_ray_model_state.frame.instances_count * sizeof(VkAccelerationStructureInstanceKHR),
 		}};
 		vkCmdPipelineBarrier(combuf->cmdbuf,
 			VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
@@ -282,7 +282,7 @@ qboolean RT_VkAccelInit(void) {
 	g_accel.scratch_buffer_addr = R_VkBufferGetDeviceAddress(g_accel.scratch_buffer.buffer);
 
 	// TODO this doesn't really need to be host visible, use staging
-	if (!VK_BufferCreate("ray tlas_geom_buffer", &g_accel.tlas_geom_buffer, sizeof(VkAccelerationStructureInstanceKHR) * MAX_ACCELS * 2,
+	if (!VK_BufferCreate("ray tlas_geom_buffer", &g_accel.tlas_geom_buffer, sizeof(VkAccelerationStructureInstanceKHR) * MAX_INSTANCES * 2,
 			VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
 			VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
@@ -290,9 +290,9 @@ qboolean RT_VkAccelInit(void) {
 		return false;
 	}
 	g_accel.tlas_geom_buffer_addr = R_VkBufferGetDeviceAddress(g_accel.tlas_geom_buffer.buffer);
-	R_FlippingBuffer_Init(&g_accel.tlas_geom_buffer_alloc, MAX_ACCELS * 2);
+	R_FlippingBuffer_Init(&g_accel.tlas_geom_buffer_alloc, MAX_INSTANCES * 2);
 
-	R_SpeedsRegisterMetric(&g_accel_.stats.blas_count, "blas_count", kSpeedsMetricCount);
+	R_SpeedsRegisterMetric(&g_accel_.stats.instances_count, "accels_instances_count", kSpeedsMetricCount);
 	R_SpeedsRegisterMetric(&g_accel_.stats.accels_built, "accels_built", kSpeedsMetricCount);
 
 	return true;

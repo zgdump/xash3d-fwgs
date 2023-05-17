@@ -563,7 +563,7 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 
 	ASSERT(g_rtx.mainpipe_out);
 
-	if (g_ray_model_state.frame.num_models == 0) {
+	if (g_ray_model_state.frame.instances_count == 0) {
 		const r_vkimage_blit_args blit_args = {
 			.in_stage = VK_PIPELINE_STAGE_TRANSFER_BIT,
 			.src = {
@@ -641,7 +641,7 @@ qboolean VK_RayInit( void )
 		return false;
 	}
 
-	if (!VK_BufferCreate("model headers", &g_ray_model_state.model_headers_buffer, sizeof(struct ModelHeader) * MAX_ACCELS,
+	if (!VK_BufferCreate("model headers", &g_ray_model_state.model_headers_buffer, sizeof(struct ModelHeader) * MAX_INSTANCES,
 		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT  | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
 		// FIXME complain, handle
