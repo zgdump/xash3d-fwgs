@@ -89,15 +89,6 @@ API ~
 2. RT_ModelBuild/Update(geometries[]) -> (blas + kusok.geom[])
 3. RT_ModelUpdateMaterials(model, geometries/textures/materials[]); -> (kusok.material[])
 4. RT_FrameAddModel(model + kusok.geom[] + kusok.material[] + render_type + xform + color)
-
-struct rt_model_s;
-typedef struct {
-	const struct rt_model_s* model;
-	vk_render_type_e render_type;
-	matrix3x4 transform, prev_transform;
-	vec4_t color;
-} rt_frame_add_model_args_t;
-void RT_FrameAddModel( rt_frame_add_model_args_t args );
 ~~
 
 
@@ -161,3 +152,47 @@ Usage cases for the above:
 			- fill geom+material kusochki data
 		- Add to TLAS w/ correct kusochki offset.
 
+Exposed ops:
+- Create BLAS for N geoms
+- Allocate kusochki[N]
+	- static (fixed pos)
+	- temporary (any location, single frame lifetime)
+- Fill kusochki
+	- All geoms[]
+	- Subset of geoms[] (animated textures for static)
+- Build BLAS
+	- Allocate geom+ranges[N]
+		- Single frame staging-like?
+		- Needed only for BLAS BUILD/UPDATE
+	- from geoms+ranges[N]
+	- build vs update
+- Add to TLAS w/ color/xform/mmode/...
+
+// just creates BLAS, doesn't alloc anything
+rt_blas_t RT_BlasAlloc(int max_geometries);
+
+typedef enum {
+	kBlasBuildStatic, // builds slow for fast trace
+	kBlasBuildDynamicUpdate, // builds if not built, updates if built
+	kBlasBuildDynamicFast, // builds fast from scratch (no correlation with previous frame guaranteed, e.g. triapi)
+} rt_blas_build_mode_e;
+
+// 1. Schedules BLAS build (allocates geoms+ranges from a temp pool, etc).
+// 2. Allocates kusochki (if not) and fills them with geom and initial material data
+void RT_BlasBuild(rt_blas_t *blas, const vk_render_geometry_t *geoms[], int geoms_count, rt_blas_build_mode_e mode);
+
+// Update animated kusochki
+void RT_BlasUpdateMaterialsSubset(rt_blas_t *blas...);
+
+// Clone kusochki with different base_color texture (sprites)
+uint32_t RT_BlasOverrideMaterial(rt_blas_t *blas, int texture);
+
+struct rt_blas_s;
+typedef struct {
+	const struct rt_blas_s* model;
+	int material_mode;
+	matrix3x4 transform, prev_transform;
+	vec4_t color;
+	uint32_t material_override;
+} rt_frame_add_model_args_t;
+void RT_FrameAddBlasInstance( rt_frame_add_model_args_t args );
