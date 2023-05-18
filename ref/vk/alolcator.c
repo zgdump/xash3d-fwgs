@@ -108,6 +108,7 @@ typedef struct alo_pool_s {
 
 #define DEFAULT_CAPACITY 256
 
+// TODO make it not a pointer. Just Init
 struct alo_pool_s* aloPoolCreate(alo_size_t size, int expected_allocations, alo_size_t min_alignment) {
 	alo_pool_t *pool = MALLOC(sizeof(*pool));
 	block_t *b;

@@ -540,6 +540,7 @@ static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers,
 	// TODO non-rbga textures
 
 	for (int i = 0; i < num_layers; ++i) {
+		// FIXME create empty black texture if there's no buffer
 		if (!layers[i]->buffer) {
 			gEngine.Con_Printf(S_ERROR "Texture %s layer %d missing buffer\n", tex->name, i);
 			return false;
