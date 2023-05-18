@@ -170,18 +170,6 @@ typedef struct {
 
 static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* args) {
 	const VkCommandBuffer cmdbuf = combuf->cmdbuf;
-	// TODO move this to "TLAS producer"
-	g_rtx.res[ExternalResource_tlas].resource = (vk_resource_t){
-		.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
-		.value = (vk_descriptor_value_t){
-			.accel = (VkWriteDescriptorSetAccelerationStructureKHR) {
-				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
-				.accelerationStructureCount = 1,
-				.pAccelerationStructures = &g_accel.tlas,
-				.pNext = NULL,
-			},
-		},
-	};
 
 #define RES_SET_BUFFER(name, type_, source_, offset_, size_) \
 	g_rtx.res[ExternalResource_##name].resource = (vk_resource_t){ \
@@ -278,24 +266,11 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 	}
 
 	DEBUG_BEGIN(cmdbuf, "yay tracing");
-	RT_VkAccelPrepareTlas(combuf);
-	prepareUniformBuffer(args->render_args, args->frame_index, args->fov_angle_y);
 
-	// 4. Barrier for TLAS build
-	{
-		const VkBufferMemoryBarrier bmb[] = { {
-			.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-			.srcAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
-			.dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
-			.buffer = g_accel.accels_buffer.buffer,
-			.offset = 0,
-			.size = VK_WHOLE_SIZE,
-		} };
-		vkCmdPipelineBarrier(cmdbuf,
-			VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-			VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-			0, 0, NULL, ARRAYSIZE(bmb), bmb, 0, NULL);
-	}
+	// TODO move this to "TLAS producer"
+	g_rtx.res[ExternalResource_tlas].resource = RT_VkAccelPrepareTlas(combuf);
+
+	prepareUniformBuffer(args->render_args, args->frame_index, args->fov_angle_y);
 
 	{ // FIXME this should be done automatically inside meatpipe, TODO
 		//const uint32_t size = sizeof(struct Lights);

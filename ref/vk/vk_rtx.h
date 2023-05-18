@@ -52,3 +52,17 @@ void VK_RayMapLoadEnd( void );
 qboolean VK_RayInit( void );
 void VK_RayShutdown( void );
 
+typedef struct rt_model_s {
+	const struct rt_blas_s *blas;
+	uint32_t kusochki_offset;
+} rt_model_t;
+
+struct vk_render_geometry_s;
+void RT_ModelUploadKusochki(rt_model_t *model, const struct vk_render_geometry_s *geoms[], int geoms_count);
+
+// Update animated materials
+struct vk_render_geometry_s;
+void RT_ModelUpdateMaterialsSubset(rt_model_t *model, const struct vk_render_geometry_s *geoms[], const int *geoms_indices, int geoms_indices_count);
+
+// Clone materials with different base_color texture (sprites)
+void RT_ModelOverrideMaterial(struct rt_blas_s *blas, int texture);

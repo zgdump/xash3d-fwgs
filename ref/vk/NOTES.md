@@ -168,31 +168,8 @@ Exposed ops:
 	- build vs update
 - Add to TLAS w/ color/xform/mmode/...
 
-// just creates BLAS, doesn't alloc anything
-rt_blas_t RT_BlasAlloc(int max_geometries);
-
-typedef enum {
-	kBlasBuildStatic, // builds slow for fast trace
-	kBlasBuildDynamicUpdate, // builds if not built, updates if built
-	kBlasBuildDynamicFast, // builds fast from scratch (no correlation with previous frame guaranteed, e.g. triapi)
-} rt_blas_build_mode_e;
-
-// 1. Schedules BLAS build (allocates geoms+ranges from a temp pool, etc).
-// 2. Allocates kusochki (if not) and fills them with geom and initial material data
-void RT_BlasBuild(rt_blas_t *blas, const vk_render_geometry_t *geoms[], int geoms_count, rt_blas_build_mode_e mode);
-
-// Update animated kusochki
-void RT_BlasUpdateMaterialsSubset(rt_blas_t *blas...);
-
-// Clone kusochki with different base_color texture (sprites)
-uint32_t RT_BlasOverrideMaterial(rt_blas_t *blas, int texture);
-
-struct rt_blas_s;
-typedef struct {
-	const struct rt_blas_s* model;
-	int material_mode;
-	matrix3x4 transform, prev_transform;
-	vec4_t color;
-	uint32_t material_override;
-} rt_frame_add_model_args_t;
-void RT_FrameAddBlasInstance( rt_frame_add_model_args_t args );
+- geometry_buffer -- vtx+idx static + multi-frame dynamic + single-frame dynamic
+- kusochki_buffer -- kusok[] static + dynamic + clone_dynamic
+- accel_buffer -- static + multiframe dynamic + single-frame dynamic
+- scratch_buffer - single-frame dynamic
+- model_buffer - single-frame dynamic

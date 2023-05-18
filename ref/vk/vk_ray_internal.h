@@ -24,10 +24,6 @@ typedef struct vk_ray_model_s {
 	uint32_t material_mode;
 	vec4_t color;
 	matrix4x4 prev_transform;
-
-	struct {
-		uint32_t as_offset;
-	} debug;
 } vk_ray_model_t;
 
 typedef struct Kusok vk_kusok_data_t;
@@ -51,6 +47,9 @@ typedef struct {
 
 struct vk_combuf_s;
 qboolean createOrUpdateAccelerationStructure(struct vk_combuf_s *combuf, const as_build_args_t *args, vk_ray_model_t *model);
+
+#define MAX_SCRATCH_BUFFER (32*1024*1024)
+#define MAX_ACCELS_BUFFER (64*1024*1024)
 
 typedef struct {
 	// Geometry metadata. Lifetime is similar to geometry lifetime itself.

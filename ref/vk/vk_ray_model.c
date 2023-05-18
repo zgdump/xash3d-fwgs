@@ -278,7 +278,7 @@ static void computeConveyorSpeed(const color24 rendercolor, int tex_index, vec2_
 }
 
 // TODO utilize uploadKusochki([1]) to avoid 2 copies of staging code
-static qboolean uploadKusochkiSubset(const vk_ray_model_t *const model, const vk_render_model_t *const render_model, uint32_t material_mode, const int *geom_indexes, int geom_indexes_count) {
+static qboolean uploadKusochkiSubset(const vk_ray_model_t *const model, const vk_render_model_t *const render_model,  const int *geom_indexes, int geom_indexes_count) {
 	// TODO can we sort all animated geometries (in brush) to have only a single range here?
 	for (int i = 0; i < geom_indexes_count; ++i) {
 		const int index = geom_indexes[i];
@@ -314,7 +314,7 @@ static qboolean uploadKusochkiSubset(const vk_ray_model_t *const model, const vk
 	return true;
 }
 
-static qboolean uploadKusochki(const vk_ray_model_t *const model, const vk_render_model_t *const render_model, uint32_t material_mode) {
+static qboolean uploadKusochki(const vk_ray_model_t *const model, const vk_render_model_t *const render_model) {
 	const vk_staging_buffer_args_t staging_args = {
 		.buffer = g_ray_model_state.kusochki_buffer.buffer,
 		.offset = model->kusochki_offset * sizeof(vk_kusok_data_t),
@@ -399,11 +399,11 @@ void VK_RayFrameAddModel( vk_ray_model_t *model, const vk_render_model_t *render
 		model->material_mode = material_mode;
 		Vector4Copy(render_model->color, model->color);
 		Matrix4x4_Copy(model->prev_transform, render_model->prev_transform);
-		if (!uploadKusochki(model, render_model, material_mode)) {
+		if (!uploadKusochki(model, render_model)) {
 			return;
 		}
 	} else {
-		if (!uploadKusochkiSubset(model, render_model, material_mode, render_model->geometries_changed, render_model->geometries_changed_count))
+		if (!uploadKusochkiSubset(model, render_model, render_model->geometries_changed, render_model->geometries_changed_count))
 			return;
 	}
 

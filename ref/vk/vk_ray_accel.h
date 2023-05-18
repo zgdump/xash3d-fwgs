@@ -2,44 +2,45 @@
 
 #include "vk_core.h"
 #include "vk_buffer.h"
-
-struct rt_vk_ray_accel_s {
-	// Stores AS built data. Lifetime similar to render buffer:
-	// - some portion lives for entire map lifetime
-	// - some portion lives only for a single frame (may have several frames in flight)
-	// TODO: unify this with render buffer
-	// Needs: AS_STORAGE_BIT, SHADER_DEVICE_ADDRESS_BIT
-	vk_buffer_t accels_buffer;
-	struct alo_pool_s *accels_buffer_alloc;
-
-	// Temp: lives only during a single frame (may have many in flight)
-	// Used for building ASes;
-	// Needs: AS_STORAGE_BIT, SHADER_DEVICE_ADDRESS_BIT
-	vk_buffer_t scratch_buffer;
-	VkDeviceAddress accels_buffer_addr, scratch_buffer_addr;
-
-	// Temp-ish: used for making TLAS, contains addressed to all used BLASes
-	// Lifetime and nature of usage similar to scratch_buffer
-	// TODO: unify them
-	// Needs: SHADER_DEVICE_ADDRESS, STORAGE_BUFFER, AS_BUILD_INPUT_READ_ONLY
-	vk_buffer_t tlas_geom_buffer;
-	VkDeviceAddress tlas_geom_buffer_addr;
-	r_flipping_buffer_t tlas_geom_buffer_alloc;
-
-	// TODO need several TLASes for N frames in flight
-	VkAccelerationStructureKHR tlas;
-
-	// Per-frame data that is accumulated between RayFrameBegin and End calls
-	struct {
-		uint32_t scratch_offset; // for building dynamic blases
-	} frame;
-};
-
-extern struct rt_vk_ray_accel_s g_accel;
+#include "vk_math.h"
+#include "ray_resources.h"
 
 qboolean RT_VkAccelInit(void);
 void RT_VkAccelShutdown(void);
+
 void RT_VkAccelNewMap(void);
+
+struct rt_blas_s;
+struct vk_render_geometry_s;
+
+typedef enum {
+	kBlasBuildStatic, // builds slow for fast trace
+	kBlasBuildDynamicUpdate, // builds if not built, updates if built
+	kBlasBuildDynamicFast, // builds fast from scratch (no correlation with previous frame guaranteed, e.g. triapi)
+} rt_blas_usage_e;
+
+// Just creates an empty BLAS structure, doesn't alloc anything
+struct rt_blas_s* RT_BlasCreate(rt_blas_usage_e usage);
+
+// Create an empty BLAS with specified limits
+struct rt_blas_s* RT_BlasCreatePreallocated(rt_blas_usage_e usage, int max_geometries, const int *max_prims, int max_vertex, uint32_t extra_buffer_offset);
+
+void RT_BlasDestroy(struct rt_blas_s* blas);
+
+// 1. Schedules BLAS build (allocates geoms+ranges from a temp pool, etc).
+// 2. Allocates kusochki (if not) and fills them with geom and initial material data
+qboolean RT_BlasBuild(struct rt_blas_s *blas, const struct vk_render_geometry_s *geoms, int geoms_count);
+
+typedef struct {
+	const struct rt_blas_s* blas;
+	int material_mode;
+	matrix3x4 *transform, *prev_transform;
+	vec4_t *color;
+	uint32_t material_override;
+} rt_frame_add_model_args_t;
+
 void RT_VkAccelFrameBegin(void);
+void RT_VkAccelFrameAddBlas( rt_frame_add_model_args_t args );
+
 struct vk_combuf_s;
-void RT_VkAccelPrepareTlas(struct vk_combuf_s *combuf);
+vk_resource_t RT_VkAccelPrepareTlas(struct vk_combuf_s *combuf);
