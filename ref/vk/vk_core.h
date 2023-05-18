@@ -203,6 +203,7 @@ do { \
 	X(vkQueueSubmit) \
 	X(vkQueuePresentKHR) \
 	X(vkWaitForFences) \
+	X(vkWaitSemaphores) \
 	X(vkResetFences) \
 	X(vkCreateSemaphore) \
 	X(vkDestroySemaphore) \
