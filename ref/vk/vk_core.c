@@ -34,6 +34,8 @@
 #include "com_strings.h"
 #include "eiface.h"
 
+#include "debugbreak.h"
+
 #include <string.h>
 #include <errno.h>
 
@@ -127,7 +129,7 @@ VkBool32 VKAPI_PTR debugCallback(
 #ifdef _MSC_VER
 		__debugbreak();
 #else
-		__builtin_trap();
+		debug_break();
 #endif
 	}
 	return VK_FALSE;
@@ -830,7 +832,7 @@ void R_VkShutdown( void ) {
 	VK_DescriptorShutdown();
 
 	R_VkStagingShutdown();
-	
+
 	R_VkCombuf_Destroy();
 
 	VK_DevMemDestroy();
