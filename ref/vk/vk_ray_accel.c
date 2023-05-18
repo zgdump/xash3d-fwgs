@@ -158,54 +158,23 @@ static qboolean buildAccel(VkBuffer geometry_buffer, VkAccelerationStructureBuil
 
 // TODO split this into smaller building blocks in a separate module
 qboolean createOrUpdateAccelerationStructure(vk_combuf_t *combuf, const as_build_args_t *args, vk_ray_model_t *model) {
-	qboolean should_create = *args->p_accel == VK_NULL_HANDLE;
-#if 1 // update does not work at all on AMD gpus
-	qboolean is_update = false; // FIXME this crashes for some reason !should_create && args->dynamic;
-#else
-	qboolean is_update = !should_create && args->dynamic;
-#endif
+	ASSERT(args->geoms);
+	ASSERT(args->n_geoms > 0);
+	ASSERT(args->p_accel);
+
+	const qboolean should_create = *args->p_accel == VK_NULL_HANDLE;
 
 	VkAccelerationStructureBuildGeometryInfoKHR build_info = {
 		.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
 		.type = args->type,
 		.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | ( args->dynamic ? VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR : 0),
-		.mode =  is_update ? VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR : VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,
+		.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,
 		.geometryCount = args->n_geoms,
 		.pGeometries = args->geoms,
-		.srcAccelerationStructure = is_update ? *args->p_accel : VK_NULL_HANDLE,
+		.srcAccelerationStructure = VK_NULL_HANDLE,
 	};
 
-	VkAccelerationStructureBuildSizesInfoKHR build_size = {
-		.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR
-	};
-
-	uint32_t scratch_buffer_size = 0;
-
-	ASSERT(args->geoms);
-	ASSERT(args->n_geoms > 0);
-	ASSERT(args->p_accel);
-
-	vkGetAccelerationStructureBuildSizesKHR(
-		vk_core.device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &build_info, args->max_prim_counts, &build_size);
-
-	scratch_buffer_size = is_update ? build_size.updateScratchSize : build_size.buildScratchSize;
-
-#if 0
-	{
-		uint32_t max_prims = 0;
-		for (int i = 0; i < args->n_geoms; ++i)
-			max_prims += args->max_prim_counts[i];
-		gEngine.Con_Reportf(
-			"AS max_prims=%u, n_geoms=%u, build size: %d, scratch size: %d\n", max_prims, args->n_geoms, build_size.accelerationStructureSize, build_size.buildScratchSize);
-	}
-#endif
-
-	if (MAX_SCRATCH_BUFFER < g_accel.frame.scratch_offset + scratch_buffer_size) {
-		gEngine.Con_Printf(S_ERROR "Scratch buffer overflow: left %u bytes, but need %u\n",
-			MAX_SCRATCH_BUFFER - g_accel.frame.scratch_offset,
-			scratch_buffer_size);
-		return false;
-	}
+	const VkAccelerationStructureBuildSizesInfoKHR build_size = getAccelSizes(&build_info, args->max_prim_counts);
 
 	if (should_create) {
 		*args->p_accel = createAccel(args->debug_name, args->type, build_size.accelerationStructureSize);
@@ -229,22 +198,8 @@ qboolean createOrUpdateAccelerationStructure(vk_combuf_t *combuf, const as_build
 	}
 
 	build_info.dstAccelerationStructure = *args->p_accel;
-	build_info.scratchData.deviceAddress = g_accel.scratch_buffer_addr + g_accel.frame.scratch_offset;
-	//uint32_t scratch_offset_initial = g_accel.frame.scratch_offset;
-	g_accel.frame.scratch_offset += scratch_buffer_size;
-	g_accel.frame.scratch_offset = ALIGN_UP(g_accel.frame.scratch_offset, vk_core.physical_device.properties_accel.minAccelerationStructureScratchOffsetAlignment);
-
-	//gEngine.Con_Reportf("AS=%p, n_geoms=%u, scratch: %#x %d %#x\n", *args->p_accel, args->n_geoms, scratch_offset_initial, scratch_buffer_size, scratch_offset_initial + scratch_buffer_size);
-
-	g_accel.stats.accels_built++;
-
-	static int scope_id = -2;
-	if (scope_id == -2)
-		scope_id = R_VkGpuScope_Register("build_as");
-	const int begin_index = R_VkCombufScopeBegin(combuf, scope_id);
-	vkCmdBuildAccelerationStructuresKHR(combuf->cmdbuf, 1, &build_info, &args->build_ranges);
-	R_VkCombufScopeEnd(combuf, begin_index, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
-	return true;
+	const VkBuffer geometry_buffer = R_GeometryBuffer_Get();
+	return buildAccel(geometry_buffer, &build_info, &build_size, args->build_ranges);
 }
 
 static void createTlas( vk_combuf_t *combuf, VkDeviceAddress instances_addr ) {
@@ -261,7 +216,7 @@ static void createTlas( vk_combuf_t *combuf, VkDeviceAddress instances_addr ) {
 				},
 		},
 	};
-	const uint32_t tl_max_prim_counts[COUNTOF(tl_geom)] = { MAX_INSTANCES }; //cmdbuf == VK_NULL_HANDLE ? MAX_ACCELS : g_ray_model_state.frame.instances_count };
+	const uint32_t tl_max_prim_counts[COUNTOF(tl_geom)] = { MAX_INSTANCES };
 	const VkAccelerationStructureBuildRangeInfoKHR tl_build_range = {
 		.primitiveCount = g_ray_model_state.frame.instances_count,
 	};
@@ -373,7 +328,7 @@ vk_resource_t RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
 	createTlas(combuf, g_accel.tlas_geom_buffer_addr + instance_offset * sizeof(VkAccelerationStructureInstanceKHR));
 	DEBUG_END(combuf->cmdbuf);
 
-	// 4. Barrier for TLAS build
+	// TODO return vk_resource_t with callback to all this "do the preparation and barriers" crap, instead of doing it here
 	{
 		const VkBufferMemoryBarrier bmb[] = { {
 			.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
