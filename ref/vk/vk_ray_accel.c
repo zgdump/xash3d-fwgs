@@ -183,7 +183,7 @@ qboolean createOrUpdateAccelerationStructure(vk_combuf_t *combuf, const as_build
 			return false;
 
 		if (model) {
-			model->size = build_size.accelerationStructureSize;
+			model->cache.size = build_size.accelerationStructureSize;
 		}
 
 		// gEngine.Con_Reportf("AS=%p, n_geoms=%u, build: %#x %d %#x\n", *args->p_accel, args->n_geoms, buffer_offset, asci.size, buffer_offset + asci.size);
@@ -194,7 +194,7 @@ qboolean createOrUpdateAccelerationStructure(vk_combuf_t *combuf, const as_build
 		return true;
 
 	if (model) {
-		ASSERT(model->size >= build_size.accelerationStructureSize);
+		ASSERT(model->cache.size >= build_size.accelerationStructureSize);
 	}
 
 	build_info.dstAccelerationStructure = *args->p_accel;

@@ -12,16 +12,19 @@
 
 typedef struct vk_ray_model_s {
 	VkAccelerationStructureKHR as;
-	VkAccelerationStructureGeometryKHR *geoms;
-	int max_prims;
-	int num_geoms;
-	int size;
+
+	struct {
+		VkAccelerationStructureGeometryKHR *geoms;
+		int max_prims;
+		int num_geoms;
+		int size;
+		qboolean taken;
+	} cache;
+
 	uint32_t kusochki_offset;
 	qboolean dynamic;
-	qboolean taken;
 
 	// TODO remove with the split of Kusok in Model+Material+Kusok
-	uint32_t material_mode;
 	vec4_t color;
 	matrix4x4 prev_transform;
 } vk_ray_model_t;

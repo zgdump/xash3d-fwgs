@@ -646,7 +646,6 @@ qboolean VK_RenderModelInit( vk_render_model_t *model ) {
 		const VkBuffer geom_buffer = R_GeometryBuffer_Get();
 		// TODO runtime rtx switch: ???
 		const vk_ray_model_init_t args = {
-			.buffer = geom_buffer,
 			.model = model,
 		};
 		model->ray_model = VK_RayModelCreate(args);

@@ -173,3 +173,11 @@ Exposed ops:
 - accel_buffer -- static + multiframe dynamic + single-frame dynamic
 - scratch_buffer - single-frame dynamic
 - model_buffer - single-frame dynamic
+
+# E268: explicit kusochki management
+Kusochki buffer has a similar lifetime rules to geometry buffer
+Funcs:
+- Allocate kusochki[N] w/ static/long lifetime
+- Allocate dynamic (single-frame) kusochki[N]
+- Upload geom[N] -> kusochki[N]
+- Upload subset geom[ind[M] -> kusochki[M]

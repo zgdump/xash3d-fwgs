@@ -18,8 +18,8 @@
 xvk_ray_model_state_t g_ray_model_state;
 
 static void returnModelToCache(vk_ray_model_t *model) {
-	ASSERT(model->taken);
-	model->taken = false;
+	ASSERT(model->cache.taken);
+	model->cache.taken = false;
 }
 
 static vk_ray_model_t *getModelFromCache(int num_geoms, int max_prims, const VkAccelerationStructureGeometryKHR *geoms) { //}, int size) {
@@ -29,33 +29,33 @@ static vk_ray_model_t *getModelFromCache(int num_geoms, int max_prims, const VkA
 	{
 		int j;
 	 	model = g_ray_model_state.models_cache + i;
-		if (model->taken)
+		if (model->cache.taken)
 			continue;
 
 		if (!model->as)
 			break;
 
-		if (model->num_geoms != num_geoms)
+		if (model->cache.num_geoms != num_geoms)
 			continue;
 
-		if (model->max_prims != max_prims)
+		if (model->cache.max_prims != max_prims)
 			continue;
 
 		for (j = 0; j < num_geoms; ++j) {
-			if (model->geoms[j].geometryType != geoms[j].geometryType)
+			if (model->cache.geoms[j].geometryType != geoms[j].geometryType)
 				break;
 
-			if (model->geoms[j].flags != geoms[j].flags)
+			if (model->cache.geoms[j].flags != geoms[j].flags)
 				break;
 
 			if (geoms[j].geometryType == VK_GEOMETRY_TYPE_TRIANGLES_KHR) {
 				// TODO what else should we compare?
-				if (model->geoms[j].geometry.triangles.maxVertex != geoms[j].geometry.triangles.maxVertex)
+				if (model->cache.geoms[j].geometry.triangles.maxVertex != geoms[j].geometry.triangles.maxVertex)
 					break;
 
-				ASSERT(model->geoms[j].geometry.triangles.vertexStride == geoms[j].geometry.triangles.vertexStride);
-				ASSERT(model->geoms[j].geometry.triangles.vertexFormat == geoms[j].geometry.triangles.vertexFormat);
-				ASSERT(model->geoms[j].geometry.triangles.indexType == geoms[j].geometry.triangles.indexType);
+				ASSERT(model->cache.geoms[j].geometry.triangles.vertexStride == geoms[j].geometry.triangles.vertexStride);
+				ASSERT(model->cache.geoms[j].geometry.triangles.vertexFormat == geoms[j].geometry.triangles.vertexFormat);
+				ASSERT(model->cache.geoms[j].geometry.triangles.indexType == geoms[j].geometry.triangles.indexType);
 			} else {
 				PRINT_NOT_IMPLEMENTED_ARGS("Non-tri geometries are not implemented");
 				break;
@@ -72,15 +72,15 @@ static vk_ray_model_t *getModelFromCache(int num_geoms, int max_prims, const VkA
 	// if (model->size > 0)
 	// 	ASSERT(model->size >= size);
 
-	if (!model->geoms) {
+	if (!model->cache.geoms) {
 		const size_t size = sizeof(*geoms) * num_geoms;
-		model->geoms = Mem_Malloc(vk_core.pool, size);
-		memcpy(model->geoms, geoms, size);
-		model->num_geoms = num_geoms;
-		model->max_prims = max_prims;
+		model->cache.geoms = Mem_Malloc(vk_core.pool, size);
+		memcpy(model->cache.geoms, geoms, size);
+		model->cache.num_geoms = num_geoms;
+		model->cache.max_prims = max_prims;
 	}
 
-	model->taken = true;
+	model->cache.taken = true;
 	return model;
 }
 
@@ -120,21 +120,17 @@ static void applyMaterialToKusok(vk_kusok_data_t* kusok, const vk_render_geometr
 		kusok->material.tex_base_color = TEX_BASE_SKYBOX;
 }
 
+
 vk_ray_model_t* VK_RayModelCreate( vk_ray_model_init_t args ) {
 	VkAccelerationStructureGeometryKHR *geoms;
 	uint32_t *geom_max_prim_counts;
 	VkAccelerationStructureBuildRangeInfoKHR *geom_build_ranges;
-	const VkDeviceAddress buffer_addr = R_VkBufferGetDeviceAddress(args.buffer); // TODO pass in args/have in buffer itself
-	const uint32_t kusochki_count_offset = R_DEBuffer_Alloc(&g_ray_model_state.kusochki_alloc, args.model->dynamic ? LifetimeDynamic : LifetimeStatic, args.model->num_geometries, 1);
+	const VkBuffer geometry_buffer = R_GeometryBuffer_Get();
+	const VkDeviceAddress buffer_addr = R_VkBufferGetDeviceAddress(geometry_buffer);
 	vk_ray_model_t *ray_model;
 	int max_prims = 0;
 
 	ASSERT(vk_core.rtx);
-
-	if (kusochki_count_offset == ALO_ALLOC_FAILED) {
-		gEngine.Con_Printf(S_ERROR "Maximum number of kusochki exceeded on model %s\n", args.model->debug_name);
-		return NULL;
-	}
 
 	// FIXME don't touch allocator each frame many times pls
 	geoms = Mem_Calloc(vk_core.pool, args.model->num_geometries * sizeof(*geoms));
@@ -181,7 +177,7 @@ vk_ray_model_t* VK_RayModelCreate( vk_ray_model_init_t args ) {
 			.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
 			//.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR, // FIXME
 			.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_SHADER_READ_BIT, // FIXME
-			.buffer = args.buffer,
+			.buffer = geometry_buffer,
 			.offset = 0, // FIXME
 			.size = VK_WHOLE_SIZE, // FIXME
 		} };
@@ -219,9 +215,8 @@ vk_ray_model_t* VK_RayModelCreate( vk_ray_model_init_t args ) {
 				returnModelToCache(ray_model);
 				ray_model = NULL;
 			} else {
-				ray_model->kusochki_offset = kusochki_count_offset;
+				ray_model->kusochki_offset = ALO_ALLOC_FAILED;
 				ray_model->dynamic = args.model->dynamic;
-				ray_model->material_mode = -1;
 				Vector4Set(ray_model->color, 1, 1, 1, 1);
 				Matrix4x4_LoadIdentity(ray_model->prev_transform);
 			}
@@ -243,7 +238,7 @@ void VK_RayModelDestroy( struct vk_ray_model_s *model ) {
 		//gEngine.Con_Reportf("Model %s destroying AS=%p blas_index=%d\n", model->debug_name, model->rtx.blas, blas_index);
 
 		vkDestroyAccelerationStructureKHR(vk_core.device, model->as, NULL);
-		Mem_Free(model->geoms);
+		Mem_Free(model->cache.geoms);
 		memset(model, 0, sizeof(*model));
 	}
 }
@@ -324,7 +319,7 @@ static qboolean uploadKusochki(const vk_ray_model_t *const model, const vk_rende
 	const vk_staging_region_t kusok_staging = R_VkStagingLockForBuffer(staging_args);
 
 	if (!kusok_staging.ptr) {
-		gEngine.Con_Printf(S_ERROR "Couldn't allocate staging for %d kusochkov for model %s\n", model->num_geoms, render_model->debug_name);
+		gEngine.Con_Printf(S_ERROR "Couldn't allocate staging for %d kusochkov for model %s\n", render_model->num_geometries, render_model->debug_name);
 		return false;
 	}
 
@@ -352,7 +347,7 @@ void VK_RayFrameAddModel( vk_ray_model_t *model, const vk_render_model_t *render
 
 	ASSERT(vk_core.rtx);
 	ASSERT(g_ray_model_state.frame.instances_count <= ARRAYSIZE(g_ray_model_state.frame.instances));
-	ASSERT(model->num_geoms == render_model->num_geometries);
+	ASSERT(model->cache.num_geoms == render_model->num_geometries);
 
 	if (g_ray_model_state.frame.instances_count == ARRAYSIZE(g_ray_model_state.frame.instances)) {
 		gEngine.Con_Printf(S_ERROR "Ran out of AccelerationStructure slots\n");
@@ -388,25 +383,30 @@ void VK_RayFrameAddModel( vk_ray_model_t *model, const vk_render_model_t *render
 			gEngine.Host_Error("Unexpected render type %d\n", render_model->render_type);
 	}
 
-	// Re-upload kusochki if needed
-	// TODO all of this can be removed. We just need to make sure that kusochki have been uploaded once (for static models).
-#define Vector4Compare(v1,v2) ((v1)[0]==(v2)[0] && (v1)[1]==(v2)[1] && (v1)[2]==(v2)[2] && (v1)[3]==(v2)[3])
-	const qboolean upload_kusochki = (model->material_mode != material_mode
-			|| !Vector4Compare(model->color, render_model->color)
-			|| memcmp(model->prev_transform, render_model->prev_transform, sizeof(matrix4x4)) != 0);
+	// Upload kusochki for the first time
+	if (ALO_ALLOC_FAILED == model->kusochki_offset) {
+		const r_lifetime_t lifetime = model->dynamic ? LifetimeDynamic : LifetimeStatic;
+		const int count = render_model->num_geometries;
+		model->kusochki_offset = R_DEBuffer_Alloc(&g_ray_model_state.kusochki_alloc, lifetime, count, 1);
 
-	if (upload_kusochki) {
-		model->material_mode = material_mode;
-		Vector4Copy(render_model->color, model->color);
-		Matrix4x4_Copy(model->prev_transform, render_model->prev_transform);
-		if (!uploadKusochki(model, render_model)) {
+		if (model->kusochki_offset == ALO_ALLOC_FAILED) {
+			gEngine.Con_Printf(S_ERROR "Maximum number of kusochki exceeded on model %s\n", render_model->debug_name);
 			return;
 		}
+
+		if (!uploadKusochki(model, render_model))
+			return;
 	} else {
 		if (!uploadKusochkiSubset(model, render_model, render_model->geometries_changed, render_model->geometries_changed_count))
 			return;
 	}
 
+	// TODO expunge
+	Vector4Copy(render_model->color, model->color);
+	Matrix4x4_Copy(model->prev_transform, render_model->prev_transform);
+
+	// TODO needed for brush models only
+	// (? TODO studio models?)
 	for (int i = 0; i < render_model->dynamic_polylights_count; ++i) {
 		rt_light_add_polygon_t *const polylight = render_model->dynamic_polylights + i;
 		polylight->transform_row = (const matrix3x4*)render_model->transform;
