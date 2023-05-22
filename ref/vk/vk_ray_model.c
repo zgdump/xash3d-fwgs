@@ -18,8 +18,8 @@
 xvk_ray_model_state_t g_ray_model_state;
 
 static void returnModelToCache(vk_ray_model_t *model) {
-	ASSERT(model->cache.taken);
-	model->cache.taken = false;
+	ASSERT(model->cache_toremove.taken);
+	model->cache_toremove.taken = false;
 }
 
 static vk_ray_model_t *getModelFromCache(int num_geoms, int max_prims, const VkAccelerationStructureGeometryKHR *geoms) { //}, int size) {
@@ -29,33 +29,33 @@ static vk_ray_model_t *getModelFromCache(int num_geoms, int max_prims, const VkA
 	{
 		int j;
 	 	model = g_ray_model_state.models_cache + i;
-		if (model->cache.taken)
+		if (model->cache_toremove.taken)
 			continue;
 
-		if (!model->as)
+		if (!model->blas)
 			break;
 
-		if (model->cache.num_geoms != num_geoms)
+		if (model->cache_toremove.num_geoms != num_geoms)
 			continue;
 
-		if (model->cache.max_prims != max_prims)
+		if (model->cache_toremove.max_prims != max_prims)
 			continue;
 
 		for (j = 0; j < num_geoms; ++j) {
-			if (model->cache.geoms[j].geometryType != geoms[j].geometryType)
+			if (model->cache_toremove.geoms[j].geometryType != geoms[j].geometryType)
 				break;
 
-			if (model->cache.geoms[j].flags != geoms[j].flags)
+			if (model->cache_toremove.geoms[j].flags != geoms[j].flags)
 				break;
 
 			if (geoms[j].geometryType == VK_GEOMETRY_TYPE_TRIANGLES_KHR) {
 				// TODO what else should we compare?
-				if (model->cache.geoms[j].geometry.triangles.maxVertex != geoms[j].geometry.triangles.maxVertex)
+				if (model->cache_toremove.geoms[j].geometry.triangles.maxVertex != geoms[j].geometry.triangles.maxVertex)
 					break;
 
-				ASSERT(model->cache.geoms[j].geometry.triangles.vertexStride == geoms[j].geometry.triangles.vertexStride);
-				ASSERT(model->cache.geoms[j].geometry.triangles.vertexFormat == geoms[j].geometry.triangles.vertexFormat);
-				ASSERT(model->cache.geoms[j].geometry.triangles.indexType == geoms[j].geometry.triangles.indexType);
+				ASSERT(model->cache_toremove.geoms[j].geometry.triangles.vertexStride == geoms[j].geometry.triangles.vertexStride);
+				ASSERT(model->cache_toremove.geoms[j].geometry.triangles.vertexFormat == geoms[j].geometry.triangles.vertexFormat);
+				ASSERT(model->cache_toremove.geoms[j].geometry.triangles.indexType == geoms[j].geometry.triangles.indexType);
 			} else {
 				PRINT_NOT_IMPLEMENTED_ARGS("Non-tri geometries are not implemented");
 				break;
@@ -72,15 +72,15 @@ static vk_ray_model_t *getModelFromCache(int num_geoms, int max_prims, const VkA
 	// if (model->size > 0)
 	// 	ASSERT(model->size >= size);
 
-	if (!model->cache.geoms) {
+	if (!model->cache_toremove.geoms) {
 		const size_t size = sizeof(*geoms) * num_geoms;
-		model->cache.geoms = Mem_Malloc(vk_core.pool, size);
-		memcpy(model->cache.geoms, geoms, size);
-		model->cache.num_geoms = num_geoms;
-		model->cache.max_prims = max_prims;
+		model->cache_toremove.geoms = Mem_Malloc(vk_core.pool, size);
+		memcpy(model->cache_toremove.geoms, geoms, size);
+		model->cache_toremove.num_geoms = num_geoms;
+		model->cache_toremove.max_prims = max_prims;
 	}
 
-	model->cache.taken = true;
+	model->cache_toremove.taken = true;
 	return model;
 }
 
@@ -203,10 +203,12 @@ vk_ray_model_t* VK_RayModelCreate( vk_ray_model_init_t args ) {
 			gEngine.Con_Printf(S_ERROR "Ran out of model cache slots\n");
 		} else {
 			qboolean result;
-			asrgs.p_accel = &ray_model->as;
+			asrgs.p_accel = &ray_model->blas;
+			asrgs.out_accel_addr = &ray_model->blas_addr;
+			asrgs.inout_size = &ray_model->cache_toremove.size;
 
 			DEBUG_BEGINF(combuf->cmdbuf, "build blas for %s", args.model->debug_name);
-			result = createOrUpdateAccelerationStructure(combuf, &asrgs, ray_model);
+			result = createOrUpdateAccelerationStructure(combuf, &asrgs);
 			DEBUG_END(combuf->cmdbuf);
 
 			if (!result)
@@ -217,8 +219,6 @@ vk_ray_model_t* VK_RayModelCreate( vk_ray_model_init_t args ) {
 			} else {
 				ray_model->kusochki_offset = ALO_ALLOC_FAILED;
 				ray_model->dynamic = args.model->dynamic;
-				Vector4Set(ray_model->color, 1, 1, 1, 1);
-				Matrix4x4_LoadIdentity(ray_model->prev_transform);
 			}
 		}
 	}
@@ -234,11 +234,11 @@ vk_ray_model_t* VK_RayModelCreate( vk_ray_model_init_t args ) {
 
 void VK_RayModelDestroy( struct vk_ray_model_s *model ) {
 	ASSERT(vk_core.rtx);
-	if (model->as != VK_NULL_HANDLE) {
+	if (model->blas != VK_NULL_HANDLE) {
 		//gEngine.Con_Reportf("Model %s destroying AS=%p blas_index=%d\n", model->debug_name, model->rtx.blas, blas_index);
 
-		vkDestroyAccelerationStructureKHR(vk_core.device, model->as, NULL);
-		Mem_Free(model->cache.geoms);
+		vkDestroyAccelerationStructureKHR(vk_core.device, model->blas, NULL);
+		Mem_Free(model->cache_toremove.geoms);
 		memset(model, 0, sizeof(*model));
 	}
 }
@@ -347,14 +347,14 @@ void VK_RayFrameAddModel( vk_ray_model_t *model, const vk_render_model_t *render
 
 	ASSERT(vk_core.rtx);
 	ASSERT(g_ray_model_state.frame.instances_count <= ARRAYSIZE(g_ray_model_state.frame.instances));
-	ASSERT(model->cache.num_geoms == render_model->num_geometries);
+	ASSERT(model->cache_toremove.num_geoms == render_model->num_geometries);
 
 	if (g_ray_model_state.frame.instances_count == ARRAYSIZE(g_ray_model_state.frame.instances)) {
 		gEngine.Con_Printf(S_ERROR "Ran out of AccelerationStructure slots\n");
 		return;
 	}
 
-	ASSERT(model->as != VK_NULL_HANDLE);
+	ASSERT(model->blas != VK_NULL_HANDLE);
 
 	// TODO this material mapping is context dependent. I.e. different entity types might need different ray tracing behaviours for
 	// same render_mode/type and even texture.
@@ -401,10 +401,6 @@ void VK_RayFrameAddModel( vk_ray_model_t *model, const vk_render_model_t *render
 			return;
 	}
 
-	// TODO expunge
-	Vector4Copy(render_model->color, model->color);
-	Matrix4x4_Copy(model->prev_transform, render_model->prev_transform);
-
 	// TODO needed for brush models only
 	// (? TODO studio models?)
 	for (int i = 0; i < render_model->dynamic_polylights_count; ++i) {
@@ -414,9 +410,13 @@ void VK_RayFrameAddModel( vk_ray_model_t *model, const vk_render_model_t *render
 		RT_LightAddPolygon(polylight);
 	}
 
-	draw_instance->model = model;
+	draw_instance->model_toremove = model;
+	draw_instance->blas_addr = model->blas_addr;
+	draw_instance->kusochki_offset = model->kusochki_offset;
 	draw_instance->material_mode = material_mode;
+	Vector4Copy(render_model->color, draw_instance->color);
 	Matrix3x4_Copy(draw_instance->transform_row, render_model->transform);
+	Matrix4x4_Copy(draw_instance->prev_transform_row, render_model->prev_transform);
 
 	g_ray_model_state.frame.instances_count++;
 }
@@ -432,13 +432,13 @@ void XVK_RayModel_ClearForNextFrame( void ) {
 	// destroy/reuse dynamic ASes from previous frame
 	for (int i = 0; i < g_ray_model_state.frame.instances_count; ++i) {
 		rt_draw_instance_t *instance = g_ray_model_state.frame.instances + i;
-		ASSERT(instance->model);
+		ASSERT(instance->model_toremove);
 
-		if (!instance->model->dynamic)
+		if (!instance->model_toremove->dynamic)
 			continue;
 
-		returnModelToCache(instance->model);
-		instance->model = NULL;
+		returnModelToCache(instance->model_toremove);
+		instance->model_toremove = NULL;
 	}
 
 	g_ray_model_state.frame.instances_count = 0;

@@ -157,7 +157,7 @@ static qboolean buildAccel(VkBuffer geometry_buffer, VkAccelerationStructureBuil
 }
 
 // TODO split this into smaller building blocks in a separate module
-qboolean createOrUpdateAccelerationStructure(vk_combuf_t *combuf, const as_build_args_t *args, vk_ray_model_t *model) {
+qboolean createOrUpdateAccelerationStructure(vk_combuf_t *combuf, const as_build_args_t *args) {
 	ASSERT(args->geoms);
 	ASSERT(args->n_geoms > 0);
 	ASSERT(args->p_accel);
@@ -182,9 +182,11 @@ qboolean createOrUpdateAccelerationStructure(vk_combuf_t *combuf, const as_build
 		if (!args->p_accel)
 			return false;
 
-		if (model) {
-			model->cache.size = build_size.accelerationStructureSize;
-		}
+		if (args->out_accel_addr)
+			*args->out_accel_addr = getAccelAddress(*args->p_accel);
+
+		if (args->inout_size)
+			*args->inout_size = build_size.accelerationStructureSize;
 
 		// gEngine.Con_Reportf("AS=%p, n_geoms=%u, build: %#x %d %#x\n", *args->p_accel, args->n_geoms, buffer_offset, asci.size, buffer_offset + asci.size);
 	}
@@ -193,9 +195,8 @@ qboolean createOrUpdateAccelerationStructure(vk_combuf_t *combuf, const as_build
 	if (!combuf || !args->build_ranges)
 		return true;
 
-	if (model) {
-		ASSERT(model->cache.size >= build_size.accelerationStructureSize);
-	}
+	if (args->inout_size)
+		ASSERT(*args->inout_size >= build_size.accelerationStructureSize);
 
 	build_info.dstAccelerationStructure = *args->p_accel;
 	const VkBuffer geometry_buffer = R_GeometryBuffer_Get();
@@ -230,8 +231,10 @@ static void createTlas( vk_combuf_t *combuf, VkDeviceAddress instances_addr ) {
 		.dynamic = false,
 		.p_accel = &g_accel.tlas,
 		.debug_name = "TLAS",
+		.out_accel_addr = NULL,
+		.inout_size = NULL,
 	};
-	if (!createOrUpdateAccelerationStructure(combuf, &asrgs, NULL)) {
+	if (!createOrUpdateAccelerationStructure(combuf, &asrgs)) {
 		gEngine.Host_Error("Could not create/update TLAS\n");
 		return;
 	}
@@ -260,12 +263,11 @@ vk_resource_t RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
 		VkAccelerationStructureInstanceKHR* inst = ((VkAccelerationStructureInstanceKHR*)g_accel.tlas_geom_buffer.mapped) + instance_offset;
 		for (int i = 0; i < g_ray_model_state.frame.instances_count; ++i) {
 			const rt_draw_instance_t* const instance = g_ray_model_state.frame.instances + i;
-			ASSERT(instance->model);
-			ASSERT(instance->model->as != VK_NULL_HANDLE);
+			ASSERT(instance->blas_addr != 0);
 			inst[i] = (VkAccelerationStructureInstanceKHR){
-				.instanceCustomIndex = instance->model->kusochki_offset,
+				.instanceCustomIndex = instance->kusochki_offset,
 				.instanceShaderBindingTableRecordOffset = 0,
-				.accelerationStructureReference = getAccelAddress(instance->model->as), // TODO cache this addr
+				.accelerationStructureReference = instance->blas_addr,
 			};
 			switch (instance->material_mode) {
 				case MATERIAL_MODE_OPAQUE:
@@ -298,8 +300,8 @@ vk_resource_t RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
 
 			struct ModelHeader *const header = ((struct ModelHeader*)headers_lock.ptr) + i;
 			header->mode = instance->material_mode;
-			Vector4Copy(instance->model->color, header->color);
-			Matrix4x4_ToArrayFloatGL(instance->model->prev_transform, (float*)header->prev_transform);
+			Vector4Copy(instance->color, header->color);
+			Matrix4x4_ToArrayFloatGL(instance->prev_transform_row, (float*)header->prev_transform);
 		}
 
 		R_VkStagingUnlock(headers_lock.handle);
@@ -398,9 +400,9 @@ void RT_VkAccelShutdown(void) {
 
 	for (int i = 0; i < COUNTOF(g_ray_model_state.models_cache); ++i) {
 		vk_ray_model_t *model = g_ray_model_state.models_cache + i;
-		if (model->as != VK_NULL_HANDLE)
-			vkDestroyAccelerationStructureKHR(vk_core.device, model->as, NULL);
-		model->as = VK_NULL_HANDLE;
+		if (model->blas != VK_NULL_HANDLE)
+			vkDestroyAccelerationStructureKHR(vk_core.device, model->blas, NULL);
+		model->blas = VK_NULL_HANDLE;
 	}
 
 	VK_BufferDestroy(&g_accel.scratch_buffer);

@@ -11,29 +11,30 @@
 #include "shaders/ray_interop.h"
 
 typedef struct vk_ray_model_s {
-	VkAccelerationStructureKHR as;
+	VkAccelerationStructureKHR blas;
+	VkDeviceAddress blas_addr;
+	uint32_t kusochki_offset;
+	qboolean dynamic;
 
+	// TODO remove
 	struct {
 		VkAccelerationStructureGeometryKHR *geoms;
 		int max_prims;
 		int num_geoms;
-		int size;
+		uint32_t size;
 		qboolean taken;
-	} cache;
-
-	uint32_t kusochki_offset;
-	qboolean dynamic;
-
-	// TODO remove with the split of Kusok in Model+Material+Kusok
-	vec4_t color;
-	matrix4x4 prev_transform;
+	} cache_toremove;
 } vk_ray_model_t;
 
 typedef struct Kusok vk_kusok_data_t;
 
 typedef struct rt_draw_instance_s {
+	vk_ray_model_t *model_toremove;
+	VkDeviceAddress blas_addr;
+	uint32_t kusochki_offset;
 	matrix3x4 transform_row;
-	vk_ray_model_t *model;
+	matrix4x4 prev_transform_row;
+	vec4_t color;
 	uint32_t material_mode; // MATERIAL_MODE_ from ray_interop.h
 } rt_draw_instance_t;
 
@@ -46,10 +47,13 @@ typedef struct {
 	uint32_t n_geoms;
 	VkAccelerationStructureTypeKHR type;
 	qboolean dynamic;
+
+	VkDeviceAddress *out_accel_addr;
+	uint32_t *inout_size;
 } as_build_args_t;
 
 struct vk_combuf_s;
-qboolean createOrUpdateAccelerationStructure(struct vk_combuf_s *combuf, const as_build_args_t *args, vk_ray_model_t *model);
+qboolean createOrUpdateAccelerationStructure(struct vk_combuf_s *combuf, const as_build_args_t *args);
 
 #define MAX_SCRATCH_BUFFER (32*1024*1024)
 #define MAX_ACCELS_BUFFER (64*1024*1024)
