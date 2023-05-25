@@ -100,7 +100,7 @@ struct ModelHeader {
 };
 
 struct Kusok {
-	// Geometry data
+	// Geometry data, static
 	uint index_offset;
 	uint vertex_offset;
 	uint triangles;
@@ -110,6 +110,7 @@ struct Kusok {
 	uint _padding0;
 
 	// Per-kusok because individual surfaces can be patched
+	// TODO? still move to material, or its own table? As this can be dynamic
 	vec3 emissive;
 	PAD(1)
 

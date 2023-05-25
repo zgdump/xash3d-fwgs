@@ -132,7 +132,7 @@ static void EmitWaterPolys( const cl_entity_t *ent, const msurface_t *warp, qboo
 		num_indices += triangles * 3;
 	}
 
-	if (!R_GeometryBufferAllocAndLock( &buffer, num_vertices, num_indices, LifetimeSingleFrame )) {
+	if (!R_GeometryBufferAllocOnceAndLock( &buffer, num_vertices, num_indices)) {
 		gEngine.Con_Printf(S_ERROR "Cannot allocate geometry for %s\n", ent->model->name );
 		return;
 	}
@@ -591,18 +591,21 @@ static qboolean loadBrushSurfaces( model_sizes_t sizes, const model_t *mod ) {
 	vk_vertex_t *bvert = NULL;
 	uint16_t *bind = NULL;
 	uint32_t index_offset = 0;
-	r_geometry_buffer_lock_t buffer;
 	int animated_count = 0;
 
-	if (!R_GeometryBufferAllocAndLock( &buffer, sizes.num_vertices, sizes.num_indices, LifetimeLong )) {
+	const r_geometry_range_t geom_range = R_GeometryRangeAlloc(sizes.num_vertices, sizes.num_indices);
+
+	if (!geom_range.block_handle.size) {
 		gEngine.Con_Printf(S_ERROR "Cannot allocate geometry for %s\n", mod->name );
 		return false;
 	}
 
-	bvert = buffer.vertices.ptr;
-	bind = buffer.indices.ptr;
+	const r_geometry_range_lock_t geom_lock = R_GeometryRangeLock(&geom_range);
 
-	index_offset = buffer.indices.unit_offset;
+	bvert = geom_lock.vertices;
+	bind = geom_lock.indices;
+
+	index_offset = geom_range.indices.unit_offset;
 
 	// Load sorted by gl_texturenum
 	// TODO this does not make that much sense in vulkan (can sort later)
@@ -656,7 +659,7 @@ static qboolean loadBrushSurfaces( model_sizes_t sizes, const model_t *mod ) {
 			model_geometry->surf_deprecate = surf;
 			model_geometry->texture = tex_id;
 
-			model_geometry->vertex_offset = buffer.vertices.unit_offset;
+			model_geometry->vertex_offset = geom_range.vertices.unit_offset;
 			model_geometry->max_vertex = vertex_offset + surf->numedges;
 
 			model_geometry->index_offset = index_offset;
@@ -762,7 +765,7 @@ static qboolean loadBrushSurfaces( model_sizes_t sizes, const model_t *mod ) {
 		}
 	}
 
-	R_GeometryBufferUnlock( &buffer );
+	R_GeometryRangeUnlock( &geom_lock );
 
 	bmodel->render_model.dynamic_polylights = NULL;
 	bmodel->render_model.dynamic_polylights_count = 0;

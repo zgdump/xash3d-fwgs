@@ -388,6 +388,8 @@ qboolean RT_VkAccelInit(void) {
 	g_accel.tlas_geom_buffer_addr = R_VkBufferGetDeviceAddress(g_accel.tlas_geom_buffer.buffer);
 	R_FlippingBuffer_Init(&g_accel.tlas_geom_buffer_alloc, MAX_INSTANCES * 2);
 
+	g_accel.accels_buffer_alloc = aloPoolCreate(MAX_ACCELS_BUFFER, MAX_INSTANCES, /* why */ 256);
+
 	R_SpeedsRegisterMetric(&g_accel.stats.instances_count, "accels_instances_count", kSpeedsMetricCount);
 	R_SpeedsRegisterMetric(&g_accel.stats.accels_built, "accels_built", kSpeedsMetricCount);
 

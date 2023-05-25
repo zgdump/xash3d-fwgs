@@ -181,3 +181,47 @@ Funcs:
 - Allocate dynamic (single-frame) kusochki[N]
 - Upload geom[N] -> kusochki[N]
 - Upload subset geom[ind[M] -> kusochki[M]
+
+# E269
+
+RT model alloc:
+- blas -- fixed
+	- accel buffer region -- fixed
+	- (scratch: once for build)
+	- (geoms: once for build)
+- -> geometry buffer -- fixed
+- kusochki[G]: geometry data -- fixed
+- materials[G]: -- fixed
+
+RT model update:
+- lives in the same statically allocated blas + accel_buffer
+-
+
+RT model draw:
+- mmode
+- materials[G] -- can be fully static, partially dynamic, fully dynamic
+	- update inplace for most of dynamic things
+	- clone for instanced
+- color
+- transforms
+
+## Blocks
+### Layer 0: abstract, not backing-dependent
+	handle = R_BlockAlloc(int size, lifetime);
+	- block possible users: {accel buffer, geometry, kusochki, materials};
+	- lifetime
+		- long: map, N frames: basically everything)
+		- once = this frame only: sprite materials, triapi geometry/kusochki/materials
+	- handle: offset, size
+	- R_BlockAcquire/Release(handle);
+	- R_BlocksClearOnce(); -- frees "once" regions, checking that they are not referenced
+	- R_blocksClearFull(); -- clears everything, checking that there are not external references
+
+### Layer 1: backed by buffer
+- lock = R_SmthLock(handle, size, offset)
+	- marks region/block as dirty (cannot be used by anything yet, prevents release, clear, etc.),
+	- opens staging regiong for filling and uploading
+- R_SmthUnlock(lock)
+	- remembers dirty region (for barriers)
+	- submits into staging queue
+- ?? R_SmthBarrier -- somehow ask for the barrier struct given pipelines, etc

@@ -13,6 +13,7 @@
 typedef struct vk_ray_model_s {
 	VkAccelerationStructureKHR blas;
 	VkDeviceAddress blas_addr;
+
 	uint32_t kusochki_offset;
 	qboolean dynamic;
 
@@ -30,6 +31,7 @@ typedef struct Kusok vk_kusok_data_t;
 
 typedef struct rt_draw_instance_s {
 	vk_ray_model_t *model_toremove;
+
 	VkDeviceAddress blas_addr;
 	uint32_t kusochki_offset;
 	matrix3x4 transform_row;

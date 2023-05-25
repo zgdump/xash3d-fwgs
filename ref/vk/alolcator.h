@@ -35,3 +35,17 @@ uint32_t aloRingAlloc(alo_ring_t* ring, uint32_t size, uint32_t alignment);
 
 // Marks everything up-to-pos as free (expects up-to-pos to be valid)
 void aloRingFree(alo_ring_t* ring, uint32_t up_to_pos);
+
+// Integer pool/freelist
+// Get integers from 0 to capacity
+typedef struct alo_int_pool_s {
+	int *free_list;
+	int capacity;
+	int free;
+} alo_int_pool_t;
+
+void aloIntPoolGrow(alo_int_pool_t *pool, int new_capacity);
+int aloIntPoolAlloc(alo_int_pool_t *pool);
+void aloIntPoolFree(alo_int_pool_t *pool, int);
+void aloIntPoolClear(alo_int_pool_t *pool);
+void aloIntPoolDestroy(alo_int_pool_t *pool);

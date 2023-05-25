@@ -244,7 +244,7 @@ static void R_DrawSegs( vec3_t source, vec3_t delta, float width, float scale, f
 	total_indices = (total_vertices - 2) * 3; // STRIP unrolled into LIST (TODO get rid of this)
 	ASSERT(total_vertices < UINT16_MAX );
 
-	if (!R_GeometryBufferAllocAndLock( &buffer, total_vertices, total_indices, LifetimeSingleFrame )) {
+	if (!R_GeometryBufferAllocOnceAndLock( &buffer, total_vertices, total_indices)) {
 		gEngine.Con_Printf(S_ERROR "Cannot allocate geometry for beam\n");
 		return;
 	}

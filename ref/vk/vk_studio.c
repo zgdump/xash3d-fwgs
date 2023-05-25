@@ -1941,7 +1941,7 @@ static void R_StudioDrawNormalMesh( short *ptricmds, vec3_t *pstudionorms, float
 	ASSERT(num_indices > 0);
 
 	// Get buffer region for vertices and indices
-	if (!R_GeometryBufferAllocAndLock( &buffer, num_vertices, num_indices, LifetimeSingleFrame )) {
+	if (!R_GeometryBufferAllocOnceAndLock( &buffer, num_vertices, num_indices)) {
 		gEngine.Con_Printf(S_ERROR "Cannot allocate geometry for studio model\n");
 		return;
 	}

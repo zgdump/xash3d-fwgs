@@ -141,7 +141,7 @@ static void emitDynamicGeometry(int num_indices, const vec4_t color, const char*
 		return;
 
 	r_geometry_buffer_lock_t buffer;
-	if (!R_GeometryBufferAllocAndLock( &buffer, g_triapi.num_vertices, num_indices, LifetimeSingleFrame )) {
+	if (!R_GeometryBufferAllocOnceAndLock( &buffer, g_triapi.num_vertices, num_indices)) {
 		gEngine.Con_Printf(S_ERROR "Cannot allocate geometry for tri api\n");
 		return;
 	}

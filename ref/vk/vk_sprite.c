@@ -673,7 +673,7 @@ static vk_render_type_e spriteRenderModeToRenderType( int render_mode ) {
 
 static void R_DrawSpriteQuad( const char *debug_name, mspriteframe_t *frame, vec3_t org, vec3_t v_right, vec3_t v_up, float scale, int texture, int render_mode, const vec4_t color ) {
 	r_geometry_buffer_lock_t buffer;
-	if (!R_GeometryBufferAllocAndLock( &buffer, 4, 6, LifetimeSingleFrame )) {
+	if (!R_GeometryBufferAllocOnceAndLock( &buffer, 4, 6)) {
 		gEngine.Con_Printf(S_ERROR "Cannot allocate geometry for sprite quad\n");
 		return;
 	}

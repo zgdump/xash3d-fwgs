@@ -13,17 +13,74 @@
 
 #define GEOMETRY_BUFFER_SIZE (GEOMETRY_BUFFER_STATIC_SIZE + GEOMETRY_BUFFER_DYNAMIC_SIZE)
 
+// TODO profiler counters
+
 static struct {
 	vk_buffer_t buffer;
-	r_debuffer_t alloc;
+	r_blocks_t alloc;
 } g_geom;
 
-qboolean R_GeometryBufferAllocAndLock( r_geometry_buffer_lock_t *lock, int vertex_count, int index_count, r_geometry_lifetime_t lifetime ) {
+r_geometry_range_t R_GeometryRangeAlloc(int vertices, int indices) {
+	const uint32_t vertices_size = vertices * sizeof(vk_vertex_t);
+	const uint32_t indices_size = indices * sizeof(uint16_t);
+	const uint32_t total_size = vertices_size + indices_size;
+
+	r_geometry_range_t ret = {
+		.block_handle = R_BlockAllocLong(&g_geom.alloc, total_size, sizeof(vk_vertex_t)),
+	};
+
+	if (!ret.block_handle.size)
+		return ret;
+
+	ret.vertices.unit_offset = ret.block_handle.offset / sizeof(vk_vertex_t);
+	ret.indices.unit_offset = (ret.block_handle.offset + vertices_size) / sizeof(uint16_t);
+
+	ret.vertices.count = vertices;
+	ret.indices.count = indices;
+
+	return ret;
+}
+
+void R_GeometryRangeFree(const r_geometry_range_t* range) {
+	R_BlockRelease(&range->block_handle);
+}
+
+r_geometry_range_lock_t R_GeometryRangeLock(const r_geometry_range_t *range) {
+	const vk_staging_buffer_args_t staging_args = {
+		.buffer = g_geom.buffer.buffer,
+		.offset = range->block_handle.offset,
+		.size = range->block_handle.size,
+		.alignment = 4,
+	};
+
+	const vk_staging_region_t staging = R_VkStagingLockForBuffer(staging_args);
+	ASSERT(staging.ptr);
+
+	const uint32_t vertices_size = range->vertices.count * sizeof(vk_vertex_t);
+
+	ASSERT( range->block_handle.offset % sizeof(vk_vertex_t) == 0 );
+	ASSERT( (range->block_handle.offset + vertices_size) % sizeof(uint16_t) == 0 );
+
+	return (r_geometry_range_lock_t){
+		.vertices = (vk_vertex_t *)staging.ptr,
+		.indices = (uint16_t *)((char*)staging.ptr + vertices_size),
+		.impl_ = {
+			.staging_handle = staging.handle,
+		},
+	};
+}
+
+void R_GeometryRangeUnlock(const r_geometry_range_lock_t *lock) {
+	R_VkStagingUnlock(lock->impl_.staging_handle);
+}
+
+qboolean R_GeometryBufferAllocOnceAndLock(r_geometry_buffer_lock_t *lock, int vertex_count, int index_count) {
 	const uint32_t vertices_size = vertex_count * sizeof(vk_vertex_t);
 	const uint32_t indices_size = index_count * sizeof(uint16_t);
 	const uint32_t total_size = vertices_size + indices_size;
 
-	const uint32_t offset = R_DEBuffer_Alloc(&g_geom.alloc, (lifetime == LifetimeSingleFrame) ? LifetimeDynamic : LifetimeStatic, total_size, sizeof(vk_vertex_t));
+	const uint32_t offset = R_BlockAllocOnce(&g_geom.alloc, total_size, sizeof(vk_vertex_t));
+
 	if (offset == ALO_ALLOC_FAILED) {
 		/* gEngine.Con_Printf(S_ERROR "Cannot allocate %s geometry buffer for %d vertices (%d bytes) and %d indices (%d bytes)\n", */
 		/* 	lifetime == LifetimeSingleFrame ? "dynamic" : "static", */
@@ -72,7 +129,7 @@ void R_GeometryBufferUnlock( const r_geometry_buffer_lock_t *lock ) {
 }
 
 void R_GeometryBuffer_MapClear( void ) {
-	R_DEBuffer_Init(&g_geom.alloc, GEOMETRY_BUFFER_STATIC_SIZE, GEOMETRY_BUFFER_DYNAMIC_SIZE);
+	R_BlocksClearFull(&g_geom.alloc);
 }
 
 qboolean R_GeometryBuffer_Init(void) {
@@ -83,16 +140,18 @@ qboolean R_GeometryBuffer_Init(void) {
 		(vk_core.rtx ? VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT : 0)))
 		return false;
 
-	R_GeometryBuffer_MapClear();
+#define EXPECTED_ALLOCS 1024
+	R_BlocksCreate(&g_geom.alloc, GEOMETRY_BUFFER_SIZE, GEOMETRY_BUFFER_DYNAMIC_SIZE, EXPECTED_ALLOCS);
 	return true;
 }
 
 void R_GeometryBuffer_Shutdown(void) {
+	R_BlocksDestroy(&g_geom.alloc);
 	VK_BufferDestroy( &g_geom.buffer );
 }
 
 void R_GeometryBuffer_Flip(void) {
-	R_DEBuffer_Flip(&g_geom.alloc);
+	R_BlocksClearOnce(&g_geom.alloc);
 }
 
 VkBuffer R_GeometryBuffer_Get(void) {
