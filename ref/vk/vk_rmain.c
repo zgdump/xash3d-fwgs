@@ -122,6 +122,8 @@ static qboolean Mod_ProcessRenderData( model_t *mod, qboolean create, const byte
 {
 	qboolean loaded = true;
 
+	gEngine.Con_Reportf("%s(%s, create=%d)\n", __FUNCTION__, mod->name, create);
+
 	// TODO does this ever happen?
 	if (!create && mod->type == mod_brush)
 		gEngine.Con_Printf( S_WARN "VK FIXME Trying to unload brush model %s\n", mod->name);
@@ -151,10 +153,14 @@ static qboolean Mod_ProcessRenderData( model_t *mod, qboolean create, const byte
 		gEngine.drawFuncs->Mod_ProcessUserData( mod, create, buffer );
 
 	if( !create ) {
-		switch( mod->type )
-		{
+		switch( mod->type ) {
 			case mod_brush:
-				VK_BrushModelDestroy( mod );
+				// Empirically, this function only attempts to destroy the worldmodel before loading the next map.
+				// However, all brush models need to be destroyed. Use this as a signal to destroy them too.
+				// Assert that this observation is correct.
+				// ASSERT(mod == gEngine.pfnGetModelByIndex(1)); not correct when closing the game. At this point model count is zero.
+
+				R_SceneMapDestroy();
 				break;
 			default:
 				PRINT_NOT_IMPLEMENTED_ARGS("destroy (%p, %d, %s)", mod, mod->type, mod->name);

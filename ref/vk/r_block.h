@@ -41,8 +41,4 @@ void R_BlockRelease(const r_block_t *block);
 void R_BlocksCreate(r_blocks_t *blocks, uint32_t max_size, uint32_t once_max, int expected_allocs);
 void R_BlocksDestroy(r_blocks_t *blocks);
 
-// Clear all LifetimeOnce blocks, checking that they're not references
 void R_BlocksClearOnce(r_blocks_t *blocks);
-
-// Clear all blocks, checking that they're not referenced
-void R_BlocksClearFull(r_blocks_t *blocks);

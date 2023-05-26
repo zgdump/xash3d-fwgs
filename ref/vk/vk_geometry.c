@@ -129,7 +129,9 @@ void R_GeometryBufferUnlock( const r_geometry_buffer_lock_t *lock ) {
 }
 
 void R_GeometryBuffer_MapClear( void ) {
-	R_BlocksClearFull(&g_geom.alloc);
+	// Obsolete, don't really need to do anything
+	// TODO for diag/debug reasons we might want to check that there are no leaks, i.e.
+	// allocated blocks count remains constant and doesn't grow between maps
 }
 
 qboolean R_GeometryBuffer_Init(void) {

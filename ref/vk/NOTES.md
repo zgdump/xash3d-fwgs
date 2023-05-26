@@ -225,3 +225,38 @@ RT model draw:
 	- remembers dirty region (for barriers)
 	- submits into staging queue
 - ?? R_SmthBarrier -- somehow ask for the barrier struct given pipelines, etc
+
+# E271
+
+## Map loading sequence
+1. For a bunch of sprites:
+	1. Load their textures
+	2. Mod_ProcessRenderData(spr, create=1)
+2. "loading maps/c1a0.bsp" message
+	1. Load a bunch of `#maps/c1a0.bsp:*.mip` textures
+	2. Mod_ProcessRenderData(maps/c1a0.bsp, create=1)
+3. For studio models:
+	1. Load their textures
+	2. Mod_ProcessRenderData(mdl, create=1)
+4. "level loaded at 0.31 sec" message
+5. 1-2 frames drawn (judging by vk swapchain logs)
+6. Do another bunch of sprites (as #1)
+7. Lightstyles logs
+8. "Setting up renderer..." message
+9. R_NewMap() is called
+	1. (vk) load skybox
+	2. (vk) extract WADs, parse entities
+	3. (vk) parse materials
+	4. (vk) parse patches
+	5. (vk) load models
+		1. load brush models
+		2. skip studio and sprite models
+	6. (vk) load lights: parse rad files, etc
+10. "loading model/scientist02.mdl"
+11. Load 640_pain.spr ???, Mod_ProcessRenderData() first, then textures ??
+
+## Map unloading sequence
+1. Mod_ProcessRenderData(maps/c1a0.bps, create=0)
+	- NO similar calls for `*` brush submodels.
+2. For the rest of studio and sprite models:
+	- Mod_ProcessRenderData(create=0)

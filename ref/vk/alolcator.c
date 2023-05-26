@@ -343,7 +343,7 @@ void aloIntPoolFree(alo_int_pool_t *pool, int val) {
 		pool->free_list[pool->free] = val;
 		pool->free_list[i] = tmp;
 
-		++pool->free_list;
+		++pool->free;
 		return;
 	}
 

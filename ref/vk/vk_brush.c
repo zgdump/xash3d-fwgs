@@ -23,6 +23,10 @@
 #include <memory.h>
 
 typedef struct vk_brush_model_s {
+	model_t *engine_model;
+
+	r_geometry_range_t geometry;
+
 	vk_render_model_t render_model;
 	int num_water_surfaces;
 	int *surface_to_geometry_index;
@@ -33,14 +37,19 @@ typedef struct vk_brush_model_s {
 
 static struct {
 	struct {
-		int num_vertices, num_indices;
-
+		int total_vertices, total_indices;
 		int models_drawn;
 		int water_surfaces_drawn;
 		int water_polys_drawn;
 	} stat;
 
 	int rtable[MOD_FRAMES][MOD_FRAMES];
+
+	// Unfortunately the engine only tracks the toplevel worldmodel. *xx submodels, while having their own entities and models, are not lifetime-tracked.
+	// I.e. the engine doesn't call Mod_ProcessRenderData() on them, so we don't directly know when to create or destroy them.
+	// Therefore, we need to track them manually and destroy them based on some other external event, e.g. Mod_ProcessRenderData(worldmodel)
+	vk_brush_model_t *models[MAX_MODELS];
+	int models_count;
 } g_brush;
 
 void VK_InitRandomTable( void )
@@ -774,6 +783,8 @@ static qboolean loadBrushSurfaces( model_sizes_t sizes, const model_t *mod ) {
 	ASSERT(sizes.animated_count == animated_count);
 	bmodel->render_model.num_geometries = num_geometries;
 
+	bmodel->geometry = geom_range;
+
 	return true;
 }
 
@@ -822,39 +833,61 @@ qboolean VK_BrushModelLoad( model_t *mod ) {
 				Mem_Free(bmodel);
 				return false;
 			}
+
+			/* bmodel->blas = RT_BlasCreate(kBlasBuildStatic); */
+			/* ASSERT(bmodel->blas); */
+			/* ASSERT(RT_BlasBuild(bmodel->blas, bmodel->render_model.geometries, bmodel->render_model.num_geometries)); */
+			/* bmodel->kusochki = RT_KusochkiAlloc(bmodel->render_model.num_geometries, LifetimeLong); */
+			/* RT_KusochkiUpload(&bmodel->kusochki, bmodel->render_model.geometries, bmodel->render_model.num_geometries, -1); */
 		}
 
-		g_brush.stat.num_indices += sizes.num_indices;
-		g_brush.stat.num_vertices += sizes.num_vertices;
+		g_brush.stat.total_vertices += sizes.num_indices;
+		g_brush.stat.total_indices += sizes.num_vertices;
 
-		gEngine.Con_Reportf("Model %s loaded surfaces: %d (of %d); total vertices: %u, total indices: %u\n", mod->name, bmodel->render_model.num_geometries, mod->nummodelsurfaces, g_brush.stat.num_vertices, g_brush.stat.num_indices);
+		gEngine.Con_Reportf("Model %s loaded surfaces: %d (of %d); total vertices: %u, total indices: %u\n",
+			mod->name, bmodel->render_model.num_geometries, mod->nummodelsurfaces, g_brush.stat.total_vertices, g_brush.stat.total_indices);
+
+		bmodel->engine_model = mod;
+		ASSERT(g_brush.models_count < COUNTOF(g_brush.models));
+		g_brush.models[g_brush.models_count++] = bmodel;
 	}
 
 	return true;
 }
 
-void VK_BrushModelDestroy( model_t *mod ) {
-	vk_brush_model_t *bmodel = mod->cache.data;
-	ASSERT(mod->type == mod_brush);
-	if (!bmodel)
-		return;
+static void VK_BrushModelDestroy( vk_brush_model_t *bmodel ) {
+	ASSERT(bmodel->engine_model);
+
+	gEngine.Con_Reportf("%s: %s\n", __FUNCTION__, bmodel->engine_model->name);
+
+	ASSERT(bmodel->engine_model->cache.data == bmodel);
+	ASSERT(bmodel->engine_model->type == mod_brush);
 
 	VK_RenderModelDestroy(&bmodel->render_model);
+
 	if (bmodel->animated_indexes)
 		Mem_Free(bmodel->animated_indexes);
+
 	if (bmodel->surface_to_geometry_index)
 		Mem_Free(bmodel->surface_to_geometry_index);
-	if (bmodel->render_model.geometries)
+
+	if (bmodel->render_model.geometries) {
 		Mem_Free(bmodel->render_model.geometries);
+		R_GeometryRangeFree(&bmodel->geometry);
+	}
+
+	bmodel->engine_model->cache.data = NULL;
 	Mem_Free(bmodel);
-	mod->cache.data = NULL;
 }
 
-void VK_BrushStatsClear( void )
-{
-	// Free previous map data
-	g_brush.stat.num_vertices = 0;
-	g_brush.stat.num_indices = 0;
+void VK_BrushModelDestroyAll( void ) {
+	gEngine.Con_Printf("Destroying %d brush models\n", g_brush.models_count);
+	for( int i = 0; i < g_brush.models_count; i++ )
+		VK_BrushModelDestroy(g_brush.models[i]);
+
+	g_brush.stat.total_vertices = 0;
+	g_brush.stat.total_indices = 0;
+	g_brush.models_count = 0;
 }
 
 static rt_light_add_polygon_t loadPolyLight(const model_t *mod, const int surface_index, const msurface_t *surf, const vec3_t emissive) {

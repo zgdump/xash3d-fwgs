@@ -27,11 +27,14 @@ r_block_t R_BlockAllocLong(r_blocks_t *blocks, uint32_t size, uint32_t alignment
 	};
 
 	const alo_block_t ablock = aloPoolAllocate(blocks->long_pool, size, alignment);
-	if (ablock.offset == ALO_ALLOC_FAILED)
+	if (ablock.offset == ALO_ALLOC_FAILED) {
+		/* gEngine.Con_Reportf("aloPoolAllocate failed\n"); */
 		return ret;
+	}
 
 	const int metablock_index = allocMetablock(blocks);
 	if (metablock_index < 0) {
+		/* gEngine.Con_Reportf("allocMettablock failed\n"); */
 		aloPoolFree(blocks->long_pool, ablock.index);
 		return ret;
 	}
@@ -44,6 +47,8 @@ r_block_t R_BlockAllocLong(r_blocks_t *blocks, uint32_t size, uint32_t alignment
 	r_blocks_block_t *metablock = blocks->blocks.storage + metablock_index;
 	metablock->long_index = ablock.index;
 	metablock->refcount = 1;
+
+	/* gEngine.Con_Reportf("block alloc %dKiB => index=%d offset=%u\n", (int)size/1024, metablock_index, (int)ret.offset); */
 
 	return ret;
 }
@@ -67,19 +72,25 @@ void R_BlocksCreate(r_blocks_t *blocks, uint32_t size, uint32_t once_size, int e
 
 	blocks->once.ring_offset = size - once_size;
 	R_FlippingBuffer_Init(&blocks->once.flipping, once_size);
-
 }
 
 void R_BlockRelease(const r_block_t *block) {
 	r_blocks_t *const blocks = block->impl_.blocks;
+	if (!blocks || !block->size)
+		return;
 
 	ASSERT(block->impl_.index >= 0);
 	ASSERT(block->impl_.index < blocks->blocks.freelist.capacity);
 
 	r_blocks_block_t *const metablock = blocks->blocks.storage + block->impl_.index;
+
+	/* gEngine.Con_Reportf("block release index=%d offset=%u refcount=%d\n", block->impl_.index, (int)block->offset, (int)metablock->refcount); */
+
 	ASSERT (metablock->refcount > 0);
 	if (--metablock->refcount)
 		return;
+
+	/* gEngine.Con_Reportf("block free index=%d offset=%u\n", block->impl_.index, (int)block->offset); */
 
 	aloPoolFree(blocks->long_pool, metablock->long_index);
 	aloIntPoolFree(&blocks->blocks.freelist, block->impl_.index);
@@ -99,18 +110,4 @@ void R_BlocksDestroy(r_blocks_t *blocks) {
 // Clear all LifetimeOnce blocks, checking that they are not referenced by anything
 void R_BlocksClearOnce(r_blocks_t *blocks) {
 	R_FlippingBuffer_Flip(&blocks->once.flipping);
-}
-
-// Clear all blocks, checking that they're not referenced
-void R_BlocksClearFull(r_blocks_t *blocks) {
-	for (int i = blocks->blocks.freelist.free; i < blocks->blocks.freelist.capacity; ++i) {
-		r_blocks_block_t *b = blocks->blocks.storage + blocks->blocks.freelist.free_list[i];
-		ASSERT(b->refcount == 0);
-		ASSERT(b->long_index >= 0);
-
-		aloPoolFree(blocks->long_pool, b->long_index);
-	}
-
-	aloIntPoolClear(&blocks->blocks.freelist);
-	R_FlippingBuffer_Clear(&blocks->once.flipping);
 }

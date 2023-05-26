@@ -85,9 +85,6 @@ static void loadLights( const model_t *const map ) {
 
 // Clears all old map data
 static void mapLoadBegin( const model_t *const map ) {
-	// TODO should we do something like VK_BrushBeginLoad?
-	VK_BrushStatsClear();
-
 	R_GeometryBuffer_MapClear();
 
 	VK_ClearLightmap();
@@ -127,23 +124,6 @@ static void loadBrushModels( void ) {
 	}
 }
 
-// Only used when reloading patches. In norma circumstances models get destroyed by the engine
-static void destroyBrushModels( void ) {
-	const int num_models = gEngine.EngineGetParm( PARM_NUMMODELS, 0 );
-	gEngine.Con_Printf("Destroying %d models\n", num_models);
-
-	for( int i = 0; i < num_models; i++ ) {
-		model_t *m;
-		if(( m = gEngine.pfnGetModelByIndex( i + 1 )) == NULL )
-			continue;
-
-		if( m->type != mod_brush )
-			continue;
-
-		VK_BrushModelDestroy(m);
-	}
-}
-
 static void loadMap(const model_t* const map) {
 	mapLoadBegin(map);
 
@@ -170,7 +150,7 @@ static void reloadPatches( void ) {
 
 	XVK_CHECK(vkDeviceWaitIdle( vk_core.device ));
 
-	destroyBrushModels();
+	VK_BrushModelDestroyAll();
 
 	const model_t *const map = gEngine.pfnGetModelByIndex( 1 );
 	loadMap(map);
@@ -225,6 +205,10 @@ int R_FIXME_GetEntityRenderMode( cl_entity_t *ent )
 		return kRenderTransAdd;
 	*/
 	return ent->curstate.rendermode;
+}
+
+void R_SceneMapDestroy( void ) {
+	VK_BrushModelDestroyAll();
 }
 
 // tell the renderer what new map is started
