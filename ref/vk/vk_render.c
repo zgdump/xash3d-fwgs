@@ -641,9 +641,8 @@ void VK_RenderEndRTX( struct vk_combuf_s* combuf, VkImageView img_dst_view, VkIm
 	}
 }
 
-qboolean VK_RenderModelInit( vk_render_model_t *model ) {
+qboolean VK_RenderModelInit_old( vk_render_model_t *model ) {
 	if (vk_core.rtx && (g_render_state.current_frame_is_ray_traced || !model->dynamic)) {
-		const VkBuffer geom_buffer = R_GeometryBuffer_Get();
 		// TODO runtime rtx switch: ???
 		const vk_ray_model_init_t args = {
 			.model = model,
@@ -659,14 +658,41 @@ qboolean VK_RenderModelInit( vk_render_model_t *model ) {
 	return true;
 }
 
+qboolean VK_RenderModelCreate( vk_render_model_t *model, vk_render_model_init_t args ) {
+	memset(model, 0, sizeof(*model));
+	Q_strncpy(model->debug_name, args.name, sizeof(model->debug_name));
+
+	Matrix4x4_LoadIdentity(model->transform);
+	Matrix4x4_LoadIdentity(model->prev_transform);
+
+	// TODO this is dynamic and should be removed
+	model->render_type = kVkRenderTypeSolid;
+	Vector4Set(model->color, 1, 1, 1, 1);
+
+	model->geometries = args.geometries;
+	model->num_geometries = args.geometries_count;
+
+	if (!vk_core.rtx)
+		return true;
+
+	model->rt_model = RT_ModelCreate((rt_model_create_t){
+		.debug_name = args.name,
+		.geometries = args.geometries,
+		.geometries_count = args.geometries_count,
+		.usage = kBlasBuildStatic, // TODO pass from caller
+	});
+	return !!model->rt_model;
+}
+
 void VK_RenderModelDestroy( vk_render_model_t* model ) {
-	// FIXME why the condition? we should do the cleanup anyway
-	if (vk_core.rtx && (g_render_state.current_frame_is_ray_traced || !model->dynamic)) {
-		if (model->ray_model)
-			VK_RayModelDestroy(model->ray_model);
-		if (model->dynamic_polylights)
-			Mem_Free(model->dynamic_polylights);
-	}
+	if (model->ray_model)
+		VK_RayModelDestroy(model->ray_model);
+
+	if (model->dynamic_polylights)
+		Mem_Free(model->dynamic_polylights);
+
+	if (model->rt_model)
+		RT_ModelDestroy(model->rt_model);
 }
 
 static void uboComputeAndSetMVPFromModel( const matrix4x4 model ) {
@@ -675,7 +701,7 @@ static void uboComputeAndSetMVPFromModel( const matrix4x4 model ) {
 	Matrix4x4_ToArrayFloatGL(mvp, (float*)g_render_state.dirty_uniform_data.mvp);
 }
 
-void VK_RenderModelDraw( const cl_entity_t *ent, vk_render_model_t* model ) {
+void VK_RenderModelDraw( vk_render_model_t* model, int ent_index_prev_frame__toremove ) {
 	int current_texture = -1;
 	int element_count = 0;
 	int index_offset = -1;
@@ -690,16 +716,25 @@ void VK_RenderModelDraw( const cl_entity_t *ent, vk_render_model_t* model ) {
 
 	++g_render.stats.models_count;
 
+	// TODO track prev transform directly as a member in vk_render_model_t
 	if (g_render_state.current_frame_is_ray_traced) {
-		if (ent != NULL && model != NULL) {
-			R_PrevFrame_SaveCurrentState( ent->index, model->transform );
-			R_PrevFrame_ModelTransform( ent->index, model->prev_transform );
+		if (ent_index_prev_frame__toremove >= 0 && model != NULL) {
+			R_PrevFrame_SaveCurrentState( ent_index_prev_frame__toremove, model->transform );
+			R_PrevFrame_ModelTransform( ent_index_prev_frame__toremove, model->prev_transform );
 		}
 		else {
 			Matrix4x4_Copy( model->prev_transform, model->transform );
 		}
 
-		VK_RayFrameAddModel(model->ray_model, model);
+		if (model->rt_model) {
+			RT_FrameAddModel(model->rt_model, (rt_frame_add_model_t){
+				.render_type = model->render_type,
+				.transform = (const matrix3x4*)&model->transform,
+				.prev_transform = (const matrix3x4*)&model->prev_transform,
+				.color = &model->color,
+			});
+		} else
+			VK_RayFrameAddModel(model->ray_model, model);
 
 		return;
 	}
@@ -798,9 +833,9 @@ void VK_RenderModelDynamicCommit( void ) {
 	if (g_dynamic_model.model.num_geometries > 0) {
 		g_render.stats.dynamic_model_count++;
 		g_dynamic_model.model.dynamic = true;
-		VK_RenderModelInit( &g_dynamic_model.model );
+		VK_RenderModelInit_old( &g_dynamic_model.model );
 		Matrix4x4_Copy(g_dynamic_model.model.transform, g_dynamic_model.transform);
-		VK_RenderModelDraw( NULL, &g_dynamic_model.model );
+		VK_RenderModelDraw( &g_dynamic_model.model, -1 );
 	}
 
 	g_dynamic_model.model.debug_name[0] = '\0';

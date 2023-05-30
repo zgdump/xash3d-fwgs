@@ -5,7 +5,6 @@
 
 struct vk_render_model_s;
 struct vk_ray_model_s;
-struct model_s;
 
 typedef struct {
 	struct vk_render_model_s *model;
@@ -73,17 +72,20 @@ void RT_BlasDestroy(struct rt_blas_s* blas);
 // 2. Allocates kusochki (if not) and fills them with geom and initial material data
 qboolean RT_BlasBuild(struct rt_blas_s *blas, const struct vk_render_geometry_s *geoms, int geoms_count);
 
+VkDeviceAddress RT_BlasGetDeviceAddress(struct rt_blas_s *blas);
+
 typedef struct rt_kusochki_s {
-	uint32_t kusochki_offset;
+	uint32_t offset;
 	int count;
 	int internal_index__;
 } rt_kusochki_t;
 
+// TODO lifetime arg here is KORYAVY
 rt_kusochki_t RT_KusochkiAlloc(int count, r_geometry_lifetime_t lifetime);
-// TODO? void RT_KusochkiFree(rt_kusochki_t);
+void RT_KusochkiFree(const rt_kusochki_t*);
 
 struct vk_render_geometry_s;
-void RT_KusochkiUpload(rt_kusochki_t *kusochki, const struct vk_render_geometry_s *geoms, int geoms_count, int override_texture_id);
+qboolean RT_KusochkiUpload(const rt_kusochki_t *kusochki, const struct vk_render_geometry_s *geoms, int geoms_count, int override_texture_id);
 
 // Update animated materials
 void RT_KusochkiUploadSubset(rt_kusochki_t *kusochki, const struct vk_render_geometry_s *geoms, const int *geoms_indices, int geoms_indices_count);
@@ -97,3 +99,22 @@ typedef struct {
 } rt_blas_frame_args_t;
 
 void RT_BlasAddToFrame( rt_blas_frame_args_t args );
+
+struct rt_model_s;
+
+typedef struct {
+	const char *debug_name;
+	const struct vk_render_geometry_s *geometries;
+	int geometries_count;
+	rt_blas_usage_e usage;
+} rt_model_create_t;
+struct rt_model_s *RT_ModelCreate(rt_model_create_t args);
+void RT_ModelDestroy(struct rt_model_s *model);
+
+typedef struct {
+	int render_type; // TODO material_mode
+	const matrix3x4 *transform, *prev_transform;
+	const vec4_t *color;
+} rt_frame_add_model_t;
+
+void RT_FrameAddModel( struct rt_model_s *model, rt_frame_add_model_t args );

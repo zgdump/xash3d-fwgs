@@ -10,8 +10,8 @@ typedef struct {
 void R_FlippingBuffer_Init(r_flipping_buffer_t *flibuf, uint32_t size);
 uint32_t R_FlippingBuffer_Alloc(r_flipping_buffer_t* flibuf, uint32_t size, uint32_t align);
 
-// (¿°¿°)¿¿ ¿¿¿
+// (â•¯Â°â–¡Â°)â•¯ï¸µ â”»â”â”»
 void R_FlippingBuffer_Flip(r_flipping_buffer_t* flibuf);
 
-// ¿¿¿¿( º _ º¿)
+// â”¬â”€â”¬ãƒ( Âº _ Âºãƒ)
 void R_FlippingBuffer_Clear(r_flipping_buffer_t *flibuf);

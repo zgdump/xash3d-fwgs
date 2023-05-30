@@ -20,7 +20,6 @@ typedef struct rt_blas_s {
 	rt_blas_usage_e usage;
 
 	VkAccelerationStructureKHR blas;
-	VkDeviceAddress blas_addr;
 
 	int max_geoms;
 	//uint32_t *max_prim_counts;
@@ -519,6 +518,10 @@ void RT_BlasDestroy(struct rt_blas_s* blas) {
 	Mem_Free(blas);
 }
 
+VkDeviceAddress RT_BlasGetDeviceAddress(struct rt_blas_s *blas) {
+	return getAccelAddress(blas->blas);
+}
+
 qboolean RT_BlasBuild(struct rt_blas_s *blas, const struct vk_render_geometry_s *geoms, int geoms_count) {
 	if (!blas || !geoms_count)
 		return false;
@@ -591,10 +594,11 @@ qboolean RT_BlasBuild(struct rt_blas_s *blas, const struct vk_render_geometry_s 
 	// allocate blas
 	if (!blas->blas) {
 		blas->blas = createAccel("FIXME NAME", VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR, build_size.accelerationStructureSize);
-		if (!blas->blas)
+		if (!blas->blas) {
+			gEngine.Con_Printf(S_ERROR "Couldn't create vk accel\n");
 			goto finalize;
+		}
 
-		blas->blas_addr = getAccelAddress(blas->blas);
 		blas->blas_size = build_size.accelerationStructureSize;
 		blas->max_geoms = build_info.geometryCount;
 		// TODO handle lifetime blas->max_prim_counts = max_prim_counts;
@@ -602,12 +606,12 @@ qboolean RT_BlasBuild(struct rt_blas_s *blas, const struct vk_render_geometry_s 
 
 	// Build
 	build_info.dstAccelerationStructure = blas->blas;
-	if (!buildAccel(geometry_buffer, &build_info, &build_size, build_ranges))
+	if (!buildAccel(geometry_buffer, &build_info, &build_size, build_ranges)) {
+		gEngine.Con_Printf(S_ERROR "Couldn't build vk accel\n");
 		goto finalize;
+	}
 
 	retval = true;
-
-	// do kusochki?
 
 finalize:
 	Mem_Free(as_geoms);

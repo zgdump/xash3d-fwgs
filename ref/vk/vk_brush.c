@@ -492,7 +492,7 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 	}
 
 	bmodel->render_model.render_type = render_type;
-	VK_RenderModelDraw(ent, &bmodel->render_model);
+	VK_RenderModelDraw(&bmodel->render_model, ent->index);
 }
 
 typedef enum {
@@ -593,39 +593,35 @@ static model_sizes_t computeSizes( const model_t *mod ) {
 	return sizes;
 }
 
-static qboolean loadBrushSurfaces( model_sizes_t sizes, const model_t *mod ) {
-	vk_brush_model_t *bmodel = mod->cache.data;
-	uint32_t vertex_offset = 0;
+typedef struct {
+	const model_t *mod;
+	const vk_brush_model_t *bmodel;
+	model_sizes_t sizes;
+	uint32_t base_vertex_offset;
+	uint32_t base_index_offset;
+
+	vk_render_geometry_t *out_geometries;
+	vk_vertex_t *out_vertices;
+	uint16_t *out_indices;
+} fill_geometries_args_t;
+
+static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
+	int vertex_offset = 0;
 	int num_geometries = 0;
-	vk_vertex_t *bvert = NULL;
-	uint16_t *bind = NULL;
-	uint32_t index_offset = 0;
 	int animated_count = 0;
 
-	const r_geometry_range_t geom_range = R_GeometryRangeAlloc(sizes.num_vertices, sizes.num_indices);
-
-	if (!geom_range.block_handle.size) {
-		gEngine.Con_Printf(S_ERROR "Cannot allocate geometry for %s\n", mod->name );
-		return false;
-	}
-
-	const r_geometry_range_lock_t geom_lock = R_GeometryRangeLock(&geom_range);
-
-	bvert = geom_lock.vertices;
-	bind = geom_lock.indices;
-
-	index_offset = geom_range.indices.unit_offset;
+	vk_vertex_t *p_vert = args.out_vertices;
+	uint16_t *p_ind = args.out_indices;
+	int index_offset = args.base_index_offset;
 
 	// Load sorted by gl_texturenum
 	// TODO this does not make that much sense in vulkan (can sort later)
-	for (int t = 0; t <= sizes.max_texture_id; ++t)
-	{
-		for( int i = 0; i < mod->nummodelsurfaces; ++i)
-		{
-			const int surface_index = mod->firstmodelsurface + i;
-			msurface_t *surf = mod->surfaces + surface_index;
+	for (int t = 0; t <= args.sizes.max_texture_id; ++t) {
+		for( int i = 0; i < args.mod->nummodelsurfaces; ++i) {
+			const int surface_index = args.mod->firstmodelsurface + i;
+			msurface_t *surf = args.mod->surfaces + surface_index;
 			mextrasurf_t	*info = surf->info;
-			vk_render_geometry_t *model_geometry = bmodel->render_model.geometries + num_geometries;
+			vk_render_geometry_t *model_geometry = args.out_geometries + num_geometries;
 			const float sample_size = gEngine.Mod_SampleSizeForFace( surf );
 			int index_count = 0;
 			vec3_t tangent;
@@ -644,22 +640,21 @@ static qboolean loadBrushSurfaces( model_sizes_t sizes, const model_t *mod ) {
 			case BrushSurface_Hidden:
 				continue;
 			case BrushSurface_Animated:
-				bmodel->animated_indexes[animated_count++] = num_geometries;
+				args.bmodel->animated_indexes[animated_count++] = num_geometries;
 			case BrushSurface_Regular:
 			case BrushSurface_Sky:
 				break;
 			}
 
-			bmodel->surface_to_geometry_index[i] = num_geometries;
+			args.bmodel->surface_to_geometry_index[i] = num_geometries;
 
 			++num_geometries;
 
 			//gEngine.Con_Reportf( "surface %d: numverts=%d numedges=%d\n", i, surf->polys ? surf->polys->numverts : -1, surf->numedges );
 
-			if (vertex_offset + surf->numedges >= UINT16_MAX)
-			{
-				gEngine.Con_Printf(S_ERROR "Model %s indices don't fit into 16 bits\n", mod->name);
-				// FIXME unlock and free buffers
+			if (vertex_offset + surf->numedges >= UINT16_MAX) {
+				// We might be able to handle it by adjusting base_vertex_offset, etc
+				gEngine.Con_Printf(S_ERROR "Model %s indices don't fit into 16 bits\n", args.mod->name);
 				return false;
 			}
 
@@ -668,7 +663,7 @@ static qboolean loadBrushSurfaces( model_sizes_t sizes, const model_t *mod ) {
 			model_geometry->surf_deprecate = surf;
 			model_geometry->texture = tex_id;
 
-			model_geometry->vertex_offset = geom_range.vertices.unit_offset;
+			model_geometry->vertex_offset = args.base_vertex_offset;
 			model_geometry->max_vertex = vertex_offset + surf->numedges;
 
 			model_geometry->index_offset = index_offset;
@@ -678,7 +673,7 @@ static qboolean loadBrushSurfaces( model_sizes_t sizes, const model_t *mod ) {
 			} else {
 				model_geometry->material = kXVkMaterialRegular;
 				ASSERT(!FBitSet( surf->flags, SURF_DRAWTILED ));
-				VK_CreateSurfaceLightmap( surf, mod );
+				VK_CreateSurfaceLightmap( surf, args.mod );
 			}
 
 			if (FBitSet( surf->flags, SURF_CONVEYOR )) {
@@ -690,9 +685,9 @@ static qboolean loadBrushSurfaces( model_sizes_t sizes, const model_t *mod ) {
 
 			for( int k = 0; k < surf->numedges; k++ )
 			{
-				const int iedge = mod->surfedges[surf->firstedge + k];
-				const medge_t *edge = mod->edges + (iedge >= 0 ? iedge : -iedge);
-				const mvertex_t *in_vertex = mod->vertexes + (iedge >= 0 ? edge->v[0] : edge->v[1]);
+				const int iedge = args.mod->surfedges[surf->firstedge + k];
+				const medge_t *edge = args.mod->edges + (iedge >= 0 ? iedge : -iedge);
+				const mvertex_t *in_vertex = args.mod->vertexes + (iedge >= 0 ? edge->v[0] : edge->v[1]);
 				vk_vertex_t vertex = {
 					{in_vertex->position[0], in_vertex->position[1], in_vertex->position[2]},
 				};
@@ -757,13 +752,13 @@ static qboolean loadBrushSurfaces( model_sizes_t sizes, const model_t *mod ) {
 
 				Vector4Set(vertex.color, 255, 255, 255, 255);
 
-				*(bvert++) = vertex;
+				*(p_vert++) = vertex;
 
 				// Ray tracing apparently expects triangle list only (although spec is not very clear about this kekw)
 				if (k > 1) {
-					*(bind++) = (uint16_t)(vertex_offset + 0);
-					*(bind++) = (uint16_t)(vertex_offset + k - 1);
-					*(bind++) = (uint16_t)(vertex_offset + k);
+					*(p_ind++) = (uint16_t)(vertex_offset + 0);
+					*(p_ind++) = (uint16_t)(vertex_offset + k - 1);
+					*(p_ind++) = (uint16_t)(vertex_offset + k);
 					index_count += 3;
 					index_offset += 3;
 				}
@@ -774,17 +769,8 @@ static qboolean loadBrushSurfaces( model_sizes_t sizes, const model_t *mod ) {
 		}
 	}
 
-	R_GeometryRangeUnlock( &geom_lock );
-
-	bmodel->render_model.dynamic_polylights = NULL;
-	bmodel->render_model.dynamic_polylights_count = 0;
-
-	ASSERT(sizes.num_surfaces == num_geometries);
-	ASSERT(sizes.animated_count == animated_count);
-	bmodel->render_model.num_geometries = num_geometries;
-
-	bmodel->geometry = geom_range;
-
+	ASSERT(args.sizes.num_surfaces == num_geometries);
+	ASSERT(args.sizes.animated_count == animated_count);
 	return true;
 }
 
@@ -799,6 +785,54 @@ static const xvk_mapent_func_wall_t *getModelFuncWallPatch( const model_t *const
 	return NULL;
 }
 
+static qboolean createRenderModel( const model_t *mod, vk_brush_model_t *bmodel, const model_sizes_t sizes ) {
+	bmodel->geometry = R_GeometryRangeAlloc(sizes.num_vertices, sizes.num_indices);
+	if (!bmodel->geometry.block_handle.size) {
+		gEngine.Con_Printf(S_ERROR "Cannot allocate geometry for %s\n", mod->name );
+		return false;
+	}
+
+	vk_render_geometry_t *const geometries = Mem_Malloc(vk_core.pool, sizeof(vk_render_geometry_t) * sizes.num_surfaces);
+	bmodel->surface_to_geometry_index = Mem_Malloc(vk_core.pool, sizeof(int) * mod->nummodelsurfaces);
+	bmodel->animated_indexes = Mem_Malloc(vk_core.pool, sizeof(int) * sizes.animated_count);
+	bmodel->animated_indexes_count = sizes.animated_count;
+
+	const r_geometry_range_lock_t geom_lock = R_GeometryRangeLock(&bmodel->geometry);
+
+	const qboolean fill_result = fillBrushSurfaces((fill_geometries_args_t){
+			.mod = mod,
+			.bmodel = bmodel,
+			.sizes = sizes,
+			.base_vertex_offset = bmodel->geometry.vertices.unit_offset,
+			.base_index_offset = bmodel->geometry.indices.unit_offset,
+			.out_geometries = geometries,
+			.out_vertices = geom_lock.vertices,
+			.out_indices = geom_lock.indices,
+		});
+
+	R_GeometryRangeUnlock( &geom_lock );
+
+	if (!fill_result) {
+		// TODO unlock and free buffers if failed? Currently we can't free geometry range, as it is being implicitly referenced by staging queue. Flush staging and free?
+		// This shouldn't really happen btw, kind of unrecoverable for now tbh.
+		// Also, we might just handle it, as the only reason it can fail is 16 bit index overflow.
+		// I. Split into smaller geometries sets.
+		// II. Make indices 32 bit
+		return false;
+	}
+
+	if (!VK_RenderModelCreate(&bmodel->render_model, (vk_render_model_init_t){
+		.name = mod->name,
+		.geometries = geometries,
+		.geometries_count = sizes.num_surfaces,
+		})) {
+		gEngine.Con_Printf(S_ERROR "Could not create render model for brush model %s\n", mod->name);
+		return false;
+	}
+
+	return true;
+}
+
 qboolean VK_BrushModelLoad( model_t *mod ) {
 	if (mod->cache.data) {
 		gEngine.Con_Reportf( S_WARN "Model %s was already loaded\n", mod->name );
@@ -807,50 +841,32 @@ qboolean VK_BrushModelLoad( model_t *mod ) {
 
 	gEngine.Con_Reportf("%s: %s flags=%08x\n", __FUNCTION__, mod->name, mod->flags);
 
-	{
-		const model_sizes_t sizes = computeSizes( mod );
-		const size_t model_size = sizeof(vk_brush_model_t);
+	vk_brush_model_t *bmodel = Mem_Calloc(vk_core.pool, sizeof(*bmodel));
+	ASSERT(g_brush.models_count < COUNTOF(g_brush.models));
+	g_brush.models[g_brush.models_count++] = bmodel;
 
-		vk_brush_model_t *bmodel = Mem_Calloc(vk_core.pool, sizeof(*bmodel));
-		mod->cache.data = bmodel;
-		Q_strncpy(bmodel->render_model.debug_name, mod->name, sizeof(bmodel->render_model.debug_name));
-		bmodel->render_model.render_type = kVkRenderTypeSolid;
+	bmodel->engine_model = mod;
+	mod->cache.data = bmodel;
 
-		bmodel->num_water_surfaces = sizes.water_surfaces;
-		Vector4Set(bmodel->render_model.color, 1, 1, 1, 1);
+	const model_sizes_t sizes = computeSizes( mod );
+	bmodel->num_water_surfaces = sizes.water_surfaces;
 
-		if (sizes.num_surfaces != 0) {
-			bmodel->render_model.geometries = Mem_Malloc(vk_core.pool, sizeof(vk_render_geometry_t) * sizes.num_surfaces);
-			bmodel->surface_to_geometry_index = Mem_Malloc(vk_core.pool, sizeof(int) * mod->nummodelsurfaces);
-			bmodel->animated_indexes = Mem_Malloc(vk_core.pool, sizeof(int) * sizes.animated_count);
-			bmodel->animated_indexes_count = sizes.animated_count;
-
-			bmodel->render_model.geometries_changed = bmodel->animated_indexes;
-			bmodel->render_model.geometries_changed_count = bmodel->animated_indexes_count;
-
-			if (!loadBrushSurfaces(sizes, mod) || !VK_RenderModelInit(&bmodel->render_model)) {
-				gEngine.Con_Printf(S_ERROR "Could not load model %s\n", mod->name);
-				Mem_Free(bmodel);
-				return false;
-			}
-
-			/* bmodel->blas = RT_BlasCreate(kBlasBuildStatic); */
-			/* ASSERT(bmodel->blas); */
-			/* ASSERT(RT_BlasBuild(bmodel->blas, bmodel->render_model.geometries, bmodel->render_model.num_geometries)); */
-			/* bmodel->kusochki = RT_KusochkiAlloc(bmodel->render_model.num_geometries, LifetimeLong); */
-			/* RT_KusochkiUpload(&bmodel->kusochki, bmodel->render_model.geometries, bmodel->render_model.num_geometries, -1); */
+	if (sizes.num_surfaces != 0) {
+		if (!createRenderModel(mod, bmodel, sizes)) {
+			gEngine.Con_Printf(S_ERROR "Could not load brush model %s\n", mod->name);
+			// Cannot deallocate bmodel as we might still have staging references to its memory
+			return false;
 		}
 
-		g_brush.stat.total_vertices += sizes.num_indices;
-		g_brush.stat.total_indices += sizes.num_vertices;
-
-		gEngine.Con_Reportf("Model %s loaded surfaces: %d (of %d); total vertices: %u, total indices: %u\n",
-			mod->name, bmodel->render_model.num_geometries, mod->nummodelsurfaces, g_brush.stat.total_vertices, g_brush.stat.total_indices);
-
-		bmodel->engine_model = mod;
-		ASSERT(g_brush.models_count < COUNTOF(g_brush.models));
-		g_brush.models[g_brush.models_count++] = bmodel;
+		bmodel->render_model.geometries_changed = bmodel->animated_indexes;
+		bmodel->render_model.geometries_changed_count = bmodel->animated_indexes_count;
 	}
+
+	g_brush.stat.total_vertices += sizes.num_indices;
+	g_brush.stat.total_indices += sizes.num_vertices;
+
+	gEngine.Con_Reportf("Model %s loaded surfaces: %d (of %d); total vertices: %u, total indices: %u\n",
+		mod->name, bmodel->render_model.num_geometries, mod->nummodelsurfaces, g_brush.stat.total_vertices, g_brush.stat.total_indices);
 
 	return true;
 }

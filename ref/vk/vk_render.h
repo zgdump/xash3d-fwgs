@@ -98,29 +98,37 @@ typedef enum {
 
 struct rt_light_add_polygon_s;
 struct vk_ray_model_s;
+struct rt_model_s;
 
 typedef struct vk_render_model_s {
 #define MAX_MODEL_NAME_LENGTH 64
 	char debug_name[MAX_MODEL_NAME_LENGTH];
 
+	// TODO these two are dynamic, extract them to draw args?
 	vk_render_type_e render_type;
 	vec4_t color;
+
+	// TODO per-geometry?
 	int lightmap; // <= 0 if no lightmap
 
 	int num_geometries;
 	vk_render_geometry_t *geometries;
 
+	// TODO potentially dynamic. extract to draw args?
 	int geometries_changed_count;
 	int *geometries_changed;
 
 	// This model will be one-frame only, its buffers are not preserved between frames
+	// TODO deprecate
 	qboolean dynamic;
 
 	// Non-NULL only for ray tracing
+	// TODO deprecate in favor of rt_model_s
 	struct vk_ray_model_s *ray_model;
 
 	// Polylights which need to be added per-frame dynamically
 	// Used for non-worldmodel brush models which are not static
+	// TODO this doesn't belong here at all
 	struct rt_light_add_polygon_s *dynamic_polylights;
 	int dynamic_polylights_count;
 
@@ -128,11 +136,22 @@ typedef struct vk_render_model_s {
 
 	// previous frame ObjectToWorld (model) matrix
 	matrix4x4 prev_transform;
+
+	struct rt_model_s *rt_model;
 } vk_render_model_t;
 
-qboolean VK_RenderModelInit( vk_render_model_t* model );
+qboolean VK_RenderModelInit_old( vk_render_model_t* model );
+
+// Initialize model from scratch
+typedef struct {
+	const char *name;
+	vk_render_geometry_t *geometries;
+	int geometries_count;
+} vk_render_model_init_t;
+qboolean VK_RenderModelCreate( vk_render_model_t *model, vk_render_model_init_t args );
 void VK_RenderModelDestroy( vk_render_model_t* model );
-void VK_RenderModelDraw( const cl_entity_t *ent, vk_render_model_t* model );
+
+void VK_RenderModelDraw( vk_render_model_t* model, int ent_index_prev_frame__toremove );
 
 // TODO Begin and commit should be removed
 void VK_RenderModelDynamicBegin( vk_render_type_e render_type, const vec4_t color, const matrix3x4 transform, const char *debug_name_fmt, ... );
