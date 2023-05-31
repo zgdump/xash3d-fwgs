@@ -17,6 +17,7 @@
 #endif // #ifndef ARRAYSIZE
 
 typedef struct rt_blas_s {
+	const char *debug_name;
 	rt_blas_usage_e usage;
 
 	VkAccelerationStructureKHR blas;
@@ -446,7 +447,7 @@ void RT_VkAccelFrameBegin(void) {
 	g_accel.frame.scratch_offset = 0;
 }
 
-struct rt_blas_s* RT_BlasCreate(rt_blas_usage_e usage) {
+struct rt_blas_s* RT_BlasCreate(const char *name, rt_blas_usage_e usage) {
 	rt_blas_t *blas = Mem_Calloc(vk_core.pool, sizeof(*blas));
 
 	switch (usage) {
@@ -460,6 +461,7 @@ struct rt_blas_s* RT_BlasCreate(rt_blas_usage_e usage) {
 			break;
 	}
 
+	blas->debug_name = name;
 	blas->usage = usage;
 	//blas->kusochki_offset = -1;
 	blas->blas_size = -1;
@@ -467,7 +469,7 @@ struct rt_blas_s* RT_BlasCreate(rt_blas_usage_e usage) {
 	return blas;
 }
 
-struct rt_blas_s* RT_BlasCreatePreallocated(rt_blas_usage_e usage, int max_geometries, const int *max_prims, int max_vertex, uint32_t extra_buffer_offset) {
+struct rt_blas_s* RT_BlasCreatePreallocated(const char *name, rt_blas_usage_e usage, int max_geometries, const int *max_prims, int max_vertex, uint32_t extra_buffer_offset) {
 	ASSERT(!"Not implemented");
 
 #if 0
@@ -593,7 +595,7 @@ qboolean RT_BlasBuild(struct rt_blas_s *blas, const struct vk_render_geometry_s 
 
 	// allocate blas
 	if (!blas->blas) {
-		blas->blas = createAccel("FIXME NAME", VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR, build_size.accelerationStructureSize);
+		blas->blas = createAccel(blas->debug_name, VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR, build_size.accelerationStructureSize);
 		if (!blas->blas) {
 			gEngine.Con_Printf(S_ERROR "Couldn't create vk accel\n");
 			goto finalize;

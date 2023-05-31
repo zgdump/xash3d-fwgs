@@ -61,10 +61,11 @@ typedef enum {
 } rt_blas_usage_e;
 
 // Just creates an empty BLAS structure, doesn't alloc anything
-struct rt_blas_s* RT_BlasCreate(rt_blas_usage_e usage);
+// Memory pointed to by name must remain alive until RT_BlasDestroy
+struct rt_blas_s* RT_BlasCreate(const char *name, rt_blas_usage_e usage);
 
 // Create an empty BLAS with specified limits
-struct rt_blas_s* RT_BlasCreatePreallocated(rt_blas_usage_e usage, int max_geometries, const int *max_prims, int max_vertex, uint32_t extra_buffer_offset);
+struct rt_blas_s* RT_BlasCreatePreallocated(const char *name, rt_blas_usage_e usage, int max_geometries, const int *max_prims, int max_vertex, uint32_t extra_buffer_offset);
 
 void RT_BlasDestroy(struct rt_blas_s* blas);
 
@@ -103,7 +104,7 @@ void RT_BlasAddToFrame( rt_blas_frame_args_t args );
 struct rt_model_s;
 
 typedef struct {
-	const char *debug_name;
+	const char *debug_name; // Must remain alive until RT_ModelDestroy
 	const struct vk_render_geometry_s *geometries;
 	int geometries_count;
 	rt_blas_usage_e usage;

@@ -521,7 +521,7 @@ struct rt_model_s *RT_ModelCreate(rt_model_create_t args) {
 		return NULL;
 	}
 
-	struct rt_blas_s* blas = RT_BlasCreate(args.usage);
+	struct rt_blas_s* blas = RT_BlasCreate(args.debug_name, args.usage);
 	if (!blas) {
 		gEngine.Con_Printf(S_ERROR "Cannot create BLAS for %s\n", args.debug_name);
 		goto fail;
@@ -569,6 +569,7 @@ void RT_FrameAddModel( struct rt_model_s *model, rt_frame_add_model_t args ) {
 	if (!model || !model->blas)
 		return;
 
+	// TODO this shouldn't be an assert, just complain to the log and ignore
 	ASSERT(g_ray_model_state.frame.instances_count <= ARRAYSIZE(g_ray_model_state.frame.instances));
 
 	rt_draw_instance_t* draw_instance = g_ray_model_state.frame.instances + g_ray_model_state.frame.instances_count;

@@ -676,7 +676,7 @@ qboolean VK_RenderModelCreate( vk_render_model_t *model, vk_render_model_init_t 
 		return true;
 
 	model->rt_model = RT_ModelCreate((rt_model_create_t){
-		.debug_name = args.name,
+		.debug_name = model->debug_name,
 		.geometries = args.geometries,
 		.geometries_count = args.geometries_count,
 		.usage = kBlasBuildStatic, // TODO pass from caller
