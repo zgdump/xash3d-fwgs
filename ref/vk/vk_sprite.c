@@ -5,6 +5,7 @@
 #include "vk_geometry.h"
 #include "vk_scene.h"
 #include "r_speeds.h"
+#include "vk_math.h"
 
 #include "sprite.h"
 #include "xash3d_mathlib.h"
@@ -22,11 +23,108 @@ static struct {
 	struct {
 		int sprites;
 	} stats;
+
+	struct {
+		r_geometry_range_t geom;
+		vk_render_geometry_t geometry;
+		vk_render_model_t model;
+	} quad;
 } g_sprite;
+
+static qboolean createQuadModel(void) {
+	g_sprite.quad.geom = R_GeometryRangeAlloc(4, 6);
+	if (g_sprite.quad.geom.block_handle.size == 0) {
+		gEngine.Con_Printf(S_ERROR "Cannot allocate geometry for sprite quad\n");
+		return false;
+	}
+
+	const r_geometry_range_lock_t lock = R_GeometryRangeLock(&g_sprite.quad.geom);
+
+	vec3_t point;
+	vk_vertex_t *dst_vtx;
+	uint16_t *dst_idx;
+
+	dst_vtx = lock.vertices;
+	dst_idx = lock.indices;
+
+	const vec3_t org = {0, 0, 0};
+	const vec3_t v_right = {1, 0, 0};
+	const vec3_t v_up = {0, 1, 0};
+	vec3_t v_normal;
+	CrossProduct(v_right, v_up, v_normal);
+
+	VectorMA( org, -1.f, v_up, point );
+	VectorMA( point, -1.f, v_right, dst_vtx[0].pos );
+	dst_vtx[0].gl_tc[0] = 0.f;
+	dst_vtx[0].gl_tc[1] = 1.f;
+	dst_vtx[0].lm_tc[0] = dst_vtx[0].lm_tc[1] = 0.f;
+	Vector4Set(dst_vtx[0].color, 255, 255, 255, 255);
+	VectorCopy(v_normal, dst_vtx[0].normal);
+
+	VectorMA( org, 1.f, v_up, point );
+	VectorMA( point, -1.f, v_right, dst_vtx[1].pos );
+	dst_vtx[1].gl_tc[0] = 0.f;
+	dst_vtx[1].gl_tc[1] = 0.f;
+	dst_vtx[1].lm_tc[0] = dst_vtx[1].lm_tc[1] = 0.f;
+	Vector4Set(dst_vtx[1].color, 255, 255, 255, 255);
+	VectorCopy(v_normal, dst_vtx[1].normal);
+
+	VectorMA( org, 1.f, v_up, point );
+	VectorMA( point, 1.f, v_right, dst_vtx[2].pos );
+	dst_vtx[2].gl_tc[0] = 1.f;
+	dst_vtx[2].gl_tc[1] = 0.f;
+	dst_vtx[2].lm_tc[0] = dst_vtx[2].lm_tc[1] = 0.f;
+	Vector4Set(dst_vtx[2].color, 255, 255, 255, 255);
+	VectorCopy(v_normal, dst_vtx[2].normal);
+
+	VectorMA( org, -1.f, v_up, point );
+	VectorMA( point, 1.f, v_right, dst_vtx[3].pos );
+	dst_vtx[3].gl_tc[0] = 1.f;
+	dst_vtx[3].gl_tc[1] = 1.f;
+	dst_vtx[3].lm_tc[0] = dst_vtx[3].lm_tc[1] = 0.f;
+	Vector4Set(dst_vtx[3].color, 255, 255, 255, 255);
+	VectorCopy(v_normal, dst_vtx[3].normal);
+
+	dst_idx[0] = 0;
+	dst_idx[1] = 1;
+	dst_idx[2] = 2;
+	dst_idx[3] = 0;
+	dst_idx[4] = 2;
+	dst_idx[5] = 3;
+
+	R_GeometryRangeUnlock( &lock );
+
+	g_sprite.quad.geometry = (vk_render_geometry_t){
+		.max_vertex = 4,
+		.vertex_offset = g_sprite.quad.geom.vertices.unit_offset,
+
+		.element_count = 6,
+		.index_offset = g_sprite.quad.geom.indices.unit_offset,
+
+		.material = kXVkMaterialRegular,
+		.texture = tglob.defaultTexture,
+		.emissive = {1,1,1},
+	};
+
+	return VK_RenderModelCreate(&g_sprite.quad.model, (vk_render_model_init_t){
+		.name = "sprite",
+		.geometries = &g_sprite.quad.geometry,
+		.geometries_count = 1,
+		});
+}
 
 qboolean R_SpriteInit(void) {
 	R_SpeedsRegisterMetric(&g_sprite.stats.sprites, "sprites_count", kSpeedsMetricCount);
-	return true;
+
+	return createQuadModel();
+}
+
+void R_SpriteShutdown(void) {
+	if (g_sprite.quad.model.num_geometries)
+		VK_RenderModelDestroy(&g_sprite.quad.model);
+
+	if (g_sprite.quad.geom.block_handle.size)
+		R_GeometryRangeFree(&g_sprite.quad.geom);
 }
 
 static mspriteframe_t *R_GetSpriteFrame( const model_t *pModel, int frame, float yaw )
@@ -672,81 +770,52 @@ static vk_render_type_e spriteRenderModeToRenderType( int render_mode ) {
 }
 
 static void R_DrawSpriteQuad( const char *debug_name, mspriteframe_t *frame, vec3_t org, vec3_t v_right, vec3_t v_up, float scale, int texture, int render_mode, const vec4_t color ) {
-	r_geometry_buffer_lock_t buffer;
-	if (!R_GeometryBufferAllocOnceAndLock( &buffer, 4, 6)) {
-		gEngine.Con_Printf(S_ERROR "Cannot allocate geometry for sprite quad\n");
-		return;
-	}
-
-	vec3_t point;
-	vk_vertex_t *dst_vtx;
-	uint16_t *dst_idx;
-
-	dst_vtx = buffer.vertices.ptr;
-	dst_idx = buffer.indices.ptr;
-
 	vec3_t v_normal;
-	CrossProduct(v_right, v_up, v_normal);
+	vec3_t point;
+	//CrossProduct(v_right, v_up, v_normal);
 
-	VectorMA( org, frame->down * scale, v_up, point );
-	VectorMA( point, frame->left * scale, v_right, dst_vtx[0].pos );
-	dst_vtx[0].gl_tc[0] = 0.f;
-	dst_vtx[0].gl_tc[1] = 1.f;
-	dst_vtx[0].lm_tc[0] = dst_vtx[0].lm_tc[1] = 0.f;
-	Vector4Set(dst_vtx[0].color, 255, 255, 255, 255);
-	VectorCopy(v_normal, dst_vtx[0].normal);
+	matrix4x4 transform;
+	// FIXME orient sprites
+	//VectorMA( org, frame->down * scale, v_up, point );
+	//VectorMA( point, frame->left * scale, v_right, dst_vtx[0].pos );
+	//vtx[0] = org + down * scale + v_up + left * scale * v_right;
+	Matrix4x4_CreateScale(transform, scale);
+	Matrix4x4_SetOrigin(transform, org[0], org[1], org[2]);
+	const vk_render_type_e render_type = spriteRenderModeToRenderType(render_mode);
 
-	VectorMA( org, frame->up * scale, v_up, point );
-	VectorMA( point, frame->left * scale, v_right, dst_vtx[1].pos );
-	dst_vtx[1].gl_tc[0] = 0.f;
-	dst_vtx[1].gl_tc[1] = 0.f;
-	dst_vtx[1].lm_tc[0] = dst_vtx[1].lm_tc[1] = 0.f;
-	Vector4Set(dst_vtx[1].color, 255, 255, 255, 255);
-	VectorCopy(v_normal, dst_vtx[1].normal);
+	R_RenderModelDraw(&g_sprite.quad.model, (r_model_draw_t){
+		.render_type = render_type,
+		.color = (const vec4_t*)&color,
+		//.color = (const vec4_t*)color,
+		.transform = &transform,
+		.prev_transform = &transform,
 
-	VectorMA( org, frame->up * scale, v_up, point );
-	VectorMA( point, frame->right * scale, v_right, dst_vtx[2].pos );
-	dst_vtx[2].gl_tc[0] = 1.f;
-	dst_vtx[2].gl_tc[1] = 0.f;
-	dst_vtx[2].lm_tc[0] = dst_vtx[2].lm_tc[1] = 0.f;
-	Vector4Set(dst_vtx[2].color, 255, 255, 255, 255);
-	VectorCopy(v_normal, dst_vtx[2].normal);
+		.geometries_changed = NULL,
+		.geometries_changed_count = 0,
+	});
 
-	VectorMA( org, frame->down * scale, v_up, point );
-	VectorMA( point, frame->right * scale, v_right, dst_vtx[3].pos );
-	dst_vtx[3].gl_tc[0] = 1.f;
-	dst_vtx[3].gl_tc[1] = 1.f;
-	dst_vtx[3].lm_tc[0] = dst_vtx[3].lm_tc[1] = 0.f;
-	Vector4Set(dst_vtx[3].color, 255, 255, 255, 255);
-	VectorCopy(v_normal, dst_vtx[3].normal);
+#if 0
+	typedef struct {
+		const char *debug_name;
+		const vk_render_model_t *model;
+		const matrix4x4 *transform;
+		const vec4_t *color;
+		vk_render_type_e render_type;
+		//TODO int material_mode;
+		int texture;
+	} vk_render_model_draw_instance_t;
 
-	dst_idx[0] = 0;
-	dst_idx[1] = 1;
-	dst_idx[2] = 2;
-	dst_idx[3] = 0;
-	dst_idx[4] = 2;
-	dst_idx[5] = 3;
+	const vk_render_model_draw_instance_t args = {
+		.debug_name = debug_name,
+		.model = g_sprite.quad_model,
+		.transform = &transform,
+		.color = &color,
+		.render_type = render_type,
+		.texture = texture,
+	};
 
-	R_GeometryBufferUnlock( &buffer );
-
-	{
-		const vk_render_geometry_t geometry = {
-			.texture = texture,
-			.material = kXVkMaterialRegular,
-
-			.max_vertex = 4,
-			.vertex_offset = buffer.vertices.unit_offset,
-
-			.element_count = 6,
-			.index_offset = buffer.indices.unit_offset,
-
-			.emissive = {1,1,1},
-		};
-
-		VK_RenderModelDynamicBegin( spriteRenderModeToRenderType(render_mode), color, m_matrix4x4_identity, "%s", debug_name );
-		VK_RenderModelDynamicAddGeometry( &geometry );
-		VK_RenderModelDynamicCommit();
-	}
+	VK_RenderModelInstanced(&args);
+#endif
 }
 
 static qboolean R_SpriteHasLightmap( cl_entity_t *e, int texFormat )

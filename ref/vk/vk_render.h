@@ -104,19 +104,13 @@ typedef struct vk_render_model_s {
 #define MAX_MODEL_NAME_LENGTH 64
 	char debug_name[MAX_MODEL_NAME_LENGTH];
 
-	// TODO these two are dynamic, extract them to draw args?
-	vk_render_type_e render_type;
-	vec4_t color;
-
 	// TODO per-geometry?
 	int lightmap; // <= 0 if no lightmap
 
 	int num_geometries;
 	vk_render_geometry_t *geometries;
 
-	// TODO potentially dynamic. extract to draw args?
-	int geometries_changed_count;
-	int *geometries_changed;
+	struct rt_model_s *rt_model;
 
 	// This model will be one-frame only, its buffers are not preserved between frames
 	// TODO deprecate
@@ -132,12 +126,16 @@ typedef struct vk_render_model_s {
 	struct rt_light_add_polygon_s *dynamic_polylights;
 	int dynamic_polylights_count;
 
-	matrix4x4 transform;
+	struct {
+		// TODO these two are dynamic, extract them to draw args?
+		vk_render_type_e render_type;
+		vec4_t color;
+		matrix4x4 transform;
+		// previous frame ObjectToWorld (model) matrix
+		matrix4x4 prev_transform;
 
-	// previous frame ObjectToWorld (model) matrix
-	matrix4x4 prev_transform;
-
-	struct rt_model_s *rt_model;
+		// TODO potentially dynamic. extract to draw args?
+	} deprecate;
 } vk_render_model_t;
 
 qboolean VK_RenderModelInit_old( vk_render_model_t* model );
@@ -151,7 +149,21 @@ typedef struct {
 qboolean VK_RenderModelCreate( vk_render_model_t *model, vk_render_model_init_t args );
 void VK_RenderModelDestroy( vk_render_model_t* model );
 
-void VK_RenderModelDraw( vk_render_model_t* model, int ent_index_prev_frame__toremove );
+void VK_RenderModelDraw_old( vk_render_model_t* model, int ent_index_prev_frame__toremove );
+
+typedef struct {
+	vk_render_type_e render_type;
+
+	// These are "consumed": copied into internal storage and can be pointers to stack vars
+	const vec4_t *color;
+	const matrix4x4 *transform, *prev_transform;
+
+	// These are expected to be alive and valid until frame end at least
+	int geometries_changed_count;
+	int *geometries_changed;
+} r_model_draw_t;
+
+void R_RenderModelDraw(const vk_render_model_t *model, r_model_draw_t args);
 
 // TODO Begin and commit should be removed
 void VK_RenderModelDynamicBegin( vk_render_type_e render_type, const vec4_t color, const matrix3x4 transform, const char *debug_name_fmt, ... );

@@ -33,6 +33,8 @@ typedef struct vk_brush_model_s {
 
 	int *animated_indexes;
 	int animated_indexes_count;
+
+	matrix4x4 prev_transform;
 } vk_brush_model_t;
 
 static struct {
@@ -402,7 +404,7 @@ static qboolean isSurfaceAnimated( const msurface_t *s, const struct texture_s *
 	return true;
 }
 
-void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, const matrix4x4 transform ) {
+void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, const matrix4x4 in_transform ) {
 	// Expect all buffers to be bound
 	const model_t *mod = ent->model;
 	vk_brush_model_t *bmodel = mod->cache.data;
@@ -412,46 +414,47 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 		return;
 	}
 
-	if (transform)
-		Matrix4x4_Copy(bmodel->render_model.transform, transform);
+	matrix4x4 transform;
+	if (in_transform)
+		Matrix4x4_Copy(transform, in_transform);
 	else
-		Matrix4x4_LoadIdentity(bmodel->render_model.transform);
+		Matrix4x4_LoadIdentity(transform);
 
-	Vector4Set(bmodel->render_model.color, 1.f, 1.f, 1.f, 1.f);
+	vec4_t color = {1, 1, 1, 1};
 	vk_render_type_e render_type = kVkRenderTypeSolid;
 	switch (render_mode) {
 		case kRenderNormal:
-			Vector4Set(bmodel->render_model.color, 1.f, 1.f, 1.f, 1.f);
+			Vector4Set(color, 1.f, 1.f, 1.f, 1.f);
 			render_type = kVkRenderTypeSolid;
 			break;
 		case kRenderTransColor:
 			render_type = kVkRenderType_A_1mA_RW;
-			Vector4Set(bmodel->render_model.color,
+			Vector4Set(color,
 				ent->curstate.rendercolor.r / 255.f,
 				ent->curstate.rendercolor.g / 255.f,
 				ent->curstate.rendercolor.b / 255.f,
 				blend);
 			break;
 		case kRenderTransAdd:
-			Vector4Set(bmodel->render_model.color, blend, blend, blend, 1.f);
+			Vector4Set(color, blend, blend, blend, 1.f);
 			render_type = kVkRenderType_A_1_R;
 			break;
 		case kRenderTransAlpha:
 			if( gEngine.EngineGetParm( PARM_QUAKE_COMPATIBLE, 0 ))
 			{
 				render_type = kVkRenderType_A_1mA_RW;
-				Vector4Set(bmodel->render_model.color, 1.f, 1.f, 1.f, blend);
+				Vector4Set(color, 1.f, 1.f, 1.f, blend);
 			}
 			else
 			{
-				Vector4Set(bmodel->render_model.color, 1.f, 1.f, 1.f, 1.f);
+				Vector4Set(color, 1.f, 1.f, 1.f, 1.f);
 				render_type = kVkRenderType_AT;
 			}
 			break;
 		case kRenderTransTexture:
 		case kRenderGlow:
 			render_type = kVkRenderType_A_1mA_R;
-			Vector4Set(bmodel->render_model.color, 1.f, 1.f, 1.f, blend);
+			Vector4Set(color, 1.f, 1.f, 1.f, blend);
 			break;
 	}
 
@@ -460,7 +463,7 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 	bmodel->render_model.lightmap = (render_mode == kRenderNormal || render_mode == kRenderTransAlpha) ? 1 : 0;
 
 	if (bmodel->num_water_surfaces) {
-		brushDrawWaterSurfaces(ent, bmodel->render_model.color, bmodel->render_model.transform);
+		brushDrawWaterSurfaces(ent, color, transform);
 	}
 
 	if (bmodel->render_model.num_geometries == 0)
@@ -491,8 +494,17 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 		}
 	}
 
-	bmodel->render_model.render_type = render_type;
-	VK_RenderModelDraw(&bmodel->render_model, ent->index);
+	R_RenderModelDraw(&bmodel->render_model, (r_model_draw_t){
+		.render_type = render_type,
+		.color = &color,
+		.transform = &transform,
+		.prev_transform = &bmodel->prev_transform,
+
+		.geometries_changed = bmodel->animated_indexes,
+		.geometries_changed_count = bmodel->animated_indexes_count,
+	});
+
+	Matrix4x4_Copy(bmodel->prev_transform, transform);
 }
 
 typedef enum {
@@ -857,9 +869,6 @@ qboolean VK_BrushModelLoad( model_t *mod ) {
 			// Cannot deallocate bmodel as we might still have staging references to its memory
 			return false;
 		}
-
-		bmodel->render_model.geometries_changed = bmodel->animated_indexes;
-		bmodel->render_model.geometries_changed_count = bmodel->animated_indexes_count;
 	}
 
 	g_brush.stat.total_vertices += sizes.num_indices;

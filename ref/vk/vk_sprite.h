@@ -10,3 +10,4 @@ void Mod_LoadSpriteModel( model_t *mod, const void *buffer, qboolean *loaded, ui
 void R_VkSpriteDrawModel( cl_entity_t *e, float blend );
 
 qboolean R_SpriteInit(void);
+void R_SpriteShutdown(void);

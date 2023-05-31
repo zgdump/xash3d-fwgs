@@ -810,6 +810,8 @@ qboolean R_VkInit( void )
 void R_VkShutdown( void ) {
 	XVK_CHECK(vkDeviceWaitIdle(vk_core.device));
 
+	R_SpriteShutdown();
+
 	if (vk_core.rtx)
 	{
 		VK_LightsShutdown();

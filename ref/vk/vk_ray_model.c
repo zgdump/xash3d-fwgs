@@ -406,15 +406,15 @@ void VK_RayFrameAddModel( vk_ray_model_t *model, const vk_render_model_t *render
 		if (!uploadKusochki(model, render_model))
 			return;
 	} else {
-		if (!uploadKusochkiSubset(model, render_model, render_model->geometries_changed, render_model->geometries_changed_count))
-			return;
+		/* FIXME move to RT_FrameAddModel if (!uploadKusochkiSubset(model, render_model, render_model->geometries_changed, render_model->geometries_changed_count)) */
+		/* 	return; */
 	}
 
 	// TODO needed for brush models only
 	// (? TODO studio models?)
 	for (int i = 0; i < render_model->dynamic_polylights_count; ++i) {
 		rt_light_add_polygon_t *const polylight = render_model->dynamic_polylights + i;
-		polylight->transform_row = (const matrix3x4*)render_model->transform;
+		polylight->transform_row = (const matrix3x4*)render_model->deprecate.transform;
 		polylight->dynamic = true;
 		RT_LightAddPolygon(polylight);
 	}
@@ -422,10 +422,10 @@ void VK_RayFrameAddModel( vk_ray_model_t *model, const vk_render_model_t *render
 	draw_instance->model_toremove = model;
 	draw_instance->blas_addr = model->blas_addr;
 	draw_instance->kusochki_offset = model->kusochki_offset;
-	draw_instance->material_mode = materialModeFromRenderType(render_model->render_type);
-	Vector4Copy(render_model->color, draw_instance->color);
-	Matrix3x4_Copy(draw_instance->transform_row, render_model->transform);
-	Matrix4x4_Copy(draw_instance->prev_transform_row, render_model->prev_transform);
+	draw_instance->material_mode = materialModeFromRenderType(render_model->deprecate.render_type);
+	Vector4Copy(render_model->deprecate.color, draw_instance->color);
+	Matrix3x4_Copy(draw_instance->transform_row, render_model->deprecate.transform);
+	Matrix4x4_Copy(draw_instance->prev_transform_row, render_model->deprecate.prev_transform);
 
 	g_ray_model_state.frame.instances_count++;
 }

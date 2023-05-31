@@ -650,7 +650,8 @@ qboolean VK_RenderModelInit_old( vk_render_model_t *model ) {
 		model->ray_model = VK_RayModelCreate(args);
 		model->dynamic_polylights = NULL;
 		model->dynamic_polylights_count = 0;
-		Matrix4x4_LoadIdentity(model->transform);
+		Matrix4x4_LoadIdentity(model->deprecate.transform);
+		Matrix4x4_LoadIdentity(model->deprecate.prev_transform);
 		return !!model->ray_model;
 	}
 
@@ -662,12 +663,11 @@ qboolean VK_RenderModelCreate( vk_render_model_t *model, vk_render_model_init_t 
 	memset(model, 0, sizeof(*model));
 	Q_strncpy(model->debug_name, args.name, sizeof(model->debug_name));
 
-	Matrix4x4_LoadIdentity(model->transform);
-	Matrix4x4_LoadIdentity(model->prev_transform);
-
-	// TODO this is dynamic and should be removed
-	model->render_type = kVkRenderTypeSolid;
-	Vector4Set(model->color, 1, 1, 1, 1);
+	// TODO these are dynamic and should be removed
+	Matrix4x4_LoadIdentity(model->deprecate.transform);
+	Matrix4x4_LoadIdentity(model->deprecate.prev_transform);
+	model->deprecate.render_type = kVkRenderTypeSolid;
+	Vector4Set(model->deprecate.color, 1, 1, 1, 1);
 
 	model->geometries = args.geometries;
 	model->num_geometries = args.geometries_count;
@@ -701,43 +701,18 @@ static void uboComputeAndSetMVPFromModel( const matrix4x4 model ) {
 	Matrix4x4_ToArrayFloatGL(mvp, (float*)g_render_state.dirty_uniform_data.mvp);
 }
 
-void VK_RenderModelDraw( vk_render_model_t* model, int ent_index_prev_frame__toremove ) {
+static void submitToTraditionalRender( const vk_render_model_t *model, const matrix4x4 transform, const vec4_t color, int render_type ) {
 	int current_texture = -1;
 	int element_count = 0;
 	int index_offset = -1;
 	int vertex_offset = 0;
 
-	uboComputeAndSetMVPFromModel( model->transform );
+	uboComputeAndSetMVPFromModel( transform );
 
 	// TODO get rid of this dirty ubo thing
-	Vector4Copy(model->color, g_render_state.dirty_uniform_data.color);
+	Vector4Copy(color, g_render_state.dirty_uniform_data.color);
 	ASSERT(model->lightmap <= MAX_LIGHTMAPS);
 	const int lightmap = model->lightmap > 0 ? tglob.lightmapTextures[model->lightmap - 1] : tglob.whiteTexture;
-
-	++g_render.stats.models_count;
-
-	// TODO track prev transform directly as a member in vk_render_model_t
-	if (g_render_state.current_frame_is_ray_traced) {
-		if (ent_index_prev_frame__toremove >= 0 && model != NULL) {
-			R_PrevFrame_SaveCurrentState( ent_index_prev_frame__toremove, model->transform );
-			R_PrevFrame_ModelTransform( ent_index_prev_frame__toremove, model->prev_transform );
-		}
-		else {
-			Matrix4x4_Copy( model->prev_transform, model->transform );
-		}
-
-		if (model->rt_model) {
-			RT_FrameAddModel(model->rt_model, (rt_frame_add_model_t){
-				.render_type = model->render_type,
-				.transform = (const matrix3x4*)&model->transform,
-				.prev_transform = (const matrix3x4*)&model->prev_transform,
-				.color = &model->color,
-			});
-		} else
-			VK_RayFrameAddModel(model->ray_model, model);
-
-		return;
-	}
 
 	drawCmdPushDebugLabelBegin( model->debug_name );
 
@@ -758,7 +733,7 @@ void VK_RenderModelDraw( vk_render_model_t* model, int ent_index_prev_frame__tor
 				render_draw_t draw = {
 					.lightmap = lightmap,
 					.texture = current_texture,
-					.pipeline_index = model->render_type,
+					.pipeline_index = render_type,
 					.element_count = element_count,
 					.vertex_offset = vertex_offset,
 					.index_offset = index_offset,
@@ -782,7 +757,7 @@ void VK_RenderModelDraw( vk_render_model_t* model, int ent_index_prev_frame__tor
 		const render_draw_t draw = {
 			.lightmap = lightmap,
 			.texture = current_texture,
-			.pipeline_index = model->render_type,
+			.pipeline_index = render_type,
 			.element_count = element_count,
 			.vertex_offset = vertex_offset,
 			.index_offset = index_offset,
@@ -792,6 +767,51 @@ void VK_RenderModelDraw( vk_render_model_t* model, int ent_index_prev_frame__tor
 	}
 
 	drawCmdPushDebugLabelEnd();
+}
+
+void VK_RenderModelDraw_old( vk_render_model_t* model, int ent_index_prev_frame__toremove ) {
+	++g_render.stats.models_count;
+
+	// TODO track prev transform directly as a member in vk_render_model_t
+	if (g_render_state.current_frame_is_ray_traced) {
+		if (ent_index_prev_frame__toremove >= 0 && model != NULL) {
+			R_PrevFrame_SaveCurrentState( ent_index_prev_frame__toremove, model->deprecate.transform );
+			R_PrevFrame_ModelTransform( ent_index_prev_frame__toremove, model->deprecate.prev_transform );
+		}
+		else {
+			Matrix4x4_Copy( model->deprecate.prev_transform, model->deprecate.transform );
+		}
+
+		if (model->rt_model) {
+			RT_FrameAddModel(model->rt_model, (rt_frame_add_model_t){
+				.render_type = model->deprecate.render_type,
+				.transform = (const matrix3x4*)&model->deprecate.transform,
+				.prev_transform = (const matrix3x4*)&model->deprecate.prev_transform,
+				.color = &model->deprecate.color,
+			});
+		} else
+			VK_RayFrameAddModel(model->ray_model, model);
+
+		return;
+	}
+
+	submitToTraditionalRender( model, model->deprecate.transform, model->deprecate.color, model->deprecate.render_type );
+}
+
+void R_RenderModelDraw(const vk_render_model_t *model, r_model_draw_t args) {
+	++g_render.stats.models_count;
+
+	if (g_render_state.current_frame_is_ray_traced) {
+		ASSERT(model->rt_model);
+		RT_FrameAddModel(model->rt_model, (rt_frame_add_model_t){
+			.render_type = args.render_type,
+			.transform = (const matrix3x4*)args.transform,
+			.prev_transform = (const matrix3x4*)args.prev_transform,
+			.color = args.color,
+		});
+	} else {
+		submitToTraditionalRender(model, *args.transform, *args.color, args.render_type);
+	}
 }
 
 #define MAX_DYNAMIC_GEOMETRY 256
@@ -811,9 +831,9 @@ void VK_RenderModelDynamicBegin( vk_render_type_e render_type, const vec4_t colo
 	ASSERT(!g_dynamic_model.model.geometries);
 	g_dynamic_model.model.geometries = g_dynamic_model.geometries;
 	g_dynamic_model.model.num_geometries = 0;
-	g_dynamic_model.model.render_type = render_type;
+	g_dynamic_model.model.deprecate.render_type = render_type;
 	g_dynamic_model.model.lightmap = 0;
-	Vector4Copy(color, g_dynamic_model.model.color);
+	Vector4Copy(color, g_dynamic_model.model.deprecate.color);
 	Matrix4x4_LoadIdentity(g_dynamic_model.transform);
 	if (transform)
 		Matrix3x4_Copy(g_dynamic_model.transform, transform);
@@ -834,8 +854,8 @@ void VK_RenderModelDynamicCommit( void ) {
 		g_render.stats.dynamic_model_count++;
 		g_dynamic_model.model.dynamic = true;
 		VK_RenderModelInit_old( &g_dynamic_model.model );
-		Matrix4x4_Copy(g_dynamic_model.model.transform, g_dynamic_model.transform);
-		VK_RenderModelDraw( &g_dynamic_model.model, -1 );
+		Matrix4x4_Copy(g_dynamic_model.model.deprecate.transform, g_dynamic_model.transform);
+		VK_RenderModelDraw_old( &g_dynamic_model.model, -1 );
 	}
 
 	g_dynamic_model.model.debug_name[0] = '\0';
