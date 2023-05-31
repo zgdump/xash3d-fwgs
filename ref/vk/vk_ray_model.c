@@ -441,14 +441,15 @@ void XVK_RayModel_ClearForNextFrame( void ) {
 	// destroy/reuse dynamic ASes from previous frame
 	for (int i = 0; i < g_ray_model_state.frame.instances_count; ++i) {
 		rt_draw_instance_t *instance = g_ray_model_state.frame.instances + i;
-		ASSERT(instance->model_toremove);
+		ASSERT(instance->blas_addr);
+
+		if (!instance->model_toremove)
+			continue;
 
 		if (!instance->model_toremove->dynamic)
 			continue;
 
-		if (instance->model_toremove)
-			returnModelToCache(instance->model_toremove);
-
+		returnModelToCache(instance->model_toremove);
 		instance->model_toremove = NULL;
 	}
 
@@ -579,5 +580,6 @@ void RT_FrameAddModel( struct rt_model_s *model, rt_frame_add_model_t args ) {
 	Vector4Copy(*args.color, draw_instance->color);
 	Matrix3x4_Copy(draw_instance->transform_row, args.transform);
 	Matrix4x4_Copy(draw_instance->prev_transform_row, args.prev_transform);
+	g_ray_model_state.frame.instances_count++;
 }
 
