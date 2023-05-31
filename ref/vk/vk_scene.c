@@ -127,6 +127,8 @@ static void loadBrushModels( void ) {
 static void loadMap(const model_t* const map) {
 	mapLoadBegin(map);
 
+	R_SpriteNewMapFIXME();
+
 	// Load light entities and patch data prior to loading map brush model
 	XVK_ParseMapEntities();
 

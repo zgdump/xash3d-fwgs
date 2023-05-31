@@ -11,3 +11,6 @@ void R_VkSpriteDrawModel( cl_entity_t *e, float blend );
 
 qboolean R_SpriteInit(void);
 void R_SpriteShutdown(void);
+
+// FIXME needed to recreate the sprite quad model, otherwise its memory will be freed, reused and corrupted
+void R_SpriteNewMapFIXME(void);

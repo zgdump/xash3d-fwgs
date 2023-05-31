@@ -113,18 +113,31 @@ static qboolean createQuadModel(void) {
 		});
 }
 
-qboolean R_SpriteInit(void) {
-	R_SpeedsRegisterMetric(&g_sprite.stats.sprites, "sprites_count", kSpeedsMetricCount);
-
-	return createQuadModel();
-}
-
-void R_SpriteShutdown(void) {
+static void destroyQuadModel(void) {
 	if (g_sprite.quad.model.num_geometries)
 		VK_RenderModelDestroy(&g_sprite.quad.model);
 
 	if (g_sprite.quad.geom.block_handle.size)
 		R_GeometryRangeFree(&g_sprite.quad.geom);
+
+	g_sprite.quad.model.num_geometries = 0;
+	g_sprite.quad.geom.block_handle.size = 0;
+}
+
+qboolean R_SpriteInit(void) {
+	R_SpeedsRegisterMetric(&g_sprite.stats.sprites, "sprites_count", kSpeedsMetricCount);
+
+	return true;
+	//return createQuadModel();
+}
+
+void R_SpriteShutdown(void) {
+	destroyQuadModel();
+}
+
+void R_SpriteNewMapFIXME(void) {
+	destroyQuadModel();
+	ASSERT(createQuadModel());
 }
 
 static mspriteframe_t *R_GetSpriteFrame( const model_t *pModel, int frame, float yaw )
