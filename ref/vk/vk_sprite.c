@@ -49,7 +49,7 @@ static qboolean createQuadModel(void) {
 
 	const vec3_t org = {0, 0, 0};
 	const vec3_t v_right = {1, 0, 0};
-	const vec3_t v_up = {0, 1, 0};
+	const vec3_t v_up = {0, 0, 1};
 	vec3_t v_normal;
 	CrossProduct(v_right, v_up, v_normal);
 
@@ -792,14 +792,13 @@ static void R_DrawSpriteQuad( const char *debug_name, mspriteframe_t *frame, vec
 	//VectorMA( org, frame->down * scale, v_up, point );
 	//VectorMA( point, frame->left * scale, v_right, dst_vtx[0].pos );
 	//vtx[0] = org + down * scale + v_up + left * scale * v_right;
-	Matrix4x4_CreateScale(transform, scale);
+	Matrix4x4_CreateScale(transform, frame->down * scale);
 	Matrix4x4_SetOrigin(transform, org[0], org[1], org[2]);
 	const vk_render_type_e render_type = spriteRenderModeToRenderType(render_mode);
 
 	R_RenderModelDraw(&g_sprite.quad.model, (r_model_draw_t){
 		.render_type = render_type,
-		.color = (const vec4_t*)&color,
-		//.color = (const vec4_t*)color,
+		.color = (const vec4_t*)color,
 		.transform = &transform,
 		.prev_transform = &transform,
 
