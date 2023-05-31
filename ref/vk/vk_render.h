@@ -161,6 +161,10 @@ typedef struct {
 	// These are expected to be alive and valid until frame end at least
 	int geometries_changed_count;
 	int *geometries_changed;
+
+	// Global texture override if > 0
+	// Used by sprite+quad instancing
+	int textures_override;
 } r_model_draw_t;
 
 void R_RenderModelDraw(const vk_render_model_t *model, r_model_draw_t args);

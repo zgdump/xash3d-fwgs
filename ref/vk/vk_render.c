@@ -701,8 +701,8 @@ static void uboComputeAndSetMVPFromModel( const matrix4x4 model ) {
 	Matrix4x4_ToArrayFloatGL(mvp, (float*)g_render_state.dirty_uniform_data.mvp);
 }
 
-static void submitToTraditionalRender( const vk_render_model_t *model, const matrix4x4 transform, const vec4_t color, int render_type ) {
-	int current_texture = -1;
+static void submitToTraditionalRender( const vk_render_model_t *model, const matrix4x4 transform, const vec4_t color, int render_type, int textures_override ) {
+	int current_texture = textures_override;
 	int element_count = 0;
 	int index_offset = -1;
 	int vertex_offset = 0;
@@ -718,14 +718,15 @@ static void submitToTraditionalRender( const vk_render_model_t *model, const mat
 
 	for (int i = 0; i < model->num_geometries; ++i) {
 		const vk_render_geometry_t *geom = model->geometries + i;
-		const qboolean split = current_texture != geom->texture
+		const int tex = textures_override > 0 ? textures_override : geom->texture;
+		const qboolean split = current_texture != tex
 			|| vertex_offset != geom->vertex_offset
 			|| (index_offset + element_count) != geom->index_offset;
 
 		// We only support indexed geometry
 		ASSERT(geom->index_offset >= 0);
 
-		if (geom->texture < 0)
+		if (tex < 0)
 			continue;
 
 		if (split) {
@@ -742,7 +743,7 @@ static void submitToTraditionalRender( const vk_render_model_t *model, const mat
 				drawCmdPushDraw( &draw );
 			}
 
-			current_texture = geom->texture;
+			current_texture = tex;
 			index_offset = geom->index_offset;
 			vertex_offset = geom->vertex_offset;
 			element_count = 0;
@@ -795,7 +796,7 @@ void VK_RenderModelDraw_old( vk_render_model_t* model, int ent_index_prev_frame_
 		return;
 	}
 
-	submitToTraditionalRender( model, model->deprecate.transform, model->deprecate.color, model->deprecate.render_type );
+	submitToTraditionalRender( model, model->deprecate.transform, model->deprecate.color, model->deprecate.render_type, -1 );
 }
 
 void R_RenderModelDraw(const vk_render_model_t *model, r_model_draw_t args) {
@@ -810,7 +811,7 @@ void R_RenderModelDraw(const vk_render_model_t *model, r_model_draw_t args) {
 			.color = args.color,
 		});
 	} else {
-		submitToTraditionalRender(model, *args.transform, *args.color, args.render_type);
+		submitToTraditionalRender(model, *args.transform, *args.color, args.render_type, args.textures_override);
 	}
 }
 

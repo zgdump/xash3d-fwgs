@@ -804,30 +804,9 @@ static void R_DrawSpriteQuad( const char *debug_name, mspriteframe_t *frame, vec
 
 		.geometries_changed = NULL,
 		.geometries_changed_count = 0,
+
+		.textures_override = texture,
 	});
-
-#if 0
-	typedef struct {
-		const char *debug_name;
-		const vk_render_model_t *model;
-		const matrix4x4 *transform;
-		const vec4_t *color;
-		vk_render_type_e render_type;
-		//TODO int material_mode;
-		int texture;
-	} vk_render_model_draw_instance_t;
-
-	const vk_render_model_draw_instance_t args = {
-		.debug_name = debug_name,
-		.model = g_sprite.quad_model,
-		.transform = &transform,
-		.color = &color,
-		.render_type = render_type,
-		.texture = texture,
-	};
-
-	VK_RenderModelInstanced(&args);
-#endif
 }
 
 static qboolean R_SpriteHasLightmap( cl_entity_t *e, int texFormat )
