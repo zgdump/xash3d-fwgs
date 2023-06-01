@@ -574,6 +574,12 @@ void RT_FrameAddModel( struct rt_model_s *model, rt_frame_add_model_t args ) {
 
 	rt_draw_instance_t* draw_instance = g_ray_model_state.frame.instances + g_ray_model_state.frame.instances_count;
 
+	/* if (args.textures_override > 0) { */
+	/* 	// FIXME need geometries + count */
+	/* 	rt_kusochki_t temp_kusok = RT_KusochkiAlloc(int count, r_geometry_lifetime_t lifetime); */
+	/* 	qboolean RT_KusochkiUpload(const rt_kusochki_t *kusochki, const struct vk_render_geometry_s *geoms, int geoms_count, int override_texture_id); */
+	/* } */
+
 	draw_instance->model_toremove = NULL;
 	draw_instance->blas_addr = model->blas_addr;
 	draw_instance->kusochki_offset = model->kusochki.offset;

@@ -809,6 +809,7 @@ void R_RenderModelDraw(const vk_render_model_t *model, r_model_draw_t args) {
 			.transform = (const matrix3x4*)args.transform,
 			.prev_transform = (const matrix3x4*)args.prev_transform,
 			.color = args.color,
+			.textures_override = args.textures_override,
 		});
 	} else {
 		submitToTraditionalRender(model, *args.transform, *args.color, args.render_type, args.textures_override);
