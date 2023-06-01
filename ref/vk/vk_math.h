@@ -22,3 +22,5 @@ void Matrix4x4_CreateOrtho(matrix4x4 m, float xLeft, float xRight, float yBottom
 void Matrix4x4_CreateModelview( matrix4x4 out );
 
 void computeTangent(vec3_t out_tangent, const vec3_t v0, const vec3_t v1, const vec3_t v2, const vec2_t uv0, const vec2_t uv1, const vec2_t uv2);
+
+void Matrix4x4_CreateFromVectors(matrix4x4 out, const vec3_t right, const vec3_t up, const vec3_t z, const vec3_t translate);

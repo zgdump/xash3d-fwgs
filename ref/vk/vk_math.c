@@ -286,3 +286,25 @@ void computeTangent(vec3_t out_tangent, const vec3_t v0, const vec3_t v1, const 
 	out_tangent[1] = f * (duv2[1] * e1[1] - duv1[1] * e2[1]);
 	out_tangent[2] = f * (duv2[1] * e1[2] - duv1[1] * e2[2]);
 }
+
+void Matrix4x4_CreateFromVectors(matrix4x4 out, const vec3_t right, const vec3_t up, const vec3_t z, const vec3_t translate) {
+	out[0][0] = right[0];
+	out[1][0] = right[1];
+	out[2][0] = right[2];
+	out[3][0] = 0;
+
+	out[0][1] = up[0];
+	out[1][1] = up[1];
+	out[2][1] = up[2];
+	out[3][1] = 0;
+
+	out[0][2] = z[0];
+	out[1][2] = z[1];
+	out[2][2] = z[2];
+	out[3][2] = 0;
+
+	out[0][3] = translate[0];
+	out[1][3] = translate[1];
+	out[2][3] = translate[2];
+	out[3][3] = 0;
+}

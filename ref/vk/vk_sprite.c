@@ -49,7 +49,7 @@ static qboolean createQuadModel(void) {
 
 	const vec3_t org = {0, 0, 0};
 	const vec3_t v_right = {1, 0, 0};
-	const vec3_t v_up = {0, 0, 1};
+	const vec3_t v_up = {0, 1, 0};
 	vec3_t v_normal;
 	CrossProduct(v_right, v_up, v_normal);
 
@@ -128,7 +128,7 @@ qboolean R_SpriteInit(void) {
 	R_SpeedsRegisterMetric(&g_sprite.stats.sprites, "sprites_count", kSpeedsMetricCount);
 
 	return true;
-	//return createQuadModel();
+	// TODO return createQuadModel();
 }
 
 void R_SpriteShutdown(void) {
@@ -784,16 +784,24 @@ static vk_render_type_e spriteRenderModeToRenderType( int render_mode ) {
 
 static void R_DrawSpriteQuad( const char *debug_name, mspriteframe_t *frame, vec3_t org, vec3_t v_right, vec3_t v_up, float scale, int texture, int render_mode, const vec4_t color ) {
 	vec3_t v_normal;
-	vec3_t point;
-	//CrossProduct(v_right, v_up, v_normal);
+	CrossProduct(v_right, v_up, v_normal);
+
+	// TODO can frame->right/left and frame->up/down be asymmetric?
+	VectorScale(v_right, frame->right * scale, v_right);
+	VectorScale(v_up, frame->up * scale, v_up);
 
 	matrix4x4 transform;
+	Matrix4x4_CreateFromVectors(transform, v_right, v_up, v_normal, org);
+
 	// FIXME orient sprites
 	//VectorMA( org, frame->down * scale, v_up, point );
 	//VectorMA( point, frame->left * scale, v_right, dst_vtx[0].pos );
-	//vtx[0] = org + down * scale + v_up + left * scale * v_right;
-	Matrix4x4_CreateScale(transform, frame->down * scale);
-	Matrix4x4_SetOrigin(transform, org[0], org[1], org[2]);
+	//vtx[0] = org + down * scale * v_up + left * scale * v_right;
+
+	// FIXME Scale3
+	//Matrix4x4_CreateScale(transform, frame->down * scale);
+	//Matrix4x4_SetOrigin(transform, org[0], org[1], org[2]);
+
 	const vk_render_type_e render_type = spriteRenderModeToRenderType(render_mode);
 
 	R_RenderModelDraw(&g_sprite.quad.model, (r_model_draw_t){
