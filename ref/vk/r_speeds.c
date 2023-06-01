@@ -10,8 +10,8 @@
 #include "xash3d_mathlib.h" // Q_min
 #include <limits.h>
 
-#define MAX_SPEEDS_MESSAGE 1024
-#define MAX_SPEEDS_METRICS (APROF_MAX_SCOPES + 4)
+#define MAX_SPEEDS_MESSAGE (1024)
+#define MAX_SPEEDS_METRICS (512)
 #define TARGET_FRAME_TIME (1000.f / 60.f)
 #define MAX_GRAPHS 8
 
@@ -483,7 +483,6 @@ static int drawGraphs( int y ) {
 	return y;
 }
 
-
 static void togglePause( void ) {
 	if (g_speeds.paused_events) {
 		Mem_Free(g_speeds.paused_events);
@@ -594,11 +593,40 @@ static void processGraphCvar( void ) {
 	g_speeds.r_speeds_graphs->flags &= ~FCVAR_CHANGED;
 }
 
+static const char *getMetricTypeName(r_speeds_metric_type_t type) {
+	switch (type) {
+		case kSpeedsMetricCount: return "count";
+		case kSpeedsMetricMicroseconds: return "ms";
+		case kSpeedsMetricBytes: return "bytes";
+	}
+
+	return "UNKNOWN";
+}
+
+// Ideally, we'd just autocomplete the r_speeds_graphs cvar/cmd.
+// However, autocompletion is not exposed to the renderer. It is completely internal to the engine, see con_utils.c, var cmd_list.
+static void listMetrics( void ) {
+	const int argc = gEngine.Cmd_Argc();
+	const char* filter = argc > 1 ? gEngine.Cmd_Argv(1) : NULL;
+
+	for (int i = 0; i < g_speeds.metrics_count; ++i) {
+		const r_speeds_metric_t *metric = g_speeds.metrics + i;
+
+		if (filter && !Q_strstr(metric->name, filter))
+			continue;
+
+		char buf[16];
+		metricTypeSnprintf(buf, sizeof(buf), *metric->p_value, metric->type);
+		gEngine.Con_Printf("  ^2%s^7 %s, value = ^3%s^7\n", metric->name, getMetricTypeName(metric->type), buf);
+	}
+}
+
 void R_SpeedsInit( void ) {
 	g_speeds.r_speeds_graphs = gEngine.Cvar_Get("r_speeds_graphs", "", FCVAR_GLCONFIG, "List of metrics to plot as graphs, separated by commas");
 	g_speeds.r_speeds_graphs_width = gEngine.Cvar_Get("r_speeds_graphs_width", "", FCVAR_GLCONFIG, "Graphs width in pixels");
 
 	gEngine.Cmd_AddCommand("r_speeds_toggle_pause", togglePause, "Toggle frame profiler pause");
+	gEngine.Cmd_AddCommand("r_speeds_list_metrics", listMetrics, "List all registered metrics");
 
 	R_SpeedsRegisterMetric(&g_speeds.frame.frame_time_us, "frame", kSpeedsMetricMicroseconds);
 	R_SpeedsRegisterMetric(&g_speeds.frame.cpu_time_us, "cpu", kSpeedsMetricMicroseconds);
