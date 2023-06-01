@@ -306,5 +306,5 @@ void Matrix4x4_CreateFromVectors(matrix4x4 out, const vec3_t right, const vec3_t
 	out[0][3] = translate[0];
 	out[1][3] = translate[1];
 	out[2][3] = translate[2];
-	out[3][3] = 0;
+	out[3][3] = 1;
 }

@@ -793,15 +793,6 @@ static void R_DrawSpriteQuad( const char *debug_name, mspriteframe_t *frame, vec
 	matrix4x4 transform;
 	Matrix4x4_CreateFromVectors(transform, v_right, v_up, v_normal, org);
 
-	// FIXME orient sprites
-	//VectorMA( org, frame->down * scale, v_up, point );
-	//VectorMA( point, frame->left * scale, v_right, dst_vtx[0].pos );
-	//vtx[0] = org + down * scale * v_up + left * scale * v_right;
-
-	// FIXME Scale3
-	//Matrix4x4_CreateScale(transform, frame->down * scale);
-	//Matrix4x4_SetOrigin(transform, org[0], org[1], org[2]);
-
 	const vk_render_type_e render_type = spriteRenderModeToRenderType(render_mode);
 
 	R_RenderModelDraw(&g_sprite.quad.model, (r_model_draw_t){
