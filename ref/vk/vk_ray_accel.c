@@ -463,7 +463,6 @@ struct rt_blas_s* RT_BlasCreate(const char *name, rt_blas_usage_e usage) {
 
 	blas->debug_name = name;
 	blas->usage = usage;
-	//blas->kusochki_offset = -1;
 	blas->blas_size = -1;
 
 	return blas;

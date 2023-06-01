@@ -76,7 +76,12 @@ typedef struct {
 	int render_type; // TODO material_mode
 	const matrix3x4 *transform, *prev_transform;
 	const vec4_t *color;
-	int textures_override; // Override kusochki/material textures if > 0
+
+	struct {
+		int textures; // Override kusochki/material textures if > 0
+		int geoms_count;
+		const struct vk_render_geometry_s *geoms;
+	} override;
 } rt_frame_add_model_t;
 
 void RT_FrameAddModel( struct rt_model_s *model, rt_frame_add_model_t args );

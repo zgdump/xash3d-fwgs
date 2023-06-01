@@ -90,15 +90,15 @@ static vk_ray_model_t *getModelFromCache(int num_geoms, int max_prims, const VkA
 	return model;
 }
 
-static void applyMaterialToKusok(vk_kusok_data_t* kusok, const vk_render_geometry_t *geom) {
-	const xvk_material_t *const mat = XVK_GetMaterialForTextureIndex( geom->texture );
+static void applyMaterialToKusok(vk_kusok_data_t* kusok, const vk_render_geometry_t *geom, int override_texture_id) {
+	const int tex_id = override_texture_id > 0 ? override_texture_id : geom->texture;
+	const xvk_material_t *const mat = XVK_GetMaterialForTextureIndex( tex_id );
 	ASSERT(mat);
 
 	// TODO split kusochki into static geometry data and potentially dynamic material data
 	// This data is static, should never change
 	kusok->vertex_offset = geom->vertex_offset;
 	kusok->index_offset = geom->index_offset;
-	kusok->triangles = geom->element_count / 3;
 
 	// Material data itself is mostly static. Except for animated textures, which just get a new material slot for each frame.
 	kusok->material = (struct Material){
@@ -300,7 +300,7 @@ static qboolean uploadKusochkiSubset(const vk_ray_model_t *const model, const vk
 		vk_kusok_data_t *const kusochki = kusok_staging.ptr;
 
 		vk_render_geometry_t *geom = render_model->geometries + index;
-		applyMaterialToKusok(kusochki + 0, geom);
+		applyMaterialToKusok(kusochki + 0, geom, -1);
 
 		/* gEngine.Con_Reportf("model %s: geom=%d kuoffs=%d kustoff=%d kustsz=%d sthndl=%d\n", */
 		/* 		render_model->debug_name, */
@@ -333,7 +333,7 @@ static qboolean uploadKusochki(const vk_ray_model_t *const model, const vk_rende
 
 	for (int i = 0; i < render_model->num_geometries; ++i) {
 		vk_render_geometry_t *geom = render_model->geometries + i;
-		applyMaterialToKusok(kusochki + i, geom);
+		applyMaterialToKusok(kusochki + i, geom, -1);
 	}
 
 	/* gEngine.Con_Reportf("model %s: geom=%d kuoffs=%d kustoff=%d kustsz=%d sthndl=%d\n", */
@@ -463,10 +463,9 @@ void XVK_RayModel_ClearForNextFrame( void ) {
 	R_DEBuffer_Flip(&g_ray_model_state.kusochki_alloc);
 }
 
-rt_kusochki_t RT_KusochkiAlloc(int count, r_geometry_lifetime_t lifetime) {
+rt_kusochki_t RT_KusochkiAllocLong(int count) {
 	// TODO Proper block allocator
-	const r_lifetime_t rlifetime = lifetime == LifetimeSingleFrame ? LifetimeDynamic : LifetimeStatic;
-	uint32_t kusochki_offset = R_DEBuffer_Alloc(&g_ray_model_state.kusochki_alloc, rlifetime, count, 1);
+	uint32_t kusochki_offset = R_DEBuffer_Alloc(&g_ray_model_state.kusochki_alloc, LifetimeStatic, count, 1);
 
 	if (kusochki_offset == ALO_ALLOC_FAILED) {
 		gEngine.Con_Printf(S_ERROR "Maximum number of kusochki exceeded\n");
@@ -480,20 +479,27 @@ rt_kusochki_t RT_KusochkiAlloc(int count, r_geometry_lifetime_t lifetime) {
 	};
 }
 
+uint32_t RT_KusochkiAllocOnce(int count) {
+	// TODO Proper block allocator
+	uint32_t kusochki_offset = R_DEBuffer_Alloc(&g_ray_model_state.kusochki_alloc, LifetimeDynamic, count, 1);
+
+	if (kusochki_offset == ALO_ALLOC_FAILED) {
+		gEngine.Con_Printf(S_ERROR "Maximum number of kusochki exceeded\n");
+		return ALO_ALLOC_FAILED;
+	}
+
+	return kusochki_offset;
+}
+
 void RT_KusochkiFree(const rt_kusochki_t *kusochki) {
 	// TODO block alloc
 	PRINT_NOT_IMPLEMENTED();
 }
 
-qboolean RT_KusochkiUpload(const rt_kusochki_t *kusochki, const struct vk_render_geometry_s *geoms, int geoms_count, int override_texture_id) {
-	ASSERT(kusochki->count == geoms_count);
-
-	// TODO not implemented yet
-	ASSERT(override_texture_id < 0);
-
+qboolean RT_KusochkiUpload(uint32_t kusochki_offset, const struct vk_render_geometry_s *geoms, int geoms_count, int override_texture_id) {
 	const vk_staging_buffer_args_t staging_args = {
 		.buffer = g_ray_model_state.kusochki_buffer.buffer,
-		.offset = kusochki->offset * sizeof(vk_kusok_data_t),
+		.offset = kusochki_offset * sizeof(vk_kusok_data_t),
 		.size = geoms_count * sizeof(vk_kusok_data_t),
 		.alignment = 16,
 	};
@@ -507,7 +513,7 @@ qboolean RT_KusochkiUpload(const rt_kusochki_t *kusochki, const struct vk_render
 	vk_kusok_data_t *const p = kusok_staging.ptr;
 	for (int i = 0; i < geoms_count; ++i) {
 		const vk_render_geometry_t *geom = geoms + i;
-		applyMaterialToKusok(p + i, geom);
+		applyMaterialToKusok(p + i, geom, override_texture_id);
 	}
 
 	R_VkStagingUnlock(kusok_staging.handle);
@@ -515,7 +521,7 @@ qboolean RT_KusochkiUpload(const rt_kusochki_t *kusochki, const struct vk_render
 }
 
 struct rt_model_s *RT_ModelCreate(rt_model_create_t args) {
-	const rt_kusochki_t kusochki = RT_KusochkiAlloc(args.geometries_count, LifetimeLong);
+	const rt_kusochki_t kusochki = RT_KusochkiAllocLong(args.geometries_count);
 	if (kusochki.count == 0) {
 		gEngine.Con_Printf(S_ERROR "Cannot allocate kusochki for %s\n", args.debug_name);
 		return NULL;
@@ -532,7 +538,7 @@ struct rt_model_s *RT_ModelCreate(rt_model_create_t args) {
 		goto fail;
 	}
 
-	RT_KusochkiUpload(&kusochki, args.geometries, args.geometries_count, -1);
+	RT_KusochkiUpload(kusochki.offset, args.geometries, args.geometries_count, -1);
 
 	{
 		rt_model_t *const ret = Mem_Malloc(vk_core.pool, sizeof(*ret));
@@ -574,15 +580,22 @@ void RT_FrameAddModel( struct rt_model_s *model, rt_frame_add_model_t args ) {
 
 	rt_draw_instance_t* draw_instance = g_ray_model_state.frame.instances + g_ray_model_state.frame.instances_count;
 
-	/* if (args.textures_override > 0) { */
-	/* 	// FIXME need geometries + count */
-	/* 	rt_kusochki_t temp_kusok = RT_KusochkiAlloc(int count, r_geometry_lifetime_t lifetime); */
-	/* 	qboolean RT_KusochkiUpload(const rt_kusochki_t *kusochki, const struct vk_render_geometry_s *geoms, int geoms_count, int override_texture_id); */
-	/* } */
+	uint32_t kusochki_offset = model->kusochki.offset;
+
+	if (args.override.textures > 0) {
+		kusochki_offset = RT_KusochkiAllocOnce(args.override.geoms_count);
+		if (kusochki_offset == ALO_ALLOC_FAILED)
+			return;
+
+		if (!RT_KusochkiUpload(kusochki_offset, args.override.geoms, args.override.geoms_count, args.override.textures)) {
+			gEngine.Con_Printf(S_ERROR "Couldn't upload kusochki for instanced model\n");
+			return;
+		}
+	}
 
 	draw_instance->model_toremove = NULL;
 	draw_instance->blas_addr = model->blas_addr;
-	draw_instance->kusochki_offset = model->kusochki.offset;
+	draw_instance->kusochki_offset = kusochki_offset;
 	draw_instance->material_mode = materialModeFromRenderType(args.render_type);
 	Vector4Copy(*args.color, draw_instance->color);
 	Matrix3x4_Copy(draw_instance->transform_row, args.transform);

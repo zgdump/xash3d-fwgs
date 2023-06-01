@@ -103,11 +103,10 @@ struct Kusok {
 	// Geometry data, static
 	uint index_offset;
 	uint vertex_offset;
-	uint triangles;
 
 	// material below consists of scalar fields only, so it's not aligned to vec4.
 	// Alignt it here to vec4 explicitly, so that later vector fields are properly aligned (for simplicity).
-	uint _padding0;
+	uint _padding0[2];
 
 	// Per-kusok because individual surfaces can be patched
 	// TODO? still move to material, or its own table? As this can be dynamic

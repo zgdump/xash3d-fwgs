@@ -260,3 +260,18 @@ RT model draw:
 	- NO similar calls for `*` brush submodels.
 2. For the rest of studio and sprite models:
 	- Mod_ProcessRenderData(create=0)
+
+# E274
+
+rt_model:
+	- kusok/geom
+		- index_,vertex_offset (static, same as geom/blas lifetime)
+		- ref to material (static or dynamic)
+		- emissive (mostly static, independent to material)
+	- instanceCustomIndex (24 bits) = offset to kusochki buffer
+	- kusochki[G]
+		- geom data (index, vertex offsets)
+		- emissive
+		- material
+	- materials[M]
+  - kusochki[N] <- iCI

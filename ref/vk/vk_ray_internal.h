@@ -64,10 +64,11 @@ qboolean createOrUpdateAccelerationStructure(struct vk_combuf_s *combuf, const a
 typedef struct {
 	// Geometry metadata. Lifetime is similar to geometry lifetime itself.
 	// Semantically close to render buffer (describes layout for those objects)
-	// TODO unify with render buffer
+	// TODO unify with render buffer?
 	// Needs: STORAGE_BUFFER
 	vk_buffer_t kusochki_buffer;
 	r_debuffer_t kusochki_alloc;
+	// TODO when fully rt_model: r_blocks_t alloc;
 
 	// Model header
 	// Array of struct ModelHeader: color, material_mode, prev_transform
@@ -112,12 +113,12 @@ typedef struct rt_kusochki_s {
 	int internal_index__;
 } rt_kusochki_t;
 
-// TODO lifetime arg here is KORYAVY
-rt_kusochki_t RT_KusochkiAlloc(int count, r_geometry_lifetime_t lifetime);
+rt_kusochki_t RT_KusochkiAllocLong(int count);
+uint32_t RT_KusochkiAllocOnce(int count);
 void RT_KusochkiFree(const rt_kusochki_t*);
 
 struct vk_render_geometry_s;
-qboolean RT_KusochkiUpload(const rt_kusochki_t *kusochki, const struct vk_render_geometry_s *geoms, int geoms_count, int override_texture_id);
+qboolean RT_KusochkiUpload(uint32_t kusochki_offset, const struct vk_render_geometry_s *geoms, int geoms_count, int override_texture_id);
 
 // Update animated materials
 void RT_KusochkiUploadSubset(rt_kusochki_t *kusochki, const struct vk_render_geometry_s *geoms, const int *geoms_indices, int geoms_indices_count);
