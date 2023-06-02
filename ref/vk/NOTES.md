@@ -275,3 +275,74 @@ rt_model:
 		- material
 	- materials[M]
   - kusochki[N] <- iCI
+
+
+# E275 studio models
+
+- `R_StudioDrawPoints()`
+	- `VK_RenderModelDynamicBegin()`
+	- compute `g_studio.verts`
+		- in:
+			- `m_pSubModel`
+			- `m_pStudioHeader`
+			- `g_studio.worldtransform`
+	- `R_StudioBuildNormalTable()` ...
+	- `R_StudioGenerateNormals()`
+		- in:
+			- `m_pStudioHeader`
+			- `m_pSubModel`
+			- `g_studio.verts`
+		- out:
+			- `g_studio.norms`
+			- `g_studio.tangents`
+		- for all submodel meshes
+			- compute normals+tangents
+	- for all submodel meshes
+		- `R_StudioDrawNormalMesh()`
+			- `R_GeometryBufferAllocOnceAndLock()`
+			- fills it with vertex/index data, reading `g_studio.verts/norms/tangents/...`
+				- `R_StudioSetColorBegin()` ???
+			- `R_GeometryBufferUnlock()`
+			- `VK_RenderModelDynamicAddGeometry()`
+	- `VK_RenderModelDynamicCommit()`
+
+- `R_StudioDrawPoints()` callers:
+	- external ???
+	- `R_StudioRenderFinal()`
+
+- `R_StudioRenderFinal()`
+	- ... TBD
+	- `VK_RenderDebugLabelBegin()`
+	- for all `m_pStudioHeader->numbodyparts`
+		- `R_StudioSetupModel()` -- also can be called externally
+			- set `m_pBodyPart`
+			- set `m_pSubModel`
+		- `R_StudioDrawPoints()`
+		- `GL_StudioDrawShadow()`
+	- `VK_RenderDebugLabelEnd()`
+
+- `R_StudioDrawModelInternal()`
+	- called from:
+		- `R_DrawStudioModel()` 3x
+		- `R_DrawViewModel()`
+		- `R_RunViewmodelEvents()`
+	- `VK_RenderDebugLabelBegin()`
+	- `R_StudioDrawModel()`
+		- in:
+			- `RI.currententity`
+			- `RI.currentmodel`
+		- `R_StudioSetHeader()`
+			- sets `m_pStudioHeader`
+		- `R_StudioSetUpTransform(entity = RI.currententity)`
+			- `R_StudioLerpMovement(entity)`
+				- updates entity internal state
+			- `g_studio.rotationmatrix = Matrix3x4_CreateFromEntity()`
+	- `VK_RenderDebugLabelEnd()`
+
+- `VK_StudioDrawModel()` -- called from vk_scene.c
+	- sets `RI.currententity`, `RI.currentmodel`
+	- `R_DrawStudioModel()`
+		- `R_StudioSetupTimings()` -- sets `g_studio.time/frametime`
+		- `R_StudioDrawModelInternal()`
+
+

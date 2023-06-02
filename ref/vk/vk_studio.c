@@ -46,7 +46,7 @@ cvar_t r_shadows = { (char*)"r_shadows", (char*)"0", 0 };
 
 typedef struct sortedmesh_s
 {
-	mstudiomesh_t	*mesh;
+	const mstudiomesh_t	*mesh;
 	int		flags;			// face flags
 } sortedmesh_t;
 
@@ -144,6 +144,36 @@ static struct {
 	cl_entity_t *currententity;
 	model_t *currentmodel;
 } RI;
+
+typedef struct {
+	const mstudiomodel_t *key_submodel;
+	vk_render_model_t render_model;
+	r_geometry_range_t geometry_range;
+	vk_render_geometry_t *geometries;
+	int geometries_count;
+} r_studio_model_cache_entry_t;
+
+static struct {
+#define MAX_CACHED_STUDIO_MODELS 1024
+	// TODO proper map/hash table
+	r_studio_model_cache_entry_t entries[MAX_CACHED_STUDIO_MODELS];
+	int entries_count;
+} g_studio_cache;
+
+void R_StudioCacheClear( void ) {
+	for (int i = 0; i < g_studio_cache.entries_count; ++i) {
+		r_studio_model_cache_entry_t *const entry = g_studio_cache.entries + i;
+		ASSERT(entry->key_submodel);
+		VK_RenderModelDestroy(&entry->render_model);
+		R_GeometryRangeFree(&entry->geometry_range);
+		Mem_Free(entry->geometries);
+		entry->key_submodel = 0;
+		entry->geometries = NULL;
+		entry->geometries_count = 0;
+	}
+
+	g_studio_cache.entries_count = 0;
+}
 
 void R_StudioInit( void )
 {
@@ -260,7 +290,7 @@ static qboolean R_StudioComputeBBox( vec3_t bbox[8] )
 	return true; // visible
 }
 
-void R_StudioComputeSkinMatrix( mstudioboneweight_t *boneweights, matrix3x4 *worldtransform, matrix3x4 result )
+void R_StudioComputeSkinMatrix( const mstudioboneweight_t *boneweights, matrix3x4 *worldtransform, matrix3x4 result )
 {
 	float	flWeight0, flWeight1, flWeight2, flWeight3;
 	int	i, numbones = 0;
@@ -1770,7 +1800,7 @@ static void R_StudioSetColorBegin(const short *ptricmds, const vec3_t *pstudiono
 	R_StudioSetColorArray( ptricmds, pstudionorms, out_color );
 }
 
-void R_LightStrength( int bone, vec3_t localpos, vec4_t light[MAX_LOCALLIGHTS] )
+void R_LightStrength( int bone, const vec3_t localpos, vec4_t light[MAX_LOCALLIGHTS] )
 {
 	int	i;
 
@@ -1915,71 +1945,78 @@ static int R_StudioMeshCompare( const void *a, const void *b )
 	return 0;
 }
 
-static void R_StudioDrawNormalMesh( short *ptricmds, vec3_t *pstudionorms, float s, float t, int texture )
-{
-	float	*lv;
-	int	i;
-	int num_vertices = 0, num_indices = 0;
-	vk_vertex_t *dst_vtx;
-	uint16_t *dst_idx;
-	uint32_t vertex_offset = 0, index_offset = 0;
-	short* const ptricmds_initial = ptricmds;
-	r_geometry_buffer_lock_t buffer;
+static void addVerticesIndicesCounts( const short *ptricmds, int *num_vertices, int *num_indices ) {
+	int i;
 
-	// Compute counts of vertices and indices
-	while(( i = *( ptricmds++ )))
-	{
+	while(( i = *( ptricmds++ ))) {
 		enum { FAN, STRIP } mode = i < 0 ? FAN : STRIP;
 		const int vertices = mode == FAN ? -i : i;
 		ASSERT(vertices > 2);
-		num_vertices += vertices;
-		num_indices += (vertices-2) * 3;
+		*num_vertices += vertices;
+		*num_indices += (vertices-2) * 3;
 		ptricmds += 4 * vertices;
 	}
+}
 
+typedef struct {
+	const short *ptricmds;
+	const vec3_t *pstudionorms;
+	float s, t;
+	int texture;
+
+	uint32_t vertices_offset;
+	uint32_t indices_offset;
+
+	vk_vertex_t *dst_vertices;
+	uint16_t *dst_indices;
+	vk_render_geometry_t *out_geometry;
+
+	int *out_vertices_count;
+	int *out_indices_count;
+} build_submodel_mesh_t;
+
+static void buildSubmodelMeshGeometry( build_submodel_mesh_t args ) {
+	float	*lv;
+	int	i;
+	uint32_t vertex_offset = 0, index_offset = 0;
+
+	int num_vertices = 0, num_indices = 0;
+	addVerticesIndicesCounts(args.ptricmds, &num_vertices, &num_indices);
 	ASSERT(num_vertices > 0);
 	ASSERT(num_indices > 0);
 
-	// Get buffer region for vertices and indices
-	if (!R_GeometryBufferAllocOnceAndLock( &buffer, num_vertices, num_indices)) {
-		gEngine.Con_Printf(S_ERROR "Cannot allocate geometry for studio model\n");
-		return;
-	}
-
-	dst_vtx = buffer.vertices.ptr;
-	dst_idx = buffer.indices.ptr;
+	vk_vertex_t *dst_vtx = args.dst_vertices;
+	uint16_t *dst_idx = args.dst_indices;
 
 	// Restore ptricmds and upload vertices
-	ptricmds = ptricmds_initial;
-	while(( i = *( ptricmds++ )))
+	while(( i = *( args.ptricmds++ )))
 	{
 		enum { FAN, STRIP } mode = i < 0 ? FAN : STRIP;
 		const int vertices = mode == FAN ? -i : i;
 		uint32_t elements = 0;
 
-		for(int j = 0; j < vertices ; ++j, ++dst_vtx, ptricmds += 4 )
+		for(int j = 0; j < vertices ; ++j, ++dst_vtx, args.ptricmds += 4 )
 		{
-			ASSERT((((vk_vertex_t*)buffer.vertices.ptr) + num_vertices) > dst_vtx);
 			*dst_vtx = (vk_vertex_t){0};
 
-			VectorCopy(g_studio.verts[ptricmds[0]], dst_vtx->pos);
-			VectorCopy(g_studio.prev_verts[ptricmds[0]], dst_vtx->prev_pos);
-			VectorCopy(g_studio.norms[ptricmds[0]], dst_vtx->normal);
-			VectorCopy(g_studio.tangents[ptricmds[0]], dst_vtx->tangent);
+			VectorCopy(g_studio.verts[args.ptricmds[0]], dst_vtx->pos);
+			VectorCopy(g_studio.prev_verts[args.ptricmds[0]], dst_vtx->prev_pos);
+			VectorCopy(g_studio.norms[args.ptricmds[0]], dst_vtx->normal);
+			VectorCopy(g_studio.tangents[args.ptricmds[0]], dst_vtx->tangent);
 			dst_vtx->lm_tc[0] = dst_vtx->lm_tc[1] = 0.f;
 
 			if (FBitSet( g_nFaceFlags, STUDIO_NF_CHROME ))
 			{
 				// FIXME also support glow mode
-				const int idx = ptricmds[1];
-				dst_vtx->gl_tc[0] = g_studio.chrome[idx][0] * s;
-				dst_vtx->gl_tc[1] = g_studio.chrome[idx][1] * t;
+				const int idx = args.ptricmds[1];
+				dst_vtx->gl_tc[0] = g_studio.chrome[idx][0] * args.s;
+				dst_vtx->gl_tc[1] = g_studio.chrome[idx][1] * args.t;
 			} else {
-				dst_vtx->gl_tc[0] = ptricmds[2] * s;
-				dst_vtx->gl_tc[1] = ptricmds[3] * t;
+				dst_vtx->gl_tc[0] = args.ptricmds[2] * args.s;
+				dst_vtx->gl_tc[1] = args.ptricmds[3] * args.t;
 			}
 
-			R_StudioSetColorBegin( ptricmds, pstudionorms, dst_vtx->color );
+			R_StudioSetColorBegin( args.ptricmds, args.pstudionorms, dst_vtx->color );
 
 			if (j > 1) {
 				switch (mode) {
@@ -2019,26 +2056,22 @@ static void R_StudioDrawNormalMesh( short *ptricmds, vec3_t *pstudionorms, float
 	ASSERT(index_offset == num_indices);
 	ASSERT(vertex_offset == num_vertices);
 
-	R_GeometryBufferUnlock( &buffer );
+	*args.out_geometry = (vk_render_geometry_t){
+		//.lightmap = tglob.whiteTexture,
+		.texture = args.texture,
+		.material = FBitSet( g_nFaceFlags, STUDIO_NF_CHROME ) ? kXVkMaterialChrome : kXVkMaterialRegular,
 
-	// Render
-	{
-		const vk_render_geometry_t geometry = {
-			//.lightmap = tglob.whiteTexture,
-			.texture = texture,
-			.material = FBitSet( g_nFaceFlags, STUDIO_NF_CHROME ) ? kXVkMaterialChrome : kXVkMaterialRegular,
+		.vertex_offset = args.vertices_offset,
+		.max_vertex = num_vertices,
 
-			.vertex_offset = buffer.vertices.unit_offset,
-			.max_vertex = num_vertices,
+		.index_offset = args.indices_offset,
+		.element_count = num_indices,
 
-			.index_offset = buffer.indices.unit_offset,
-			.element_count = num_indices,
+		.emissive = {0, 0, 0},
+	};
 
-			.emissive = {0, 0, 0},
-		};
-
-		VK_RenderModelDynamicAddGeometry( &geometry );
-	}
+	*args.out_vertices_count += num_vertices;
+	*args.out_indices_count += num_indices;
 }
 
 /* FIXME VK
@@ -2128,41 +2161,53 @@ static vk_render_type_e studioRenderModeToRenderType( int render_mode ) {
 	return kVkRenderTypeSolid;
 }
 
-static void R_StudioDrawPoints( void )
-{
-	int		i, j, k, m_skinnum;
-	float		shellscale = 0.0f;
-	qboolean		need_sort = false;
-	byte		*pvertbone;
-	byte		*pnormbone;
-	vec3_t		*pstudioverts;
-	vec3_t		*pstudionorms;
-	mstudiotexture_t	*ptexture;
-	mstudiomesh_t	*pmesh;
-	short		*pskinref;
-	float		lv_tmp;
-
-	if( !m_pStudioHeader ) return;
-
-	vec4_t color = {1, 1, 1, g_studio.blend};
-	if (g_studio.rendermode2 == kRenderTransAdd) {
-		Vector4Set(color, g_studio.blend, g_studio.blend, g_studio.blend, 1.f);
+static const r_studio_model_cache_entry_t *buildCachedStudioSubModel( const mstudiomodel_t *submodel ) {
+	if (g_studio_cache.entries_count == MAX_CACHED_STUDIO_MODELS) {
+		PRINT_NOT_IMPLEMENTED_ARGS("Studio submodel cache overflow at %d", MAX_CACHED_STUDIO_MODELS);
+		return NULL;
 	}
-	VK_RenderModelDynamicBegin( studioRenderModeToRenderType(RI.currententity->curstate.rendermode), color, g_studio.rotationmatrix, "%s", m_pSubModel->name );
+
+	const mstudiomesh_t *const pmesh = (mstudiomesh_t *)((byte *)m_pStudioHeader + m_pSubModel->meshindex);
+
+	int vertex_count = 0, index_count = 0;
+	for( int i = 0; i < submodel->nummesh; i++ ) {
+		const short* const ptricmds = (short *)((byte *)m_pStudioHeader + pmesh->triindex);
+		addVerticesIndicesCounts(ptricmds, &vertex_count, &index_count);
+	}
+
+	ASSERT(vertex_count > 0);
+	ASSERT(index_count > 0);
+
+	const r_geometry_range_t geometry = R_GeometryRangeAlloc(vertex_count, index_count);
+	if (geometry.block_handle.size == 0) {
+		gEngine.Con_Printf(S_ERROR "Unable to allocate %d vertices %d indices for submodel %s",
+			vertex_count, index_count, submodel->name);
+		return NULL;
+	}
+
+	const r_geometry_range_lock_t geom_lock = R_GeometryRangeLock(&geometry);
+	if (!geom_lock.vertices) {
+		gEngine.Con_Printf(S_ERROR "Unable to lock staging for %d vertices %d indices for submodel %s",
+			vertex_count, index_count, submodel->name);
+		R_GeometryRangeFree(&geometry);
+		return NULL;
+	}
+
+	vk_render_geometry_t *const geometries = Mem_Malloc(vk_core.pool, submodel->nummesh * sizeof(*geometries));
+	ASSERT(geometries);
 
 	g_studio.numverts = g_studio.numelems = 0;
 
 	// safety bounding the skinnum
-	m_skinnum = bound( 0, RI.currententity->curstate.skin, ( m_pStudioHeader->numskinfamilies - 1 ));
-	ptexture = (mstudiotexture_t *)((byte *)m_pStudioHeader + m_pStudioHeader->textureindex);
-	pvertbone = ((byte *)m_pStudioHeader + m_pSubModel->vertinfoindex);
-	pnormbone = ((byte *)m_pStudioHeader + m_pSubModel->norminfoindex);
+	const int m_skinnum = bound( 0, RI.currententity->curstate.skin, ( m_pStudioHeader->numskinfamilies - 1 ));
+	const mstudiotexture_t *const ptexture = (const mstudiotexture_t *)((const byte *)m_pStudioHeader + m_pStudioHeader->textureindex);
+	const byte *const pvertbone = ((const byte *)m_pStudioHeader + m_pSubModel->vertinfoindex);
+	const byte *pnormbone = ((const byte *)m_pStudioHeader + m_pSubModel->norminfoindex);
 
-	pmesh = (mstudiomesh_t *)((byte *)m_pStudioHeader + m_pSubModel->meshindex);
-	pstudioverts = (vec3_t *)((byte *)m_pStudioHeader + m_pSubModel->vertindex);
-	pstudionorms = (vec3_t *)((byte *)m_pStudioHeader + m_pSubModel->normindex);
+	const vec3_t *pstudioverts = (const vec3_t *)((const byte *)m_pStudioHeader + m_pSubModel->vertindex);
+	const vec3_t *pstudionorms = (const vec3_t *)((const byte *)m_pStudioHeader + m_pSubModel->normindex);
 
-	pskinref = (short *)((byte *)m_pStudioHeader + m_pStudioHeader->skinindex);
+	const short *pskinref = (short *)((byte *)m_pStudioHeader + m_pStudioHeader->skinindex);
 	if( m_skinnum != 0 ) pskinref += (m_skinnum * m_pStudioHeader->numskinref);
 
 	// Compute inverse entity matrix, as we need vertices to be in local model space instead of global world space.
@@ -2173,11 +2218,11 @@ static void R_StudioDrawPoints( void )
 
 	if( FBitSet( m_pStudioHeader->flags, STUDIO_HAS_BONEWEIGHTS ) && m_pSubModel->blendvertinfoindex != 0 && m_pSubModel->blendnorminfoindex != 0 )
 	{
-		mstudioboneweight_t	*pvertweight = (mstudioboneweight_t *)((byte *)m_pStudioHeader + m_pSubModel->blendvertinfoindex);
-		mstudioboneweight_t	*pnormweight = (mstudioboneweight_t *)((byte *)m_pStudioHeader + m_pSubModel->blendnorminfoindex);
-		matrix3x4		skinMat;
+		const mstudioboneweight_t *const pvertweight = (mstudioboneweight_t *)((byte *)m_pStudioHeader + m_pSubModel->blendvertinfoindex);
+		const mstudioboneweight_t *const pnormweight = (mstudioboneweight_t *)((byte *)m_pStudioHeader + m_pSubModel->blendnorminfoindex);
+		matrix3x4 skinMat;
 
-		for( i = 0; i < m_pSubModel->numverts; i++ )
+		for( int i = 0; i < m_pSubModel->numverts; i++ )
 		{
 			R_StudioComputeSkinMatrix( &pvertweight[i], g_studio.worldtransform, skinMat );
 
@@ -2190,13 +2235,13 @@ static void R_StudioDrawPoints( void )
 
 		R_PrevFrame_SaveCurrentBoneTransforms( RI.currententity->index, g_studio.worldtransform, rotationmatrix_inv);
 		matrix3x4* prev_bones_transforms = R_PrevFrame_BoneTransforms( RI.currententity->index );
-		for( i = 0; i < m_pSubModel->numverts; i++ )
+		for( int i = 0; i < m_pSubModel->numverts; i++ )
 		{
 			R_StudioComputeSkinMatrix( &pvertweight[i], prev_bones_transforms, skinMat );
 			Matrix3x4_VectorTransform( skinMat, pstudioverts[i], g_studio.prev_verts[i] );
 		}
 
-		for( i = 0; i < m_pSubModel->numnorms; i++ )
+		for( int i = 0; i < m_pSubModel->numnorms; i++ )
 		{
 			R_StudioComputeSkinMatrix( &pnormweight[i], g_studio.worldtransform, skinMat );
 
@@ -2210,7 +2255,7 @@ static void R_StudioDrawPoints( void )
 		R_PrevFrame_SaveCurrentBoneTransforms( RI.currententity->index, g_studio.bonestransform, rotationmatrix_inv );
 
 		matrix3x4* prev_bones_transforms = R_PrevFrame_BoneTransforms( RI.currententity->index );
-		for( i = 0; i < m_pSubModel->numverts; i++ )
+		for( int i = 0; i < m_pSubModel->numverts; i++ )
 		{
 			vec3_t v;
 			Matrix3x4_VectorTransform( g_studio.bonestransform[pvertbone[i]], pstudioverts[i], v);
@@ -2222,6 +2267,7 @@ static void R_StudioDrawPoints( void )
 	}
 
 	// generate shared normals for properly scaling glowing shell
+	float shellscale = 0.0f;
 	if( RI.currententity->curstate.renderfx == kRenderFxGlowShell )
 	{
 		float factor = (1.0f / 128.0f);
@@ -2231,7 +2277,8 @@ static void R_StudioDrawPoints( void )
 
 	R_StudioGenerateNormals();
 
-	for( j = k = 0; j < m_pSubModel->nummesh; j++ )
+	qboolean need_sort = false;
+	for( int j = 0, k = 0; j < m_pSubModel->nummesh; j++ )
 	{
 		g_nFaceFlags = ptexture[pskinref[pmesh[j].skinref]].flags | g_nForceFaceFlags;
 
@@ -2244,7 +2291,7 @@ static void R_StudioDrawPoints( void )
 
 		if( RI.currententity->curstate.rendermode == kRenderTransAdd )
 		{
-			for( i = 0; i < pmesh[j].numnorms; i++, k++, pstudionorms++, pnormbone++ )
+			for( int i = 0; i < pmesh[j].numnorms; i++, k++, pstudionorms++, pnormbone++ )
 			{
 				// FIXME VK
 				const struct { float blend; } tr = {1.f};
@@ -2255,8 +2302,8 @@ static void R_StudioDrawPoints( void )
 		}
 		else
 		{
-			for( i = 0; i < pmesh[j].numnorms; i++, k++, pstudionorms++, pnormbone++ )
-			{
+			for( int  i = 0; i < pmesh[j].numnorms; i++, k++, pstudionorms++, pnormbone++ ) {
+				float lv_tmp;
 				if( FBitSet( m_pStudioHeader->flags, STUDIO_HAS_BONEWEIGHTS ))
 					R_StudioLighting( &lv_tmp, -1, g_nFaceFlags, g_studio.norms[k] );
 				else R_StudioLighting( &lv_tmp, *pnormbone, g_nFaceFlags, (float *)pstudionorms );
@@ -2268,33 +2315,30 @@ static void R_StudioDrawPoints( void )
 		}
 	}
 
+	/* FIXME VK
+	 * this might potentially break blas update topology
 	if( need_sort )
 	{
 		// resort opaque and translucent meshes draw order
 		qsort( g_studio.meshes, m_pSubModel->nummesh, sizeof( sortedmesh_t ), R_StudioMeshCompare );
 	}
+	*/
 
 		// NOTE: rewind normals at start
-	pstudionorms = (vec3_t *)((byte *)m_pStudioHeader + m_pSubModel->normindex);
+	pstudionorms = (const vec3_t *)((const byte *)m_pStudioHeader + m_pSubModel->normindex);
 
-	for( j = 0; j < m_pSubModel->nummesh; j++ )
-	{
-		float	oldblend = g_studio.blend;
-		uint startArrayVerts = g_studio.numverts;
-		uint startArrayElems = g_studio.numelems;
-		short	*ptricmds;
-		float	s, t;
-		int texture;
-
-		pmesh = g_studio.meshes[j].mesh;
-		ptricmds = (short *)((byte *)m_pStudioHeader + pmesh->triindex);
+	int vertices_offset = 0, indices_offset = 0;
+	for( int j = 0; j < m_pSubModel->nummesh; j++ ) {
+		const mstudiomesh_t *const pmesh = g_studio.meshes[j].mesh;
+		const short *const ptricmds = (short *)((byte *)m_pStudioHeader + pmesh->triindex);
 
 		g_nFaceFlags = ptexture[pskinref[pmesh->skinref]].flags | g_nForceFaceFlags;
 
-		s = 1.0f / (float)ptexture[pskinref[pmesh->skinref]].width;
-		t = 1.0f / (float)ptexture[pskinref[pmesh->skinref]].height;
+		const float s = 1.0f / (float)ptexture[pskinref[pmesh->skinref]].width;
+		const float t = 1.0f / (float)ptexture[pskinref[pmesh->skinref]].height;
 
 		/* FIXME VK
+		const float oldblend = g_studio.blend;
 		if( FBitSet( g_nFaceFlags, STUDIO_NF_MASKED ))
 		{
 			pglEnable( GL_ALPHA_TEST );
@@ -2316,13 +2360,28 @@ static void R_StudioDrawPoints( void )
 		}
 		*/
 
-		texture = R_StudioSetupSkin( m_pStudioHeader, pskinref[pmesh->skinref] );
+		const int texture = R_StudioSetupSkin( m_pStudioHeader, pskinref[pmesh->skinref] );
 
 		/* FIXME VK if( FBitSet( g_nFaceFlags, STUDIO_NF_CHROME ))
 			R_StudioDrawChromeMesh( ptricmds, pstudionorms, s, t, shellscale );
 		else if( FBitSet( g_nFaceFlags, STUDIO_NF_UV_COORDS ))
 			R_StudioDrawFloatMesh( ptricmds, pstudionorms );
-		else*/ R_StudioDrawNormalMesh( ptricmds, pstudionorms, s, t, texture );
+		else*/
+
+		buildSubmodelMeshGeometry((build_submodel_mesh_t){
+			.ptricmds = ptricmds,
+			.pstudionorms = pstudionorms,
+			.s = s,
+			.t = t,
+			.texture = texture,
+			.vertices_offset = geometry.vertices.unit_offset + vertices_offset,
+			.indices_offset = geometry.indices.unit_offset + indices_offset,
+			.dst_vertices = geom_lock.vertices + vertices_offset,
+			.dst_indices = geom_lock.indices + indices_offset,
+			.out_geometry = geometries + j,
+			.out_vertices_count = &vertices_offset,
+			.out_indices_count = &indices_offset,
+		});
 
 		/* FIXME VK
 		if( FBitSet( g_nFaceFlags, STUDIO_NF_MASKED ))
@@ -2342,7 +2401,74 @@ static void R_StudioDrawPoints( void )
 		*/
 	}
 
-	VK_RenderModelDynamicCommit();
+	R_GeometryRangeUnlock(&geom_lock);
+
+	r_studio_model_cache_entry_t *const entry = g_studio_cache.entries + g_studio_cache.entries_count;
+
+	*entry = (r_studio_model_cache_entry_t){
+		.key_submodel = submodel,
+		.geometries = geometries,
+		.geometries_count = submodel->nummesh,
+		.geometry_range = geometry,
+	};
+
+	if (!VK_RenderModelCreate( &entry->render_model, (vk_render_model_init_t){
+		.name = submodel->name,
+		.geometries = geometries,
+		.geometries_count = submodel->nummesh,
+	})) {
+		gEngine.Con_Printf(S_ERROR "Unable to create render model for studio submodel %s", submodel->name);
+		Mem_Free(geometries);
+		// FIXME everything else leaks ;_;
+		// FIXME sync up with staging and free
+		return NULL;
+	}
+
+	++g_studio_cache.entries_count;
+
+	return entry;
+}
+
+static const r_studio_model_cache_entry_t *findSubModelInCache(const mstudiomodel_t *submodel) {
+	for (int i = 0; i < g_studio_cache.entries_count; ++i) {
+		const r_studio_model_cache_entry_t *const entry = g_studio_cache.entries + i;
+		if (entry->key_submodel == submodel)
+			return entry;
+	}
+
+	return NULL;
+}
+
+static void R_StudioDrawPoints( void ) {
+	if( !m_pStudioHeader || !m_pSubModel || !m_pSubModel->nummesh)
+		return;
+
+	const r_studio_model_cache_entry_t *cached_model = findSubModelInCache( m_pSubModel );
+
+	if (!cached_model)
+		cached_model = buildCachedStudioSubModel(m_pSubModel);
+
+	if (!cached_model)
+		return;
+
+	vec4_t color = {1, 1, 1, g_studio.blend};
+	if (g_studio.rendermode2 == kRenderTransAdd) {
+		Vector4Set(color, g_studio.blend, g_studio.blend, g_studio.blend, 1.f);
+	}
+
+	// TODO r_model_draw_t.transform should be matrix3x4
+	matrix4x4 transform;
+	Matrix4x4_LoadIdentity(transform);
+	Matrix3x4_Copy(transform, g_studio.rotationmatrix);
+	R_RenderModelDraw(&cached_model->render_model, (r_model_draw_t){
+		.render_type = RI.currententity->curstate.rendermode,
+		.color = &color,
+		.transform = &transform,
+		.prev_transform = /* FIXME */ &transform,
+		.geometries_changed = NULL,
+		.geometries_changed_count = 0,
+		.textures_override = -1,
+	});
 }
 
 static void R_StudioSetRemapColors( int newTop, int newBottom )
@@ -2728,7 +2854,6 @@ static void R_StudioRenderFinal( void )
 	R_StudioSetupRenderer( rendermode );
 
 	VK_RenderDebugLabelBegin( RI.currentmodel->name );
-
 	for( i = 0; i < m_pStudioHeader->numbodyparts; i++ )
 	{
 		R_StudioSetupModel( i, (void**)&m_pBodyPart, (void**)&m_pSubModel );
@@ -2737,10 +2862,9 @@ static void R_StudioRenderFinal( void )
 		R_StudioDrawPoints();
 		GL_StudioDrawShadow();
 	}
+	VK_RenderDebugLabelEnd();
 
 	R_StudioRestoreRenderer();
-
-	VK_RenderDebugLabelEnd();
 }
 
 void R_StudioRenderModel( void )
@@ -3549,6 +3673,7 @@ void VK_StudioInit( void )
 
 void VK_StudioShutdown( void )
 {
+	R_StudioCacheClear();
 }
 
 void Mod_LoadStudioModel( model_t *mod, const void *buffer, qboolean *loaded )

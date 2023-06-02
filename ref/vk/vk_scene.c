@@ -85,6 +85,7 @@ static void loadLights( const model_t *const map ) {
 
 // Clears all old map data
 static void mapLoadBegin( const model_t *const map ) {
+	R_StudioCacheClear();
 	R_GeometryBuffer_MapClear();
 
 	VK_ClearLightmap();

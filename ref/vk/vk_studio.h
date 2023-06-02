@@ -21,3 +21,5 @@ void CL_InitStudioAPI( void );
 
 float R_StudioEstimateFrame( cl_entity_t *e, mstudioseqdesc_t *pseqdesc, double time );
 void R_StudioLerpMovement( cl_entity_t *e, double time, vec3_t origin, vec3_t angles );
+
+void R_StudioCacheClear( void );
