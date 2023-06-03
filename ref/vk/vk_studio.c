@@ -2171,7 +2171,7 @@ static const r_studio_model_cache_entry_t *buildCachedStudioSubModel( const mstu
 
 	int vertex_count = 0, index_count = 0;
 	for( int i = 0; i < submodel->nummesh; i++ ) {
-		const short* const ptricmds = (short *)((byte *)m_pStudioHeader + pmesh->triindex);
+		const short* const ptricmds = (short *)((byte *)m_pStudioHeader + pmesh[i].triindex);
 		addVerticesIndicesCounts(ptricmds, &vertex_count, &index_count);
 	}
 
@@ -2382,6 +2382,9 @@ static const r_studio_model_cache_entry_t *buildCachedStudioSubModel( const mstu
 			.out_vertices_count = &vertices_offset,
 			.out_indices_count = &indices_offset,
 		});
+
+		ASSERT(vertices_offset <= vertex_count);
+		ASSERT(indices_offset <= index_count);
 
 		/* FIXME VK
 		if( FBitSet( g_nFaceFlags, STUDIO_NF_MASKED ))
