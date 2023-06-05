@@ -960,15 +960,13 @@ qboolean RT_GetEmissiveForTexture( vec3_t out, int texture_id ) {
 	ASSERT(texture_id >= 0);
 	ASSERT(texture_id < MAX_TEXTURES);
 
-	{
-		vk_emissive_texture_t *const etex = g_lights_.map.emissive_textures + texture_id;
-		if (etex->set) {
-			VectorCopy(etex->emissive, out);
-			return true;
-		} else {
-			VectorClear(out);
-			return false;
-		}
+	vk_emissive_texture_t *const etex = g_lights_.map.emissive_textures + texture_id;
+	if (etex->set) {
+		VectorCopy(etex->emissive, out);
+		return true;
+	} else {
+		VectorClear(out);
+		return false;
 	}
 }
 
