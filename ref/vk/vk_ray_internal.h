@@ -101,13 +101,3 @@ qboolean RT_KusochkiUpload(uint32_t kusochki_offset, const struct vk_render_geom
 
 // Update animated materials
 void RT_KusochkiUploadSubset(rt_kusochki_t *kusochki, const struct vk_render_geometry_s *geoms, const int *geoms_indices, int geoms_indices_count);
-
-typedef struct {
-	const struct rt_blas_s* blas;
-	uint32_t kusochki_offset;
-	int render_type; // TODO material_mode
-	const matrix3x4 *transform, *prev_transform;
-	const vec4_t *color;
-} rt_blas_frame_args_t;
-
-void RT_BlasAddToFrame( rt_blas_frame_args_t args );
