@@ -3,16 +3,7 @@
 #include "vk_geometry.h"
 #include "vk_core.h"
 
-struct vk_render_model_s;
-struct vk_ray_model_s;
-
 void VK_RayFrameBegin( void );
-
-typedef struct {
-	VkBuffer buffer;
-	uint32_t offset;
-	uint64_t size;
-} vk_buffer_region_t;
 
 typedef struct {
 	struct vk_combuf_s *combuf;
@@ -37,14 +28,11 @@ typedef struct {
 void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args);
 
 void VK_RayNewMap( void );
-void VK_RayMapLoadEnd( void );
 
 qboolean VK_RayInit( void );
 void VK_RayShutdown( void );
 
-struct rt_blas_s;
 struct vk_render_geometry_s;
-
 struct rt_model_s;
 
 typedef enum {

@@ -97,7 +97,6 @@ typedef enum {
 } vk_render_type_e;
 
 struct rt_light_add_polygon_s;
-struct vk_ray_model_s;
 struct rt_model_s;
 
 typedef struct vk_render_model_s {

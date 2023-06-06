@@ -11,23 +11,6 @@
 
 #include "shaders/ray_interop.h"
 
-typedef struct vk_ray_model_s {
-	VkAccelerationStructureKHR blas;
-	VkDeviceAddress blas_addr;
-
-	uint32_t kusochki_offset;
-	qboolean dynamic;
-
-	// TODO remove
-	struct {
-		VkAccelerationStructureGeometryKHR *geoms;
-		int max_prims;
-		int num_geoms;
-		uint32_t size;
-		qboolean taken;
-	} cache_toremove;
-} vk_ray_model_t;
-
 typedef struct Kusok vk_kusok_data_t;
 
 typedef struct rt_draw_instance_s {

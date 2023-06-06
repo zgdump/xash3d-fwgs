@@ -60,6 +60,7 @@ static void applyMaterialToKusok(vk_kusok_data_t* kusok, const vk_render_geometr
 }
 
 // TODO utilize uploadKusochki([1]) to avoid 2 copies of staging code
+#if 0
 static qboolean uploadKusochkiSubset(const vk_ray_model_t *const model, const vk_render_model_t *const render_model,  const int *geom_indexes, int geom_indexes_count) {
 	// TODO can we sort all animated geometries (in brush) to have only a single range here?
 	for (int i = 0; i < geom_indexes_count; ++i) {
@@ -95,6 +96,7 @@ static qboolean uploadKusochkiSubset(const vk_ray_model_t *const model, const vk
 	}
 	return true;
 }
+#endif
 
 // TODO this material mapping is context dependent. I.e. different entity types might need different ray tracing behaviours for
 // same render_mode/type and even texture.
