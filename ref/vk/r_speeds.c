@@ -318,10 +318,9 @@ static int drawGraph( r_speeds_graph_t *const graph, int frame_bar_y ) {
 	int max_value = INT_MIN;
 	const qboolean watermarks = metric->low_watermark && metric->high_watermark;
 	for (int i = 0; i < graph->data_count; ++i) {
-		int value = Q_max(0, graph->data[(graph->data_write + i) % graph->data_count]);
-		max_value = Q_max(max_value, value);
-
-		value = Q_min(graph_max_value, value);
+		const int raw_value = Q_max(0, graph->data[(graph->data_write + i) % graph->data_count]);
+		max_value = Q_max(max_value, raw_value);
+		const int value = Q_min(graph_max_value, raw_value);
 
 		int red = 0xed, green = 0x9f, blue = 0x01;
 		if (watermarks) {
@@ -337,7 +336,14 @@ static int drawGraph( r_speeds_graph_t *const graph, int frame_bar_y ) {
 		const int height = watermarks ? y_pos : 2 * g_speeds.font_metrics.scale;
 		const int y = frame_bar_y - y_pos;
 
+		// TODO lines
 		CL_FillRGBA(x0, y, x1-x0, height, red, green, blue, 127);
+
+		if (i == graph->data_count - 1) {
+			char buf[16];
+			metricTypeSnprintf(buf, sizeof(buf), raw_value, metric->type);
+			gEngine.Con_DrawString(x1, y - g_speeds.font_metrics.glyph_height / 2, buf, text_color);
+		}
 	}
 
 	graph->max_value = max_value ? max_value : 1;
