@@ -701,24 +701,35 @@ static void uboComputeAndSetMVPFromModel( const matrix4x4 model ) {
 	Matrix4x4_ToArrayFloatGL(mvp, (float*)g_render_state.dirty_uniform_data.mvp);
 }
 
-static void submitToTraditionalRender( const vk_render_model_t *model, const matrix4x4 transform, const vec4_t color, int render_type, int textures_override ) {
-	int current_texture = textures_override;
+typedef struct {
+	const char *debug_name;
+	int lightmap; // TODO per-geometry
+	const vk_render_geometry_t *geometries;
+	int geometries_count;
+	const matrix4x4 *transform;
+	const vec4_t *color;
+	int render_type;
+	int textures_override;
+} trad_submit_t;
+
+static void submitToTraditionalRender( trad_submit_t args ) {
+	int current_texture = args.textures_override;
 	int element_count = 0;
 	int index_offset = -1;
 	int vertex_offset = 0;
 
-	uboComputeAndSetMVPFromModel( transform );
+	uboComputeAndSetMVPFromModel( *args.transform );
 
 	// TODO get rid of this dirty ubo thing
-	Vector4Copy(color, g_render_state.dirty_uniform_data.color);
-	ASSERT(model->lightmap <= MAX_LIGHTMAPS);
-	const int lightmap = model->lightmap > 0 ? tglob.lightmapTextures[model->lightmap - 1] : tglob.whiteTexture;
+	Vector4Copy(*args.color, g_render_state.dirty_uniform_data.color);
+	ASSERT(args.lightmap <= MAX_LIGHTMAPS);
+	const int lightmap = args.lightmap > 0 ? tglob.lightmapTextures[args.lightmap - 1] : tglob.whiteTexture;
 
-	drawCmdPushDebugLabelBegin( model->debug_name );
+	drawCmdPushDebugLabelBegin( args.debug_name );
 
-	for (int i = 0; i < model->num_geometries; ++i) {
-		const vk_render_geometry_t *geom = model->geometries + i;
-		const int tex = textures_override > 0 ? textures_override : geom->texture;
+	for (int i = 0; i < args.geometries_count; ++i) {
+		const vk_render_geometry_t *geom = args.geometries + i;
+		const int tex = args.textures_override > 0 ? args.textures_override : geom->texture;
 		const qboolean split = current_texture != tex
 			|| vertex_offset != geom->vertex_offset
 			|| (index_offset + element_count) != geom->index_offset;
@@ -734,7 +745,7 @@ static void submitToTraditionalRender( const vk_render_model_t *model, const mat
 				render_draw_t draw = {
 					.lightmap = lightmap,
 					.texture = current_texture,
-					.pipeline_index = render_type,
+					.pipeline_index = args.render_type,
 					.element_count = element_count,
 					.vertex_offset = vertex_offset,
 					.index_offset = index_offset,
@@ -758,7 +769,7 @@ static void submitToTraditionalRender( const vk_render_model_t *model, const mat
 		const render_draw_t draw = {
 			.lightmap = lightmap,
 			.texture = current_texture,
-			.pipeline_index = render_type,
+			.pipeline_index = args.render_type,
 			.element_count = element_count,
 			.vertex_offset = vertex_offset,
 			.index_offset = index_offset,
@@ -770,6 +781,7 @@ static void submitToTraditionalRender( const vk_render_model_t *model, const mat
 	drawCmdPushDebugLabelEnd();
 }
 
+#if 0
 void VK_RenderModelDraw_old( vk_render_model_t* model, int ent_index_prev_frame__toremove ) {
 	++g_render.stats.models_count;
 
@@ -798,6 +810,7 @@ void VK_RenderModelDraw_old( vk_render_model_t* model, int ent_index_prev_frame_
 
 	submitToTraditionalRender( model, model->deprecate.transform, model->deprecate.color, model->deprecate.render_type, -1 );
 }
+#endif
 
 void R_RenderModelDraw(const vk_render_model_t *model, r_model_draw_t args) {
 	++g_render.stats.models_count;
@@ -816,56 +829,17 @@ void R_RenderModelDraw(const vk_render_model_t *model, r_model_draw_t args) {
 			},
 		});
 	} else {
-		submitToTraditionalRender(model, *args.transform, *args.color, args.render_type, args.textures_override);
+		submitToTraditionalRender((trad_submit_t){
+			.debug_name = model->debug_name,
+			.lightmap = model->lightmap,
+			.geometries = model->geometries,
+			.geometries_count = model->num_geometries,
+			.transform = args.transform,
+			.color = args.color,
+			.render_type = args.render_type,
+			.textures_override = args.textures_override
+		});
 	}
-}
-
-#define MAX_DYNAMIC_GEOMETRY 256
-
-static struct {
-	vk_render_model_t model;
-	matrix4x4 transform;
-	vk_render_geometry_t geometries[MAX_DYNAMIC_GEOMETRY];
-} g_dynamic_model = {0};
-
-static void VK_RenderModelDynamicBegin( vk_render_type_e render_type, const vec4_t color, const matrix3x4 transform, const char *debug_name_fmt, ... ) {
-	va_list argptr;
-	va_start( argptr, debug_name_fmt );
-	vsnprintf(g_dynamic_model.model.debug_name, sizeof(g_dynamic_model.model.debug_name), debug_name_fmt, argptr );
-	va_end( argptr );
-
-	ASSERT(!g_dynamic_model.model.geometries);
-	g_dynamic_model.model.geometries = g_dynamic_model.geometries;
-	g_dynamic_model.model.num_geometries = 0;
-	g_dynamic_model.model.deprecate.render_type = render_type;
-	g_dynamic_model.model.lightmap = 0;
-	Vector4Copy(color, g_dynamic_model.model.deprecate.color);
-	Matrix4x4_LoadIdentity(g_dynamic_model.transform);
-	if (transform)
-		Matrix3x4_Copy(g_dynamic_model.transform, transform);
-}
-static void VK_RenderModelDynamicAddGeometry( const vk_render_geometry_t *geom ) {
-	ASSERT(g_dynamic_model.model.geometries);
-	if (g_dynamic_model.model.num_geometries == MAX_DYNAMIC_GEOMETRY) {
-		ERROR_THROTTLED(10, "Ran out of dynamic model geometry slots for model %s", g_dynamic_model.model.debug_name);
-		return;
-	}
-
-	g_dynamic_model.geometries[g_dynamic_model.model.num_geometries++] = *geom;
-}
-static void VK_RenderModelDynamicCommit( void ) {
-	ASSERT(g_dynamic_model.model.geometries);
-
-	if (g_dynamic_model.model.num_geometries > 0) {
-		g_render.stats.dynamic_model_count++;
-		g_dynamic_model.model.dynamic = true;
-		VK_RenderModelInit_old( &g_dynamic_model.model );
-		Matrix4x4_Copy(g_dynamic_model.model.deprecate.transform, g_dynamic_model.transform);
-		VK_RenderModelDraw_old( &g_dynamic_model.model, -1 );
-	}
-
-	g_dynamic_model.model.debug_name[0] = '\0';
-	g_dynamic_model.model.geometries = NULL;
 }
 
 void R_RenderDrawOnce(r_draw_once_t args) {
@@ -880,22 +854,45 @@ void R_RenderDrawOnce(r_draw_once_t args) {
 
 	R_GeometryBufferUnlock( &buffer );
 
-	{
-		const vk_render_geometry_t geometry = {
-			.texture = args.texture,
-			.material = kXVkMaterialRegular,
+	const vk_render_geometry_t geometry = {
+		.texture = args.texture,
+		.material = kXVkMaterialRegular,
 
-			.max_vertex = args.vertices_count,
-			.vertex_offset = buffer.vertices.unit_offset,
+		.max_vertex = args.vertices_count,
+		.vertex_offset = buffer.vertices.unit_offset,
 
-			.element_count = args.indices_count,
-			.index_offset = buffer.indices.unit_offset,
+		.element_count = args.indices_count,
+		.index_offset = buffer.indices.unit_offset,
 
-			.emissive = { (*args.color)[0], (*args.color)[1], (*args.color)[2] },
-		};
+		.emissive = { (*args.color)[0], (*args.color)[1], (*args.color)[2] },
+	};
 
-		VK_RenderModelDynamicBegin( args.render_type, *args.color, m_matrix4x4_identity, args.name );
-		VK_RenderModelDynamicAddGeometry( &geometry );
-		VK_RenderModelDynamicCommit();
+	if (g_render_state.current_frame_is_ray_traced) {
+		// FIXME
+		/* ASSERT(model->rt_model); */
+		/* RT_FrameAddModel(model->rt_model, (rt_frame_add_model_t){ */
+		/* 	.render_type = args.render_type, */
+		/* 	.transform = (const matrix3x4*)args.transform, */
+		/* 	.prev_transform = (const matrix3x4*)args.prev_transform, */
+		/* 	.color = args.color, */
+		/* 	.override = { */
+		/* 		.textures = args.textures_override, */
+		/* 		.geoms = model->geometries, */
+		/* 		.geoms_count = model->num_geometries, */
+		/* 	}, */
+		/* }); */
+	} else {
+		submitToTraditionalRender((trad_submit_t){
+			.debug_name = args.name,
+			.lightmap = 0,
+			.geometries = &geometry,
+			.geometries_count = 1,
+			.transform = &m_matrix4x4_identity,
+			.color = args.color,
+			.render_type = args.render_type,
+			.textures_override = -1,
+		});
 	}
+
+	g_render.stats.dynamic_model_count++;
 }
