@@ -116,29 +116,12 @@ typedef struct vk_render_model_s {
 	// TODO deprecate
 	qboolean dynamic;
 
-	// Non-NULL only for ray tracing
-	// TODO deprecate in favor of rt_model_s
-	struct vk_ray_model_s *ray_model;
-
 	// Polylights which need to be added per-frame dynamically
 	// Used for non-worldmodel brush models which are not static
 	// TODO this doesn't belong here at all
 	struct rt_light_add_polygon_s *dynamic_polylights;
 	int dynamic_polylights_count;
-
-	struct {
-		// TODO these two are dynamic, extract them to draw args?
-		vk_render_type_e render_type;
-		vec4_t color;
-		matrix4x4 transform;
-		// previous frame ObjectToWorld (model) matrix
-		matrix4x4 prev_transform;
-
-		// TODO potentially dynamic. extract to draw args?
-	} deprecate;
 } vk_render_model_t;
-
-qboolean VK_RenderModelInit_old( vk_render_model_t* model );
 
 // Initialize model from scratch
 typedef struct {
@@ -148,8 +131,6 @@ typedef struct {
 } vk_render_model_init_t;
 qboolean VK_RenderModelCreate( vk_render_model_t *model, vk_render_model_init_t args );
 void VK_RenderModelDestroy( vk_render_model_t* model );
-
-void VK_RenderModelDraw_old( vk_render_model_t* model, int ent_index_prev_frame__toremove );
 
 typedef struct {
 	vk_render_type_e render_type;

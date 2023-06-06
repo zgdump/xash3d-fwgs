@@ -6,17 +6,7 @@
 struct vk_render_model_s;
 struct vk_ray_model_s;
 
-typedef struct {
-	struct vk_render_model_s *model;
-} vk_ray_model_init_t;
-
-struct vk_ray_model_s *VK_RayModelCreate( vk_ray_model_init_t model_init );
-void VK_RayModelDestroy( struct vk_ray_model_s *model );
-
 void VK_RayFrameBegin( void );
-
-// TODO how to improve this render vs ray model storage/interaction?
-void VK_RayFrameAddModel(struct vk_ray_model_s *model, const struct vk_render_model_s *render_model);
 
 typedef struct {
 	VkBuffer buffer;

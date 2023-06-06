@@ -400,13 +400,6 @@ void RT_VkAccelShutdown(void) {
 	if (g_accel.tlas != VK_NULL_HANDLE)
 		vkDestroyAccelerationStructureKHR(vk_core.device, g_accel.tlas, NULL);
 
-	for (int i = 0; i < COUNTOF(g_ray_model_state.models_cache); ++i) {
-		vk_ray_model_t *model = g_ray_model_state.models_cache + i;
-		if (model->blas != VK_NULL_HANDLE)
-			vkDestroyAccelerationStructureKHR(vk_core.device, model->blas, NULL);
-		model->blas = VK_NULL_HANDLE;
-	}
-
 	VK_BufferDestroy(&g_accel.scratch_buffer);
 	VK_BufferDestroy(&g_accel.accels_buffer);
 	VK_BufferDestroy(&g_accel.tlas_geom_buffer);
@@ -424,12 +417,6 @@ void RT_VkAccelNewMap(void) {
 	if (g_accel.accels_buffer_alloc)
 		aloPoolDestroy(g_accel.accels_buffer_alloc);
 	g_accel.accels_buffer_alloc = aloPoolCreate(MAX_ACCELS_BUFFER, expected_accels, accels_alignment);
-
-	// Clear model cache
-	for (int i = 0; i < COUNTOF(g_ray_model_state.models_cache); ++i) {
-		vk_ray_model_t *model = g_ray_model_state.models_cache + i;
-		VK_RayModelDestroy(model);
-	}
 
 	// Recreate tlas
 	// Why here and not in init: to make sure that its memory is preserved. Map init will clear all memory regions.
@@ -619,15 +606,4 @@ finalize:
 	Mem_Free(max_prim_counts);
 	Mem_Free(build_ranges);
 	return retval;
-}
-
-// Update animated materials
-void RT_BlasUpdateMaterialsSubset(struct rt_blas_s *blas, const struct vk_render_geometry_s *geoms[], const int *geoms_indices, int geoms_indices_count) {
-	ASSERT(!"Not implemented");
-}
-
-// Clone materials with different base_color texture (sprites)
-uint32_t RT_BlasOverrideMaterial(struct rt_blas_s *blas, int texture) {
-	ASSERT(!"Not implemented");
-	return -1;
 }

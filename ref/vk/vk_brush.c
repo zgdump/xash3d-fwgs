@@ -502,6 +502,35 @@ static void brushDrawWater(vk_brush_model_t *bmodel, const cl_entity_t *ent, int
 	});
 }
 
+// FIXME use this
+static void computeConveyorSpeed(const color24 rendercolor, int tex_index, vec2_t speed) {
+	float sy, cy;
+	float flConveyorSpeed = 0.0f;
+	float flRate, flAngle;
+	vk_texture_t *texture = findTexture( tex_index );
+	//gl_texture_t	*texture;
+
+	// FIXME
+	/* if( ENGINE_GET_PARM( PARM_QUAKE_COMPATIBLE ) && RI.currententity == gEngfuncs.GetEntityByIndex( 0 ) ) */
+	/* { */
+	/* 	// same as doom speed */
+	/* 	flConveyorSpeed = -35.0f; */
+	/* } */
+	/* else */
+	{
+		flConveyorSpeed = (rendercolor.g<<8|rendercolor.b) / 16.0f;
+		if( rendercolor.r ) flConveyorSpeed = -flConveyorSpeed;
+	}
+	//texture = R_GetTexture( glState.currentTextures[glState.activeTMU] );
+
+	flRate = fabs( flConveyorSpeed ) / (float)texture->width;
+	flAngle = ( flConveyorSpeed >= 0 ) ? 180 : 0;
+
+	SinCos( flAngle * ( M_PI_F / 180.0f ), &sy, &cy );
+	speed[0] = cy * flRate;
+	speed[1] = sy * flRate;
+}
+
 /*
 ===============
 R_TextureAnimation

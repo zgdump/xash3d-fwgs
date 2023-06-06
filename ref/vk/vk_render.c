@@ -641,33 +641,9 @@ void VK_RenderEndRTX( struct vk_combuf_s* combuf, VkImageView img_dst_view, VkIm
 	}
 }
 
-qboolean VK_RenderModelInit_old( vk_render_model_t *model ) {
-	if (vk_core.rtx && (g_render_state.current_frame_is_ray_traced || !model->dynamic)) {
-		// TODO runtime rtx switch: ???
-		const vk_ray_model_init_t args = {
-			.model = model,
-		};
-		model->ray_model = VK_RayModelCreate(args);
-		model->dynamic_polylights = NULL;
-		model->dynamic_polylights_count = 0;
-		Matrix4x4_LoadIdentity(model->deprecate.transform);
-		Matrix4x4_LoadIdentity(model->deprecate.prev_transform);
-		return !!model->ray_model;
-	}
-
-	// TODO pre-bake optimal draws
-	return true;
-}
-
 qboolean VK_RenderModelCreate( vk_render_model_t *model, vk_render_model_init_t args ) {
 	memset(model, 0, sizeof(*model));
 	Q_strncpy(model->debug_name, args.name, sizeof(model->debug_name));
-
-	// TODO these are dynamic and should be removed
-	Matrix4x4_LoadIdentity(model->deprecate.transform);
-	Matrix4x4_LoadIdentity(model->deprecate.prev_transform);
-	model->deprecate.render_type = kVkRenderTypeSolid;
-	Vector4Set(model->deprecate.color, 1, 1, 1, 1);
 
 	model->geometries = args.geometries;
 	model->num_geometries = args.geometries_count;
@@ -685,9 +661,6 @@ qboolean VK_RenderModelCreate( vk_render_model_t *model, vk_render_model_init_t 
 }
 
 void VK_RenderModelDestroy( vk_render_model_t* model ) {
-	if (model->ray_model)
-		VK_RayModelDestroy(model->ray_model);
-
 	if (model->dynamic_polylights)
 		Mem_Free(model->dynamic_polylights);
 
@@ -780,37 +753,6 @@ static void submitToTraditionalRender( trad_submit_t args ) {
 
 	drawCmdPushDebugLabelEnd();
 }
-
-#if 0
-void VK_RenderModelDraw_old( vk_render_model_t* model, int ent_index_prev_frame__toremove ) {
-	++g_render.stats.models_count;
-
-	// TODO track prev transform directly as a member in vk_render_model_t
-	if (g_render_state.current_frame_is_ray_traced) {
-		if (ent_index_prev_frame__toremove >= 0 && model != NULL) {
-			R_PrevFrame_SaveCurrentState( ent_index_prev_frame__toremove, model->deprecate.transform );
-			R_PrevFrame_ModelTransform( ent_index_prev_frame__toremove, model->deprecate.prev_transform );
-		}
-		else {
-			Matrix4x4_Copy( model->deprecate.prev_transform, model->deprecate.transform );
-		}
-
-		if (model->rt_model) {
-			RT_FrameAddModel(model->rt_model, (rt_frame_add_model_t){
-				.render_type = model->deprecate.render_type,
-				.transform = (const matrix3x4*)&model->deprecate.transform,
-				.prev_transform = (const matrix3x4*)&model->deprecate.prev_transform,
-				.color = &model->deprecate.color,
-			});
-		} else
-			VK_RayFrameAddModel(model->ray_model, model);
-
-		return;
-	}
-
-	submitToTraditionalRender( model, model->deprecate.transform, model->deprecate.color, model->deprecate.render_type, -1 );
-}
-#endif
 
 void R_RenderModelDraw(const vk_render_model_t *model, r_model_draw_t args) {
 	++g_render.stats.models_count;
