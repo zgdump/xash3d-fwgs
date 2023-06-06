@@ -230,6 +230,18 @@ void TriColor4ub_( byte r, byte g, byte b, byte a ) {
 }
 
 void TriColor4f( float r, float g, float b, float a ) {
-	TriColor4ub_(clampi32(r*255.f, 0, 255),clampi32(g*255.f, 0, 255),clampi32(b*255.f, 0, 255),clampi32(a*255.f, 0, 255));
+	TriColor4ub_(
+		clampi32(r*255.f, 0, 255),
+		clampi32(g*255.f, 0, 255),
+		clampi32(b*255.f, 0, 255),
+		clampi32(a*255.f, 0, 255));
 }
 
+void TriNormal3fv( const float *v ) {
+	TriNormal3f(v[0], v[1], v[2]);
+}
+
+void TriNormal3f( float x, float y, float z ) {
+	vk_vertex_t *const ve = g_triapi.vertices + g_triapi.num_vertices;
+	VectorSet(ve->normal, x, y, z);
+}

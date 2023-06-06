@@ -174,6 +174,7 @@ static void TriBrightness( float brightness ) {
 	TriColor4f( brightness, brightness, brightness, 1.f );
 }
 
+#if 0 // TODO possible optimization for tracking per-beam blases
 static void R_DrawSegs( vec3_t source, vec3_t delta, float width, float scale, float freq, float speed, int segments, int flags, const vec4_t color, int texture, int render_mode )
 {
 	int	noiseIndex, noiseStep;
@@ -289,7 +290,7 @@ static void R_DrawSegs( vec3_t source, vec3_t delta, float width, float scale, f
 		nextSeg.width = width * 2.0f;
 		nextSeg.texcoord = vLast;
 
- 		if( segs_drawn > 0 )
+		if( segs_drawn > 0 )
 		{
 			// Get a vector that is perpendicular to us and perpendicular to the beam.
 			// This is used to fatten the beam.
@@ -349,7 +350,7 @@ static void R_DrawSegs( vec3_t source, vec3_t delta, float width, float scale, f
 			brightness = 1.0f - fraction;
 		}
 
- 		if( segs_drawn == total_segs )
+		if( segs_drawn == total_segs )
 		{
 			// draw the last segment
 			VectorMA( curSeg.pos, ( curSeg.width * 0.5f ), vLastNormal, vPoint1 );
@@ -415,6 +416,186 @@ static void R_DrawSegs( vec3_t source, vec3_t delta, float width, float scale, f
 		VK_RenderModelDynamicCommit();
 	}
 }
+#else
+static void R_DrawSegs( vec3_t source, vec3_t delta, float width, float scale, float freq, float speed, int segments, int flags, const vec4_t color )
+{
+	int	noiseIndex, noiseStep;
+	int	i, total_segs, segs_drawn;
+	float	div, length, fraction, factor;
+	float	flMaxWidth, vLast, vStep, brightness;
+	vec3_t	perp1, vLastNormal;
+	beamseg_t	curSeg;
+
+	if( segments < 2 ) return;
+
+	length = VectorLength( delta );
+	flMaxWidth = width * 0.5f;
+	div = 1.0f / ( segments - 1 );
+
+	if( length * div < flMaxWidth * 1.414f )
+	{
+		// here, we have too many segments; we could get overlap... so lets have less segments
+		segments = (int)( length / ( flMaxWidth * 1.414f )) + 1.0f;
+		if( segments < 2 ) segments = 2;
+	}
+
+	if( segments > NOISE_DIVISIONS )
+		segments = NOISE_DIVISIONS;
+
+	div = 1.0f / (segments - 1);
+	length *= 0.01f;
+	vStep = length * div;	// Texture length texels per space pixel
+
+	// Scroll speed 3.5 -- initial texture position, scrolls 3.5/sec (1.0 is entire texture)
+	vLast = fmod( freq * speed, 1 );
+
+	if( flags & FBEAM_SINENOISE )
+	{
+		if( segments < 16 )
+		{
+			segments = 16;
+			div = 1.0f / ( segments - 1 );
+		}
+		scale *= 100.0f;
+		length = segments * 0.1f;
+	}
+	else
+	{
+		scale *= length * 2.0f;
+	}
+
+	// Iterator to resample noise waveform (it needs to be generated in powers of 2)
+	noiseStep = (int)((float)( NOISE_DIVISIONS - 1 ) * div * 65536.0f );
+	brightness = 1.0f;
+	noiseIndex = 0;
+
+	if( FBitSet( flags, FBEAM_SHADEIN ))
+		brightness = 0;
+
+	// Choose two vectors that are perpendicular to the beam
+	R_BeamComputePerpendicular( delta, perp1 );
+
+	total_segs = segments;
+	segs_drawn = 0;
+
+	TriBegin( TRI_TRIANGLE_STRIP );
+
+	// specify all the segments.
+	for( i = 0; i < segments; i++ )
+	{
+		beamseg_t	nextSeg;
+		vec3_t	vPoint1, vPoint2;
+
+		ASSERT( noiseIndex < ( NOISE_DIVISIONS << 16 ));
+
+		fraction = i * div;
+
+		VectorMA( source, fraction, delta, nextSeg.pos );
+
+		// distort using noise
+		if( scale != 0 )
+		{
+			factor = rgNoise[noiseIndex>>16] * scale;
+
+			if( FBitSet( flags, FBEAM_SINENOISE ))
+			{
+				float	s, c;
+
+				SinCos( fraction * M_PI_F * length + freq, &s, &c );
+				VectorMA( nextSeg.pos, (factor * s), g_camera.vup, nextSeg.pos );
+
+				// rotate the noise along the perpendicluar axis a bit to keep the bolt from looking diagonal
+				VectorMA( nextSeg.pos, (factor * c), g_camera.vright, nextSeg.pos );
+			}
+			else
+			{
+				VectorMA( nextSeg.pos, factor, perp1, nextSeg.pos );
+			}
+		}
+
+		// specify the next segment.
+		nextSeg.width = width * 2.0f;
+		nextSeg.texcoord = vLast;
+
+		if( segs_drawn > 0 )
+		{
+			// Get a vector that is perpendicular to us and perpendicular to the beam.
+			// This is used to fatten the beam.
+			vec3_t	vNormal, vAveNormal;
+
+			R_BeamComputeNormal( curSeg.pos, nextSeg.pos, vNormal );
+
+			if( segs_drawn > 1 )
+			{
+				// Average this with the previous normal
+				VectorAdd( vNormal, vLastNormal, vAveNormal );
+				VectorScale( vAveNormal, 0.5f, vAveNormal );
+				VectorNormalizeFast( vAveNormal );
+			}
+			else
+			{
+				VectorCopy( vNormal, vAveNormal );
+			}
+
+			VectorCopy( vNormal, vLastNormal );
+
+			// draw regular segment
+			VectorMA( curSeg.pos, ( curSeg.width * 0.5f ), vAveNormal, vPoint1 );
+			VectorMA( curSeg.pos, (-curSeg.width * 0.5f ), vAveNormal, vPoint2 );
+
+			TriTexCoord2f( 0.0f, curSeg.texcoord );
+			TriBrightness( brightness );
+			TriNormal3fv( vAveNormal );
+			TriVertex3fv( vPoint1 );
+
+			TriTexCoord2f( 1.0f, curSeg.texcoord );
+			TriBrightness( brightness );
+			TriNormal3fv( vAveNormal );
+			TriVertex3fv( vPoint2 );
+		}
+
+		curSeg = nextSeg;
+		segs_drawn++;
+
+		if( FBitSet( flags, FBEAM_SHADEIN ) && FBitSet( flags, FBEAM_SHADEOUT ))
+		{
+			if( fraction < 0.5f ) brightness = fraction;
+			else brightness = ( 1.0f - fraction );
+		}
+		else if( FBitSet( flags, FBEAM_SHADEIN ))
+		{
+			brightness = fraction;
+		}
+		else if( FBitSet( flags, FBEAM_SHADEOUT ))
+		{
+			brightness = 1.0f - fraction;
+		}
+
+		if( segs_drawn == total_segs )
+		{
+			// draw the last segment
+			VectorMA( curSeg.pos, ( curSeg.width * 0.5f ), vLastNormal, vPoint1 );
+			VectorMA( curSeg.pos, (-curSeg.width * 0.5f ), vLastNormal, vPoint2 );
+
+			// specify the points.
+			TriTexCoord2f( 0.0f, curSeg.texcoord );
+			TriBrightness( brightness );
+			TriNormal3fv( vLastNormal );
+			TriVertex3fv( vPoint1 );
+
+			TriTexCoord2f( 1.0f, curSeg.texcoord );
+			TriBrightness( brightness );
+			TriNormal3fv( vLastNormal );
+			TriVertex3fv( vPoint2 );
+		}
+
+		vLast += vStep; // Advance texture scroll (v axis only)
+		noiseIndex += noiseStep;
+	}
+
+	TriEndEx(color, "beam segs");
+}
+#endif
 
 static void R_DrawTorus( vec3_t source, vec3_t delta, float width, float scale, float freq, float speed, int segments, const vec4_t color )
 {
@@ -1144,7 +1325,7 @@ void R_BeamDraw( BEAM *pbeam, float frametime )
 		break;
 	case TE_BEAMPOINTS:
 	case TE_BEAMHOSE:
-		R_DrawSegs( pbeam->source, pbeam->delta, pbeam->width, pbeam->amplitude, pbeam->freq, pbeam->speed, pbeam->segments, pbeam->flags, color, texturenum, render_mode );
+		R_DrawSegs( pbeam->source, pbeam->delta, pbeam->width, pbeam->amplitude, pbeam->freq, pbeam->speed, pbeam->segments, pbeam->flags, color );
 		break;
 	case TE_BEAMFOLLOW:
 		R_DrawBeamFollow( pbeam, frametime, color );

@@ -79,6 +79,9 @@ typedef struct {
 
 	struct {
 		int textures; // Override kusochki/material textures if > 0
+
+		// These are needed in order to recreate kusochki geometry data
+		// TODO remove when material data is split from kusochki
 		int geoms_count;
 		const struct vk_render_geometry_s *geoms;
 	} override;
