@@ -136,41 +136,6 @@ static int genTriangleStripIndices(void) {
 	return num_indices;
 }
 
-static void emitDynamicGeometry(int num_indices, const vec4_t color, const char* name ) {
-	if (!num_indices)
-		return;
-
-	r_geometry_buffer_lock_t buffer;
-	if (!R_GeometryBufferAllocOnceAndLock( &buffer, g_triapi.num_vertices, num_indices)) {
-		gEngine.Con_Printf(S_ERROR "Cannot allocate geometry for tri api\n");
-		return;
-	}
-
-	memcpy(buffer.vertices.ptr, g_triapi.vertices, sizeof(vk_vertex_t) * g_triapi.num_vertices);
-	memcpy(buffer.indices.ptr, g_triapi.indices, sizeof(uint16_t) * num_indices);
-
-	R_GeometryBufferUnlock( &buffer );
-
-	{
-		const vk_render_geometry_t geometry = {
-			.texture = g_triapi.texture_index,
-			.material = kXVkMaterialRegular,
-
-			.max_vertex = g_triapi.num_vertices,
-			.vertex_offset = buffer.vertices.unit_offset,
-
-			.element_count = num_indices,
-			.index_offset = buffer.indices.unit_offset,
-
-			.emissive = { color[0], color[1], color[2] },
-		};
-
-		VK_RenderModelDynamicBegin( g_triapi.render_type, color, m_matrix4x4_identity, name );
-		VK_RenderModelDynamicAddGeometry( &geometry );
-		VK_RenderModelDynamicCommit();
-	}
-}
-
 void TriEnd( void ) {
 	if (!g_triapi.primitive_mode)
 		return;
@@ -196,7 +161,19 @@ void TriEndEx( const vec4_t color, const char* name ) {
 			break;
 	}
 
-	emitDynamicGeometry(num_indices, color, name);
+	if (num_indices) {
+		R_RenderDrawOnce((r_draw_once_t){
+			.name = name,
+			.vertices = g_triapi.vertices,
+			.indices = g_triapi.indices,
+			.vertices_count = g_triapi.num_vertices,
+			.indices_count = num_indices,
+			.render_type = g_triapi.render_type,
+			.texture = g_triapi.texture_index,
+			.emissive = (const vec4_t*)color,
+			.color = (const vec4_t*)color,
+		});
+	}
 
 	g_triapi.num_vertices = 0;
 	g_triapi.primitive_mode = 0;

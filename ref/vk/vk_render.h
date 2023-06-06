@@ -169,10 +169,18 @@ typedef struct {
 
 void R_RenderModelDraw(const vk_render_model_t *model, r_model_draw_t args);
 
-// TODO Begin and commit should be removed
-void VK_RenderModelDynamicBegin( vk_render_type_e render_type, const vec4_t color, const matrix3x4 transform, const char *debug_name_fmt, ... );
-void VK_RenderModelDynamicAddGeometry( const vk_render_geometry_t *geom );
-void VK_RenderModelDynamicCommit( void );
+typedef struct {
+	const char *name;
+	const struct vk_vertex_s *vertices;
+	const uint16_t *indices;
+	int vertices_count, indices_count;
+
+	int render_type;
+	int texture;
+	const vec4_t *emissive;
+	const vec4_t *color;
+} r_draw_once_t;
+void R_RenderDrawOnce(r_draw_once_t args);
 
 void VK_RenderDebugLabelBegin( const char *label );
 void VK_RenderDebugLabelEnd( void );

@@ -828,7 +828,7 @@ static struct {
 	vk_render_geometry_t geometries[MAX_DYNAMIC_GEOMETRY];
 } g_dynamic_model = {0};
 
-void VK_RenderModelDynamicBegin( vk_render_type_e render_type, const vec4_t color, const matrix3x4 transform, const char *debug_name_fmt, ... ) {
+static void VK_RenderModelDynamicBegin( vk_render_type_e render_type, const vec4_t color, const matrix3x4 transform, const char *debug_name_fmt, ... ) {
 	va_list argptr;
 	va_start( argptr, debug_name_fmt );
 	vsnprintf(g_dynamic_model.model.debug_name, sizeof(g_dynamic_model.model.debug_name), debug_name_fmt, argptr );
@@ -844,7 +844,7 @@ void VK_RenderModelDynamicBegin( vk_render_type_e render_type, const vec4_t colo
 	if (transform)
 		Matrix3x4_Copy(g_dynamic_model.transform, transform);
 }
-void VK_RenderModelDynamicAddGeometry( const vk_render_geometry_t *geom ) {
+static void VK_RenderModelDynamicAddGeometry( const vk_render_geometry_t *geom ) {
 	ASSERT(g_dynamic_model.model.geometries);
 	if (g_dynamic_model.model.num_geometries == MAX_DYNAMIC_GEOMETRY) {
 		ERROR_THROTTLED(10, "Ran out of dynamic model geometry slots for model %s", g_dynamic_model.model.debug_name);
@@ -853,7 +853,7 @@ void VK_RenderModelDynamicAddGeometry( const vk_render_geometry_t *geom ) {
 
 	g_dynamic_model.geometries[g_dynamic_model.model.num_geometries++] = *geom;
 }
-void VK_RenderModelDynamicCommit( void ) {
+static void VK_RenderModelDynamicCommit( void ) {
 	ASSERT(g_dynamic_model.model.geometries);
 
 	if (g_dynamic_model.model.num_geometries > 0) {
@@ -866,4 +866,36 @@ void VK_RenderModelDynamicCommit( void ) {
 
 	g_dynamic_model.model.debug_name[0] = '\0';
 	g_dynamic_model.model.geometries = NULL;
+}
+
+void R_RenderDrawOnce(r_draw_once_t args) {
+	r_geometry_buffer_lock_t buffer;
+	if (!R_GeometryBufferAllocOnceAndLock( &buffer, args.vertices_count, args.indices_count)) {
+		gEngine.Con_Printf(S_ERROR "Cannot allocate geometry for dynamic draw\n");
+		return;
+	}
+
+	memcpy(buffer.vertices.ptr, args.vertices, sizeof(vk_vertex_t) * args.vertices_count);
+	memcpy(buffer.indices.ptr, args.indices, sizeof(uint16_t) * args.indices_count);
+
+	R_GeometryBufferUnlock( &buffer );
+
+	{
+		const vk_render_geometry_t geometry = {
+			.texture = args.texture,
+			.material = kXVkMaterialRegular,
+
+			.max_vertex = args.vertices_count,
+			.vertex_offset = buffer.vertices.unit_offset,
+
+			.element_count = args.indices_count,
+			.index_offset = buffer.indices.unit_offset,
+
+			.emissive = { (*args.color)[0], (*args.color)[1], (*args.color)[2] },
+		};
+
+		VK_RenderModelDynamicBegin( args.render_type, *args.color, m_matrix4x4_identity, args.name );
+		VK_RenderModelDynamicAddGeometry( &geometry );
+		VK_RenderModelDynamicCommit();
+	}
 }
