@@ -23,7 +23,7 @@ typedef struct rt_model_s {
 	rt_kusochki_t kusochki;
 } rt_model_t;
 
-static void applyMaterialToKusok(vk_kusok_data_t* kusok, const vk_render_geometry_t *geom, int override_texture_id) {
+static void applyMaterialToKusok(vk_kusok_data_t* kusok, const vk_render_geometry_t *geom, int override_texture_id, const vec4_t override_color) {
 	const int tex_id = override_texture_id > 0 ? override_texture_id : geom->texture;
 	const xvk_material_t *const mat = XVK_GetMaterialForTextureIndex( tex_id );
 	ASSERT(mat);
@@ -48,6 +48,13 @@ static void applyMaterialToKusok(vk_kusok_data_t* kusok, const vk_render_geometr
 	// TODO emissive is potentially "dynamic", not tied to the material directly, as it is specified per-surface in rad files
 	VectorCopy(geom->emissive, kusok->emissive);
 	Vector4Copy(mat->base_color, kusok->material.base_color);
+
+	if (override_color) {
+		kusok->material.base_color[0] *= override_color[0];
+		kusok->material.base_color[1] *= override_color[1];
+		kusok->material.base_color[2] *= override_color[2];
+		kusok->material.base_color[3] *= override_color[3];
+	}
 
 	// TODO should be patched by the Chrome material source itself to generate a static chrome material
 	const qboolean HACK_chrome = geom->material == kXVkMaterialChrome;
@@ -82,7 +89,7 @@ static qboolean uploadKusochkiSubset(const vk_ray_model_t *const model, const vk
 		vk_kusok_data_t *const kusochki = kusok_staging.ptr;
 
 		vk_render_geometry_t *geom = render_model->geometries + index;
-		applyMaterialToKusok(kusochki + 0, geom, -1);
+		applyMaterialToKusok(kusochki + 0, geom, -1, NULL);
 
 		/* gEngine.Con_Reportf("model %s: geom=%d kuoffs=%d kustoff=%d kustsz=%d sthndl=%d\n", */
 		/* 		render_model->debug_name, */
@@ -176,7 +183,7 @@ void RT_KusochkiFree(const rt_kusochki_t *kusochki) {
 	PRINT_NOT_IMPLEMENTED();
 }
 
-qboolean RT_KusochkiUpload(uint32_t kusochki_offset, const struct vk_render_geometry_s *geoms, int geoms_count, int override_texture_id) {
+qboolean RT_KusochkiUpload(uint32_t kusochki_offset, const struct vk_render_geometry_s *geoms, int geoms_count, int override_texture_id, const vec4_t *override_colors) {
 	const vk_staging_buffer_args_t staging_args = {
 		.buffer = g_ray_model_state.kusochki_buffer.buffer,
 		.offset = kusochki_offset * sizeof(vk_kusok_data_t),
@@ -193,7 +200,7 @@ qboolean RT_KusochkiUpload(uint32_t kusochki_offset, const struct vk_render_geom
 	vk_kusok_data_t *const p = kusok_staging.ptr;
 	for (int i = 0; i < geoms_count; ++i) {
 		const vk_render_geometry_t *geom = geoms + i;
-		applyMaterialToKusok(p + i, geom, override_texture_id);
+		applyMaterialToKusok(p + i, geom, override_texture_id, override_colors ? override_colors[i] : NULL);
 	}
 
 	R_VkStagingUnlock(kusok_staging.handle);
@@ -218,7 +225,7 @@ struct rt_model_s *RT_ModelCreate(rt_model_create_t args) {
 		goto fail;
 	}
 
-	RT_KusochkiUpload(kusochki.offset, args.geometries, args.geometries_count, -1);
+	RT_KusochkiUpload(kusochki.offset, args.geometries, args.geometries_count, -1, NULL);
 
 	{
 		rt_model_t *const ret = Mem_Malloc(vk_core.pool, sizeof(*ret));
@@ -271,7 +278,7 @@ void RT_FrameAddModel( struct rt_model_s *model, rt_frame_add_model_t args ) {
 		if (kusochki_offset == ALO_ALLOC_FAILED)
 			return;
 
-		if (!RT_KusochkiUpload(kusochki_offset, args.override.geoms, args.override.geoms_count, args.override.textures)) {
+		if (!RT_KusochkiUpload(kusochki_offset, args.override.geoms, args.override.geoms_count, args.override.textures, NULL)) {
 			gEngine.Con_Printf(S_ERROR "Couldn't upload kusochki for instanced model\n");
 			return;
 		}
@@ -372,7 +379,7 @@ void RT_DynamicModelProcessFrame(void) {
 		}
 
 		// FIXME override color
-		if (!RT_KusochkiUpload(kusochki_offset, dyn->geometries, dyn->geometries_count, -1)) {
+		if (!RT_KusochkiUpload(kusochki_offset, dyn->geometries, dyn->geometries_count, -1, dyn->colors)) {
 			gEngine.Con_Printf(S_ERROR "Couldn't build blas for %d geoms of %s, skipping\n", dyn->geometries_count, group_names[i]);
 			goto tail;
 		}
@@ -399,8 +406,6 @@ tail:
 }
 
 void RT_FrameAddOnce( rt_frame_add_once_t args ) {
-	PRINT_NOT_IMPLEMENTED_ARGS("%s", args.debug_name);
-
 	const int material_mode = materialModeFromRenderType(args.render_type);
 	rt_dynamic_t *const dyn = g_dyn.groups + material_mode;
 

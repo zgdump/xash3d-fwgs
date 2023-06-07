@@ -102,7 +102,7 @@ uint32_t RT_KusochkiAllocOnce(int count);
 void RT_KusochkiFree(const rt_kusochki_t*);
 
 struct vk_render_geometry_s;
-qboolean RT_KusochkiUpload(uint32_t kusochki_offset, const struct vk_render_geometry_s *geoms, int geoms_count, int override_texture_id);
+qboolean RT_KusochkiUpload(uint32_t kusochki_offset, const struct vk_render_geometry_s *geoms, int geoms_count, int override_texture_id, const vec4_t *override_color);
 
 // Update animated materials
 void RT_KusochkiUploadSubset(rt_kusochki_t *kusochki, const struct vk_render_geometry_s *geoms, const int *geoms_indices, int geoms_indices_count);
