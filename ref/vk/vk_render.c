@@ -810,19 +810,13 @@ void R_RenderDrawOnce(r_draw_once_t args) {
 	};
 
 	if (g_render_state.current_frame_is_ray_traced) {
-		// FIXME
-		/* ASSERT(model->rt_model); */
-		/* RT_FrameAddModel(model->rt_model, (rt_frame_add_model_t){ */
-		/* 	.render_type = args.render_type, */
-		/* 	.transform = (const matrix3x4*)args.transform, */
-		/* 	.prev_transform = (const matrix3x4*)args.prev_transform, */
-		/* 	.color = args.color, */
-		/* 	.override = { */
-		/* 		.textures = args.textures_override, */
-		/* 		.geoms = model->geometries, */
-		/* 		.geoms_count = model->num_geometries, */
-		/* 	}, */
-		/* }); */
+		RT_FrameAddOnce((rt_frame_add_once_t){
+			.debug_name = args.name,
+			.geometries = &geometry,
+			.color = args.color,
+			.geometries_count = 1,
+			.render_type = args.render_type,
+		});
 	} else {
 		submitToTraditionalRender((trad_submit_t){
 			.debug_name = args.name,

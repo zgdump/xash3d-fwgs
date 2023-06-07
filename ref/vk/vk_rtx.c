@@ -267,6 +267,9 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 
 	DEBUG_BEGIN(cmdbuf, "yay tracing");
 
+	// Feed tlas with dynamic data
+	RT_DynamicModelProcessFrame();
+
 	// TODO move this to "TLAS producer"
 	g_rtx.res[ExternalResource_tlas].resource = RT_VkAccelPrepareTlas(combuf);
 
@@ -582,6 +585,10 @@ qboolean VK_RayInit( void )
 	if (!RT_VkAccelInit())
 		return false;
 
+	// FIXME shutdown accel
+	if (!RT_DynamicModelInit())
+		return false;
+
 #define REGISTER_EXTERNAL(type, name_) \
 	Q_strncpy(g_rtx.res[ExternalResource_##name_].name, #name_, sizeof(g_rtx.res[0].name)); \
 	g_rtx.res[ExternalResource_##name_].refcount = 1;
@@ -640,4 +647,5 @@ void VK_RayShutdown( void ) {
 	VK_BufferDestroy(&g_rtx.uniform_buffer);
 
 	RT_VkAccelShutdown();
+	RT_DynamicModelShutdown();
 }

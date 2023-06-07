@@ -75,8 +75,13 @@ void RT_RayModel_Clear(void);
 // Memory pointed to by name must remain alive until RT_BlasDestroy
 struct rt_blas_s* RT_BlasCreate(const char *name, rt_blas_usage_e usage);
 
-// Create an empty BLAS with specified limits
-struct rt_blas_s* RT_BlasCreatePreallocated(const char *name, rt_blas_usage_e usage, int max_geometries, const int *max_prims, int max_vertex, uint32_t extra_buffer_offset);
+// Preallocate BLAS with given estimates
+typedef struct {
+	int max_geometries;
+	int max_prims_per_geometry;
+	int max_vertex_per_geometry;
+} rt_blas_preallocate_t;
+qboolean RT_BlasPreallocate(struct rt_blas_s* blas, rt_blas_preallocate_t args);
 
 void RT_BlasDestroy(struct rt_blas_s* blas);
 
@@ -101,3 +106,8 @@ qboolean RT_KusochkiUpload(uint32_t kusochki_offset, const struct vk_render_geom
 
 // Update animated materials
 void RT_KusochkiUploadSubset(rt_kusochki_t *kusochki, const struct vk_render_geometry_s *geoms, const int *geoms_indices, int geoms_indices_count);
+
+qboolean RT_DynamicModelInit(void);
+void RT_DynamicModelShutdown(void);
+
+void RT_DynamicModelProcessFrame(void);

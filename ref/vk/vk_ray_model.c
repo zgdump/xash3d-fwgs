@@ -251,14 +251,18 @@ void RT_ModelDestroy(struct rt_model_s* model) {
 	Mem_Free(model);
 }
 
+rt_draw_instance_t *getDrawInstance(void) {
+	if (g_ray_model_state.frame.instances_count >= ARRAYSIZE(g_ray_model_state.frame.instances)) {
+		gEngine.Con_Printf(S_ERROR "Too many RT draw instances, max = %d\n", (int)(ARRAYSIZE(g_ray_model_state.frame.instances)));
+		return NULL;
+	}
+
+	return g_ray_model_state.frame.instances + (g_ray_model_state.frame.instances_count++);
+}
+
 void RT_FrameAddModel( struct rt_model_s *model, rt_frame_add_model_t args ) {
 	if (!model || !model->blas)
 		return;
-
-	// TODO this shouldn't be an assert, just complain to the log and ignore
-	ASSERT(g_ray_model_state.frame.instances_count <= ARRAYSIZE(g_ray_model_state.frame.instances));
-
-	rt_draw_instance_t* draw_instance = g_ray_model_state.frame.instances + g_ray_model_state.frame.instances_count;
 
 	uint32_t kusochki_offset = model->kusochki.offset;
 
@@ -287,12 +291,128 @@ void RT_FrameAddModel( struct rt_model_s *model, rt_frame_add_model_t args ) {
 		/* 	return; */
 #endif
 
+	rt_draw_instance_t *const draw_instance = getDrawInstance();
+	if (!draw_instance)
+		return;
+
 	draw_instance->blas_addr = model->blas_addr;
 	draw_instance->kusochki_offset = kusochki_offset;
 	draw_instance->material_mode = materialModeFromRenderType(args.render_type);
 	Vector4Copy(*args.color, draw_instance->color);
 	Matrix3x4_Copy(draw_instance->transform_row, args.transform);
 	Matrix4x4_Copy(draw_instance->prev_transform_row, args.prev_transform);
-	g_ray_model_state.frame.instances_count++;
+}
+
+#define MAX_RT_DYNAMIC_GEOMETRIES 256
+
+typedef struct {
+	struct rt_blas_s *blas;
+	VkDeviceAddress blas_addr;
+	vk_render_geometry_t geometries[MAX_RT_DYNAMIC_GEOMETRIES];
+	int geometries_count;
+	vec4_t colors[MAX_RT_DYNAMIC_GEOMETRIES];
+} rt_dynamic_t;
+
+static const char* group_names[MATERIAL_MODE_COUNT] = {
+	"MATERIAL_MODE_OPAQUE",
+	"MATERIAL_MODE_OPAQUE_ALPHA_TEST",
+	"MATERIAL_MODE_TRANSLUCENT",
+	"MATERIAL_MODE_BLEND_ADD",
+	"MATERIAL_MODE_BLEND_MIX",
+	"MATERIAL_MODE_BLEND_GLOW",
+};
+
+static struct {
+	rt_dynamic_t groups[MATERIAL_MODE_COUNT];
+} g_dyn;
+
+qboolean RT_DynamicModelInit(void) {
+	for (int i = 0; i < MATERIAL_MODE_COUNT; ++i) {
+		struct rt_blas_s *blas = RT_BlasCreate(group_names[i], kBlasBuildDynamicFast);
+		if (!blas) {
+			// FIXME destroy allocated
+			gEngine.Con_Printf(S_ERROR "Couldn't create blas for %s\n", group_names[i]);
+			return false;
+		}
+
+		if (!RT_BlasPreallocate(blas, (rt_blas_preallocate_t){
+			// TODO better estimates for these constants
+			.max_geometries = MAX_RT_DYNAMIC_GEOMETRIES,
+			.max_prims_per_geometry = 256,
+			.max_vertex_per_geometry = 256,
+		})) {
+			// FIXME destroy allocated
+			gEngine.Con_Printf(S_ERROR "Couldn't preallocate blas for %s\n", group_names[i]);
+			return false;
+		}
+		g_dyn.groups[i].blas = blas;
+		g_dyn.groups[i].blas_addr = RT_BlasGetDeviceAddress(blas);
+	}
+
+	return true;
+}
+
+void RT_DynamicModelShutdown(void) {
+	for (int i = 0; i < MATERIAL_MODE_COUNT; ++i) {
+		RT_BlasDestroy(g_dyn.groups[i].blas);
+	}
+}
+
+void RT_DynamicModelProcessFrame(void) {
+	for (int i = 0; i < MATERIAL_MODE_COUNT; ++i) {
+		rt_dynamic_t *const dyn = g_dyn.groups + i;
+		if (!dyn->geometries_count)
+			continue;
+
+		rt_draw_instance_t* draw_instance;
+		const uint32_t kusochki_offset = RT_KusochkiAllocOnce(dyn->geometries_count);
+		if (kusochki_offset == ALO_ALLOC_FAILED) {
+			gEngine.Con_Printf(S_ERROR "Couldn't allocate kusochki once for %d geoms of %s, skipping\n", dyn->geometries_count, group_names[i]);
+			goto tail;
+		}
+
+		// FIXME override color
+		if (!RT_KusochkiUpload(kusochki_offset, dyn->geometries, dyn->geometries_count, -1)) {
+			gEngine.Con_Printf(S_ERROR "Couldn't build blas for %d geoms of %s, skipping\n", dyn->geometries_count, group_names[i]);
+			goto tail;
+		}
+
+		if (!RT_BlasBuild(dyn->blas, dyn->geometries, dyn->geometries_count)) {
+			gEngine.Con_Printf(S_ERROR "Couldn't build blas for %d geoms of %s, skipping\n", dyn->geometries_count, group_names[i]);
+			goto tail;
+		}
+
+		draw_instance = getDrawInstance();
+		if (!draw_instance)
+			goto tail;
+
+		draw_instance->blas_addr = dyn->blas_addr;
+		draw_instance->kusochki_offset = kusochki_offset;
+		draw_instance->material_mode = i;
+		Vector4Set(draw_instance->color, 1, 1, 1, 1);
+		Matrix3x4_LoadIdentity(draw_instance->transform_row);
+		Matrix4x4_LoadIdentity(draw_instance->prev_transform_row);
+
+tail:
+		dyn->geometries_count = 0;
+	}
+}
+
+void RT_FrameAddOnce( rt_frame_add_once_t args ) {
+	PRINT_NOT_IMPLEMENTED_ARGS("%s", args.debug_name);
+
+	const int material_mode = materialModeFromRenderType(args.render_type);
+	rt_dynamic_t *const dyn = g_dyn.groups + material_mode;
+
+	for (int i = 0; i < args.geometries_count; ++i) {
+		if (dyn->geometries_count == MAX_RT_DYNAMIC_GEOMETRIES) {
+			gEngine.Con_Printf(S_ERROR "Too many dynamic geometries for mode %s\n", group_names[material_mode]);
+			break;
+		}
+
+		Vector4Copy(*args.color, dyn->colors[dyn->geometries_count]);
+		dyn->geometries[dyn->geometries_count++] = args.geometries[i];
+	}
+
 }
 
