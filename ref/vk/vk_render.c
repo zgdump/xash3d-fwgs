@@ -641,7 +641,7 @@ void VK_RenderEndRTX( struct vk_combuf_s* combuf, VkImageView img_dst_view, VkIm
 	}
 }
 
-qboolean VK_RenderModelCreate( vk_render_model_t *model, vk_render_model_init_t args ) {
+qboolean R_RenderModelCreate( vk_render_model_t *model, vk_render_model_init_t args ) {
 	memset(model, 0, sizeof(*model));
 	Q_strncpy(model->debug_name, args.name, sizeof(model->debug_name));
 
@@ -655,17 +655,27 @@ qboolean VK_RenderModelCreate( vk_render_model_t *model, vk_render_model_init_t 
 		.debug_name = model->debug_name,
 		.geometries = args.geometries,
 		.geometries_count = args.geometries_count,
-		.usage = kBlasBuildStatic, // TODO pass from caller
+		.usage = args.dynamic ? kBlasBuildDynamicUpdate : kBlasBuildStatic,
 	});
 	return !!model->rt_model;
 }
 
-void VK_RenderModelDestroy( vk_render_model_t* model ) {
+void R_RenderModelDestroy( vk_render_model_t* model ) {
 	if (model->dynamic_polylights)
 		Mem_Free(model->dynamic_polylights);
 
 	if (model->rt_model)
 		RT_ModelDestroy(model->rt_model);
+}
+
+qboolean R_RenderModelUpdate( vk_render_model_t *model ) {
+	// Non-RT rendering doesn't need to update anything, assuming that geometry regions offsets are not changed, and losing intermediate states is fine
+	if (!g_render_state.current_frame_is_ray_traced)
+		return true;
+
+	ASSERT(model->rt_model);
+
+	return RT_ModelUpdate(model->rt_model, model->geometries, model->num_geometries);
 }
 
 static void uboComputeAndSetMVPFromModel( const matrix4x4 model ) {

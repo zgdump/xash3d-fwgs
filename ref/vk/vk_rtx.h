@@ -50,6 +50,8 @@ typedef struct {
 struct rt_model_s *RT_ModelCreate(rt_model_create_t args);
 void RT_ModelDestroy(struct rt_model_s *model);
 
+qboolean RT_ModelUpdate(struct rt_model_s *model, const struct vk_render_geometry_s *geometries, int geometries_count);
+
 typedef struct {
 	int render_type; // TODO material_mode
 	const matrix3x4 *transform, *prev_transform;

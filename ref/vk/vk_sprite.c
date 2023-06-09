@@ -106,16 +106,17 @@ static qboolean createQuadModel(void) {
 		.emissive = {1,1,1},
 	};
 
-	return VK_RenderModelCreate(&g_sprite.quad.model, (vk_render_model_init_t){
+	return R_RenderModelCreate(&g_sprite.quad.model, (vk_render_model_init_t){
 		.name = "sprite",
 		.geometries = &g_sprite.quad.geometry,
 		.geometries_count = 1,
+		.dynamic = false,
 		});
 }
 
 static void destroyQuadModel(void) {
 	if (g_sprite.quad.model.num_geometries)
-		VK_RenderModelDestroy(&g_sprite.quad.model);
+		R_RenderModelDestroy(&g_sprite.quad.model);
 
 	if (g_sprite.quad.geom.block_handle.size)
 		R_GeometryRangeFree(&g_sprite.quad.geom);

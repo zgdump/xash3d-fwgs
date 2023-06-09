@@ -325,7 +325,7 @@ static void brushDrawWaterSurfaces( const cl_entity_t *ent, const vec4_t color, 
 }
 #endif
 
-static qboolean fillWaterSurfaces( const cl_entity_t *ent, vk_brush_model_t *bmodel, vk_render_geometry_t *geometries ) {
+static void fillWaterSurfaces( const cl_entity_t *ent, vk_brush_model_t *bmodel, vk_render_geometry_t *geometries ) {
 	ASSERT(bmodel->water.surfaces_count > 0);
 
 	const r_geometry_range_lock_t geom_lock = R_GeometryRangeLock(&bmodel->water.geometry);
@@ -363,7 +363,6 @@ static qboolean fillWaterSurfaces( const cl_entity_t *ent, vk_brush_model_t *bmo
 	}
 
 	R_GeometryRangeUnlock( &geom_lock );
-	return true;
 }
 
 static qboolean isSurfaceAnimated( const msurface_t *s, const struct texture_s *base_override ) {
@@ -473,10 +472,11 @@ static qboolean brushCreateWaterModel(const model_t *mod, vk_brush_model_t *bmod
 	bmodel->water.geometry = geometry;
 	fillWaterSurfaces(NULL, bmodel, geometries);
 
-	if (!VK_RenderModelCreate(&bmodel->water.render_model, (vk_render_model_init_t){
+	if (!R_RenderModelCreate(&bmodel->water.render_model, (vk_render_model_init_t){
 		.name = mod->name,
 		.geometries = geometries,
 		.geometries_count = sizes.water_surfaces,
+		.dynamic = true,
 		})) {
 		gEngine.Con_Printf(S_ERROR "Could not create water render model for brush model %s\n", mod->name);
 		return false;
@@ -489,7 +489,10 @@ static qboolean brushCreateWaterModel(const model_t *mod, vk_brush_model_t *bmod
 static void brushDrawWater(vk_brush_model_t *bmodel, const cl_entity_t *ent, int render_type, const vec4_t color, const matrix4x4 transform) {
 	ASSERT(bmodel->water.surfaces_count > 0);
 
-	// TODO update
+	fillWaterSurfaces(NULL, bmodel, bmodel->water.render_model.geometries);
+	if (!R_RenderModelUpdate(&bmodel->water.render_model)) {
+		gEngine.Con_Printf(S_ERROR "Failed to update brush model \"%s\" water\n", bmodel->render_model.debug_name);
+	}
 
 	R_RenderModelDraw(&bmodel->water.render_model, (r_model_draw_t){
 		.render_type = render_type,
@@ -948,10 +951,11 @@ static qboolean createRenderModel( const model_t *mod, vk_brush_model_t *bmodel,
 		return false;
 	}
 
-	if (!VK_RenderModelCreate(&bmodel->render_model, (vk_render_model_init_t){
+	if (!R_RenderModelCreate(&bmodel->render_model, (vk_render_model_init_t){
 		.name = mod->name,
 		.geometries = geometries,
 		.geometries_count = sizes.num_surfaces,
+		.dynamic = false,
 		})) {
 		gEngine.Con_Printf(S_ERROR "Could not create render model for brush model %s\n", mod->name);
 		return false;
@@ -1011,13 +1015,13 @@ static void VK_BrushModelDestroy( vk_brush_model_t *bmodel ) {
 	ASSERT(bmodel->engine_model->type == mod_brush);
 
 	if (bmodel->water.surfaces_count) {
-		VK_RenderModelDestroy(&bmodel->water.render_model);
+		R_RenderModelDestroy(&bmodel->water.render_model);
 		Mem_Free((int*)bmodel->water.surfaces_indices);
 		Mem_Free(bmodel->water.render_model.geometries);
 		R_GeometryRangeFree(&bmodel->water.geometry);
 	}
 
-	VK_RenderModelDestroy(&bmodel->render_model);
+	R_RenderModelDestroy(&bmodel->render_model);
 
 	if (bmodel->animated_indexes)
 		Mem_Free(bmodel->animated_indexes);

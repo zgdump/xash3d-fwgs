@@ -105,14 +105,13 @@ static VkDeviceAddress getAccelAddress(VkAccelerationStructureKHR as) {
 	return vkGetAccelerationStructureDeviceAddressKHR(vk_core.device, &asdai);
 }
 
-static qboolean buildAccel(VkBuffer geometry_buffer, VkAccelerationStructureBuildGeometryInfoKHR *build_info, const VkAccelerationStructureBuildSizesInfoKHR *build_size, const VkAccelerationStructureBuildRangeInfoKHR *build_ranges) {
+static qboolean buildAccel(VkBuffer geometry_buffer, VkAccelerationStructureBuildGeometryInfoKHR *build_info, uint32_t scratch_buffer_size, const VkAccelerationStructureBuildRangeInfoKHR *build_ranges) {
 	// FIXME this is definitely not the right place. We should upload everything in bulk, and only then build blases in bulk too
 	vk_combuf_t *const combuf = R_VkStagingCommit();
 	{
 		const VkBufferMemoryBarrier bmb[] = { {
 			.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
 			.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-			//.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR, // FIXME
 			.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_SHADER_READ_BIT, // FIXME
 			.buffer = geometry_buffer,
 			.offset = 0, // FIXME
@@ -125,8 +124,7 @@ static qboolean buildAccel(VkBuffer geometry_buffer, VkAccelerationStructureBuil
 			0, 0, NULL, ARRAYSIZE(bmb), bmb, 0, NULL);
 	}
 
-	// build blas
-	const uint32_t scratch_buffer_size = build_size->buildScratchSize; // TODO vs build_size.updateScratchSize
+	//gEngine.Con_Reportf("sratch offset = %d, req=%d\n", g_accel.frame.scratch_offset, scratch_buffer_size);
 
 	if (MAX_SCRATCH_BUFFER < g_accel.frame.scratch_offset + scratch_buffer_size) {
 		gEngine.Con_Printf(S_ERROR "Scratch buffer overflow: left %u bytes, but need %u\n",
@@ -200,7 +198,7 @@ qboolean createOrUpdateAccelerationStructure(vk_combuf_t *combuf, const as_build
 
 	build_info.dstAccelerationStructure = *args->p_accel;
 	const VkBuffer geometry_buffer = R_GeometryBuffer_Get();
-	return buildAccel(geometry_buffer, &build_info, &build_size, args->build_ranges);
+	return buildAccel(geometry_buffer, &build_info, build_size.buildScratchSize, args->build_ranges);
 }
 
 static void createTlas( vk_combuf_t *combuf, VkDeviceAddress instances_addr ) {
@@ -437,16 +435,6 @@ void RT_VkAccelFrameBegin(void) {
 struct rt_blas_s* RT_BlasCreate(const char *name, rt_blas_usage_e usage) {
 	rt_blas_t *blas = Mem_Calloc(vk_core.pool, sizeof(*blas));
 
-	switch (usage) {
-		case kBlasBuildStatic:
-			break;
-		case kBlasBuildDynamicUpdate:
-			ASSERT(!"Not implemented");
-			break;
-		case kBlasBuildDynamicFast:
-			break;
-	}
-
 	blas->debug_name = name;
 	blas->usage = usage;
 	blas->blas_size = -1;
@@ -547,22 +535,27 @@ qboolean RT_BlasBuild(struct rt_blas_s *blas, const struct vk_render_geometry_s 
 	VkAccelerationStructureBuildGeometryInfoKHR build_info = {
 		.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
 		.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
+		.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,
+		.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR,
 		.geometryCount = geoms_count,
 		.srcAccelerationStructure = VK_NULL_HANDLE,
 	};
 
+	qboolean is_update = false;
+
 	switch (blas->usage) {
 		case kBlasBuildStatic:
 			ASSERT(!blas->blas);
-			build_info.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
-			build_info.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
 			break;
 		case kBlasBuildDynamicUpdate:
-			ASSERT(!"Not implemented");
-			return false;
+			if (blas->blas) {
+				build_info.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR;
+				build_info.srcAccelerationStructure = blas->blas;
+				is_update = true;
+			}
+			build_info.flags |= VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR;
 			break;
 		case kBlasBuildDynamicFast:
-			build_info.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
 			build_info.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR;
 			break;
 	}
@@ -620,7 +613,6 @@ qboolean RT_BlasBuild(struct rt_blas_s *blas, const struct vk_render_geometry_s 
 
 		blas->blas_size = build_size.accelerationStructureSize;
 		blas->max_geoms = build_info.geometryCount;
-		// TODO handle lifetime blas->max_prim_counts = max_prim_counts;
 	} else {
 		if (blas->blas_size < build_size.accelerationStructureSize) {
 			gEngine.Con_Printf(S_ERROR "Fast dynamic BLAS %s size exceeded (need %dKiB, have %dKiB, geoms = %d)\n", blas->debug_name,
@@ -634,7 +626,7 @@ qboolean RT_BlasBuild(struct rt_blas_s *blas, const struct vk_render_geometry_s 
 
 	// Build
 	build_info.dstAccelerationStructure = blas->blas;
-	if (!buildAccel(geometry_buffer, &build_info, &build_size, build_ranges)) {
+	if (!buildAccel(geometry_buffer, &build_info, is_update ? build_size.updateScratchSize : build_size.buildScratchSize, build_ranges)) {
 		gEngine.Con_Printf(S_ERROR "Couldn't build BLAS %s\n", blas->debug_name);
 		goto finalize;
 	}

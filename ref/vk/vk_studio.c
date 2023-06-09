@@ -164,7 +164,7 @@ void R_StudioCacheClear( void ) {
 	for (int i = 0; i < g_studio_cache.entries_count; ++i) {
 		r_studio_model_cache_entry_t *const entry = g_studio_cache.entries + i;
 		ASSERT(entry->key_submodel);
-		VK_RenderModelDestroy(&entry->render_model);
+		R_RenderModelDestroy(&entry->render_model);
 		R_GeometryRangeFree(&entry->geometry_range);
 		Mem_Free(entry->geometries);
 		entry->key_submodel = 0;
@@ -2415,10 +2415,11 @@ static const r_studio_model_cache_entry_t *buildCachedStudioSubModel( const mstu
 		.geometry_range = geometry,
 	};
 
-	if (!VK_RenderModelCreate( &entry->render_model, (vk_render_model_init_t){
+	if (!R_RenderModelCreate( &entry->render_model, (vk_render_model_init_t){
 		.name = submodel->name,
 		.geometries = geometries,
 		.geometries_count = submodel->nummesh,
+		.dynamic = false,
 	})) {
 		gEngine.Con_Printf(S_ERROR "Unable to create render model for studio submodel %s", submodel->name);
 		Mem_Free(geometries);

@@ -258,6 +258,12 @@ void RT_ModelDestroy(struct rt_model_s* model) {
 	Mem_Free(model);
 }
 
+qboolean RT_ModelUpdate(struct rt_model_s *model, const struct vk_render_geometry_s *geometries, int geometries_count) {
+	// TODO some updates, which change geometry location, textures, etc, might need kusochki update too
+	// TODO mark it with a flag or something
+	return RT_BlasBuild(model->blas, geometries, geometries_count);
+}
+
 rt_draw_instance_t *getDrawInstance(void) {
 	if (g_ray_model_state.frame.instances_count >= ARRAYSIZE(g_ray_model_state.frame.instances)) {
 		gEngine.Con_Printf(S_ERROR "Too many RT draw instances, max = %d\n", (int)(ARRAYSIZE(g_ray_model_state.frame.instances)));
