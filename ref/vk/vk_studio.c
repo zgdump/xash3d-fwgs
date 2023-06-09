@@ -2310,7 +2310,7 @@ static qboolean isStudioModelDynamic(const studiohdr_t *hdr) {
 
 	for (int i = 0; i < hdr->numseq; ++i) {
 		const mstudioseqdesc_t *const pseqdesc = (mstudioseqdesc_t *)((byte *)hdr + hdr->seqindex) + i;
-		gEngine.Con_Reportf("  %d: fps=%d numframes=%d\n", i, pseqdesc->fps, pseqdesc->numframes);
+		gEngine.Con_Reportf("  %d: fps=%f numframes=%d\n", i, pseqdesc->fps, pseqdesc->numframes);
 	}
 
 	// This is rather conservative.
