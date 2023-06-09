@@ -668,7 +668,7 @@ void R_RenderModelDestroy( vk_render_model_t* model ) {
 		RT_ModelDestroy(model->rt_model);
 }
 
-qboolean R_RenderModelUpdate( vk_render_model_t *model ) {
+qboolean R_RenderModelUpdate( const vk_render_model_t *model ) {
 	// Non-RT rendering doesn't need to update anything, assuming that geometry regions offsets are not changed, and losing intermediate states is fine
 	if (!g_render_state.current_frame_is_ray_traced)
 		return true;

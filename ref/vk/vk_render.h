@@ -135,7 +135,7 @@ typedef struct {
 qboolean R_RenderModelCreate( vk_render_model_t *model, vk_render_model_init_t args );
 void R_RenderModelDestroy( vk_render_model_t* model );
 
-qboolean R_RenderModelUpdate( vk_render_model_t *model );
+qboolean R_RenderModelUpdate( const vk_render_model_t *model );
 
 typedef struct {
 	vk_render_type_e render_type;

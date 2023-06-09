@@ -147,10 +147,15 @@ static struct {
 
 typedef struct {
 	const mstudiomodel_t *key_submodel;
+
+	// Non-NULL for animated instances
+	const cl_entity_t *key_entity;
+
 	vk_render_model_t render_model;
 	r_geometry_range_t geometry_range;
 	vk_render_geometry_t *geometries;
 	int geometries_count;
+	int vertex_count, index_count;
 } r_studio_model_cache_entry_t;
 
 static struct {
@@ -168,11 +173,24 @@ void R_StudioCacheClear( void ) {
 		R_GeometryRangeFree(&entry->geometry_range);
 		Mem_Free(entry->geometries);
 		entry->key_submodel = 0;
+		entry->key_entity = NULL;
 		entry->geometries = NULL;
 		entry->geometries_count = 0;
+		entry->vertex_count = 0;
+		entry->index_count = 0;
 	}
 
 	g_studio_cache.entries_count = 0;
+}
+
+static const r_studio_model_cache_entry_t *findSubModelInCacheForEntity(const mstudiomodel_t *submodel, const cl_entity_t *ent) {
+	for (int i = 0; i < g_studio_cache.entries_count; ++i) {
+		const r_studio_model_cache_entry_t *const entry = g_studio_cache.entries + i;
+		if (entry->key_submodel == submodel && (entry->key_entity == NULL || entry->key_entity == ent))
+			return entry;
+	}
+
+	return NULL;
 }
 
 void R_StudioInit( void )
@@ -488,45 +506,21 @@ static float ****pfnStudioGetBoneTransform( void )
 	return (float ****)g_studio.bonestransform;
 }
 
-/*
-===============
-pfnStudioGetLightTransform
-
-===============
-*/
 static float ****pfnStudioGetLightTransform( void )
 {
 	return (float ****)g_studio.lighttransform;
 }
 
-/*
-===============
-pfnStudioGetAliasTransform
-
-===============
-*/
 static float ***pfnStudioGetAliasTransform( void )
 {
 	return NULL;
 }
 
-/*
-===============
-pfnStudioGetRotationMatrix
-
-===============
-*/
 static float ***pfnStudioGetRotationMatrix( void )
 {
 	return (float ***)g_studio.rotationmatrix;
 }
 
-/*
-====================
-StudioPlayerBlend
-
-====================
-*/
 void R_StudioPlayerBlend( mstudioseqdesc_t *pseqdesc, int *pBlend, float *pPitch )
 {
 	// calc up/down pointing
@@ -551,12 +545,6 @@ void R_StudioPlayerBlend( mstudioseqdesc_t *pseqdesc, int *pBlend, float *pPitch
 	}
 }
 
-/*
-====================
-R_StudioLerpMovement
-
-====================
-*/
 void R_StudioLerpMovement( cl_entity_t *e, double time, vec3_t origin, vec3_t angles )
 {
 	float	f = 1.0f;
@@ -582,12 +570,6 @@ void R_StudioLerpMovement( cl_entity_t *e, double time, vec3_t origin, vec3_t an
 	else VectorCopy( e->curstate.angles, angles );
 }
 
-/*
-====================
-StudioSetUpTransform
-
-====================
-*/
 void R_StudioSetUpTransform( cl_entity_t *e )
 {
 	vec3_t	origin, angles;
@@ -618,12 +600,6 @@ void R_StudioSetUpTransform( cl_entity_t *e )
 	/* } */
 }
 
-/*
-====================
-StudioEstimateFrame
-
-====================
-*/
 float R_StudioEstimateFrame( cl_entity_t *e, mstudioseqdesc_t *pseqdesc, double time )
 {
 	double	dfdt, f;
@@ -655,12 +631,6 @@ float R_StudioEstimateFrame( cl_entity_t *e, mstudioseqdesc_t *pseqdesc, double 
 	return f;
 }
 
-/*
-====================
-StudioEstimateInterpolant
-
-====================
-*/
 float R_StudioEstimateInterpolant( cl_entity_t *e )
 {
 	float	dadt = 1.0f;
@@ -674,41 +644,6 @@ float R_StudioEstimateInterpolant( cl_entity_t *e )
 	return dadt;
 }
 
-/*
-====================
-CL_GetSequenceDuration
-
-====================
-*/
-float CL_GetSequenceDuration( cl_entity_t *ent, int sequence )
-{
-	studiohdr_t	*pstudiohdr;
-	mstudioseqdesc_t	*pseqdesc;
-
-	if( ent->model != NULL && ent->model->type == mod_studio )
-	{
-		pstudiohdr = (studiohdr_t *)gEngine.Mod_Extradata( mod_studio, ent->model );
-
-		if( pstudiohdr )
-		{
-			sequence = bound( 0, sequence, pstudiohdr->numseq - 1 );
-			pseqdesc = (mstudioseqdesc_t *)((byte *)pstudiohdr + pstudiohdr->seqindex) + sequence;
-
-			if( pseqdesc->numframes > 1 && pseqdesc->fps > 0 )
-				return (float)pseqdesc->numframes / (float)pseqdesc->fps;
-		}
-	}
-
-	return 0.1f;
-}
-
-
-/*
-====================
-StudioFxTransform
-
-====================
-*/
 void R_StudioFxTransform( cl_entity_t *ent, matrix3x4 transform )
 {
 	switch( ent->curstate.renderfx )
@@ -747,12 +682,6 @@ void R_StudioFxTransform( cl_entity_t *ent, matrix3x4 transform )
 	}
 }
 
-/*
-====================
-StudioCalcBoneAdj
-
-====================
-*/
 void R_StudioCalcBoneAdj( float dadt, float *adj, const byte *pcontroller1, const byte *pcontroller2, byte mouthopen )
 {
 	mstudiobonecontroller_t	*pbonecontroller;
@@ -812,12 +741,6 @@ void R_StudioCalcBoneAdj( float dadt, float *adj, const byte *pcontroller1, cons
 	}
 }
 
-/*
-====================
-StudioCalcRotations
-
-====================
-*/
 void R_StudioCalcRotations( cl_entity_t *e, float pos[][3], vec4_t *q, mstudioseqdesc_t *pseqdesc, mstudioanim_t *panim, float f )
 {
 	int		i, frame;
@@ -859,12 +782,6 @@ void R_StudioCalcRotations( cl_entity_t *e, float pos[][3], vec4_t *q, mstudiose
 	if( pseqdesc->motiontype & STUDIO_Z ) pos[pseqdesc->motionbone][2] = 0.0f;
 }
 
-/*
-====================
-StudioMergeBones
-
-====================
-*/
 void R_StudioMergeBones( cl_entity_t *e, model_t *m_pSubModel )
 {
 	int		i, j;
@@ -919,12 +836,6 @@ void R_StudioMergeBones( cl_entity_t *e, model_t *m_pSubModel )
 	}
 }
 
-/*
-====================
-StudioSetupBones
-
-====================
-*/
 void R_StudioSetupBones( cl_entity_t *e )
 {
 	float		f;
@@ -2161,40 +2072,22 @@ static vk_render_type_e studioRenderModeToRenderType( int render_mode ) {
 	return kVkRenderTypeSolid;
 }
 
-static const r_studio_model_cache_entry_t *buildCachedStudioSubModel( const mstudiomodel_t *submodel ) {
-	if (g_studio_cache.entries_count == MAX_CACHED_STUDIO_MODELS) {
-		PRINT_NOT_IMPLEMENTED_ARGS("Studio submodel cache overflow at %d", MAX_CACHED_STUDIO_MODELS);
-		return NULL;
-	}
+typedef struct {
+	const mstudiomodel_t *submodel;
+	const r_geometry_range_t *geometry;
+	vk_render_geometry_t *geometries;
+	int vertex_count, index_count;
+} build_submodel_geometry_t;
 
-	const mstudiomesh_t *const pmesh = (mstudiomesh_t *)((byte *)m_pStudioHeader + m_pSubModel->meshindex);
-
-	int vertex_count = 0, index_count = 0;
-	for( int i = 0; i < submodel->nummesh; i++ ) {
-		const short* const ptricmds = (short *)((byte *)m_pStudioHeader + pmesh[i].triindex);
-		addVerticesIndicesCounts(ptricmds, &vertex_count, &index_count);
-	}
-
-	ASSERT(vertex_count > 0);
-	ASSERT(index_count > 0);
-
-	const r_geometry_range_t geometry = R_GeometryRangeAlloc(vertex_count, index_count);
-	if (geometry.block_handle.size == 0) {
-		gEngine.Con_Printf(S_ERROR "Unable to allocate %d vertices %d indices for submodel %s",
-			vertex_count, index_count, submodel->name);
-		return NULL;
-	}
-
-	const r_geometry_range_lock_t geom_lock = R_GeometryRangeLock(&geometry);
+static qboolean buildStudioSubmodelGeometry(build_submodel_geometry_t args) {
+	// FIXME: do not reference global things like RI.* m_pStudio* here, pass everything by args
+	const r_geometry_range_lock_t geom_lock = R_GeometryRangeLock(args.geometry);
 	if (!geom_lock.vertices) {
 		gEngine.Con_Printf(S_ERROR "Unable to lock staging for %d vertices %d indices for submodel %s",
-			vertex_count, index_count, submodel->name);
-		R_GeometryRangeFree(&geometry);
-		return NULL;
+			args.vertex_count, args.index_count, args.submodel->name);
+		R_GeometryRangeFree(args.geometry);
+		return false;
 	}
-
-	vk_render_geometry_t *const geometries = Mem_Malloc(vk_core.pool, submodel->nummesh * sizeof(*geometries));
-	ASSERT(geometries);
 
 	g_studio.numverts = g_studio.numelems = 0;
 
@@ -2276,6 +2169,8 @@ static const r_studio_model_cache_entry_t *buildCachedStudioSubModel( const mstu
 	}
 
 	R_StudioGenerateNormals();
+
+	const mstudiomesh_t *const pmesh = (mstudiomesh_t *)((byte *)m_pStudioHeader + m_pSubModel->meshindex);
 
 	qboolean need_sort = false;
 	for( int j = 0, k = 0; j < m_pSubModel->nummesh; j++ )
@@ -2374,17 +2269,17 @@ static const r_studio_model_cache_entry_t *buildCachedStudioSubModel( const mstu
 			.s = s,
 			.t = t,
 			.texture = texture,
-			.vertices_offset = geometry.vertices.unit_offset + vertices_offset,
-			.indices_offset = geometry.indices.unit_offset + indices_offset,
+			.vertices_offset = args.geometry->vertices.unit_offset + vertices_offset,
+			.indices_offset = args.geometry->indices.unit_offset + indices_offset,
 			.dst_vertices = geom_lock.vertices + vertices_offset,
 			.dst_indices = geom_lock.indices + indices_offset,
-			.out_geometry = geometries + j,
+			.out_geometry = args.geometries + j,
 			.out_vertices_count = &vertices_offset,
 			.out_indices_count = &indices_offset,
 		});
 
-		ASSERT(vertices_offset <= vertex_count);
-		ASSERT(indices_offset <= index_count);
+		ASSERT(vertices_offset <= args.vertex_count);
+		ASSERT(indices_offset <= args.index_count);
 
 		/* FIXME VK
 		if( FBitSet( g_nFaceFlags, STUDIO_NF_MASKED ))
@@ -2405,21 +2300,85 @@ static const r_studio_model_cache_entry_t *buildCachedStudioSubModel( const mstu
 	}
 
 	R_GeometryRangeUnlock(&geom_lock);
+	return true;
+}
+
+static qboolean isStudioModelDynamic(const studiohdr_t *hdr) {
+	gEngine.Con_Reportf("Studio model %s, sequences = %d:\n", hdr->name, hdr->numseq);
+	if (hdr->numseq == 0)
+		return false;
+
+	for (int i = 0; i < hdr->numseq; ++i) {
+		const mstudioseqdesc_t *const pseqdesc = (mstudioseqdesc_t *)((byte *)hdr + hdr->seqindex) + i;
+		gEngine.Con_Reportf("  %d: fps=%d numframes=%d\n", i, pseqdesc->fps, pseqdesc->numframes);
+	}
+
+	// This is rather conservative.
+	// TODO We might be able to cache:
+	// - individual sequences w/o animation frames
+	// - individual submodels that are not affected by any sequences or animations
+	const mstudioseqdesc_t *const pseqdesc = (mstudioseqdesc_t *)((byte *)hdr + hdr->seqindex) + 0;
+	return hdr->numseq > 1 || (pseqdesc->fps > 0 && pseqdesc->numframes > 1);
+}
+
+static const r_studio_model_cache_entry_t *buildCachedStudioSubModel( const mstudiomodel_t *submodel, const cl_entity_t *ent ) {
+	if (g_studio_cache.entries_count == MAX_CACHED_STUDIO_MODELS) {
+		PRINT_NOT_IMPLEMENTED_ARGS("Studio submodel cache overflow at %d", MAX_CACHED_STUDIO_MODELS);
+		return NULL;
+	}
+
+	const mstudiomesh_t *const pmesh = (mstudiomesh_t *)((byte *)m_pStudioHeader + m_pSubModel->meshindex);
+
+	int vertex_count = 0, index_count = 0;
+	for( int i = 0; i < submodel->nummesh; i++ ) {
+		const short* const ptricmds = (short *)((byte *)m_pStudioHeader + pmesh[i].triindex);
+		addVerticesIndicesCounts(ptricmds, &vertex_count, &index_count);
+	}
+
+	ASSERT(vertex_count > 0);
+	ASSERT(index_count > 0);
+
+	const r_geometry_range_t geometry = R_GeometryRangeAlloc(vertex_count, index_count);
+	if (geometry.block_handle.size == 0) {
+		gEngine.Con_Printf(S_ERROR "Unable to allocate %d vertices %d indices for submodel %s",
+			vertex_count, index_count, submodel->name);
+		return NULL;
+	}
+
+	vk_render_geometry_t *const geometries = Mem_Malloc(vk_core.pool, submodel->nummesh * sizeof(*geometries));
+	ASSERT(geometries);
+
+	if (!buildStudioSubmodelGeometry((build_submodel_geometry_t){
+		.submodel = submodel,
+		.geometry = &geometry,
+		.geometries = geometries,
+		.vertex_count = vertex_count,
+		.index_count = index_count,
+	})) {
+		gEngine.Con_Printf(S_ERROR "Unable to build geometry for submodel %s", submodel->name);
+		// FIXME leaks
+		return NULL;
+	}
+
+	const qboolean is_dynamic = isStudioModelDynamic(m_pStudioHeader);
 
 	r_studio_model_cache_entry_t *const entry = g_studio_cache.entries + g_studio_cache.entries_count;
 
 	*entry = (r_studio_model_cache_entry_t){
 		.key_submodel = submodel,
+		.key_entity = is_dynamic ? ent : NULL,
 		.geometries = geometries,
 		.geometries_count = submodel->nummesh,
 		.geometry_range = geometry,
+		.vertex_count = vertex_count,
+		.index_count = index_count,
 	};
 
 	if (!R_RenderModelCreate( &entry->render_model, (vk_render_model_init_t){
 		.name = submodel->name,
 		.geometries = geometries,
 		.geometries_count = submodel->nummesh,
-		.dynamic = false,
+		.dynamic = is_dynamic,
 	})) {
 		gEngine.Con_Printf(S_ERROR "Unable to create render model for studio submodel %s", submodel->name);
 		Mem_Free(geometries);
@@ -2433,24 +2392,49 @@ static const r_studio_model_cache_entry_t *buildCachedStudioSubModel( const mstu
 	return entry;
 }
 
-static const r_studio_model_cache_entry_t *findSubModelInCache(const mstudiomodel_t *submodel) {
-	for (int i = 0; i < g_studio_cache.entries_count; ++i) {
-		const r_studio_model_cache_entry_t *const entry = g_studio_cache.entries + i;
-		if (entry->key_submodel == submodel)
-			return entry;
+static void updateCachedStudioSubModel(const r_studio_model_cache_entry_t *entry) {
+	if (!buildStudioSubmodelGeometry((build_submodel_geometry_t){
+		.submodel = entry->key_submodel,
+		.geometry = &entry->geometry_range,
+		.geometries = entry->geometries,
+		.vertex_count = entry->vertex_count,
+		.index_count = entry->index_count,
+	})) {
+		gEngine.Con_Printf(S_ERROR "Unable to build geometry for submodel %s", entry->key_submodel->name);
+		return;
 	}
 
-	return NULL;
+	if (!R_RenderModelUpdate(&entry->render_model)) {
+		gEngine.Con_Printf(S_ERROR "Unable to update render model for submodel %s", entry->key_submodel->name);
+	}
 }
+
+/* TODO
+ * ent -> vk_studio_model
+ * vk_studio_model:
+ * - transform -- update on drawing the first submodel this frame
+ * - prev_transform
+ * - submodels[]
+ *
+ * vk_studio_submodel:
+ * - render_model
+ * - geometry_range
+ * - geometries
+ * - static-vs-dynamic.
+ *   - static: no animation. global "singleton" for all ents
+ *   - dynamic: per-entity
+*/
 
 static void R_StudioDrawPoints( void ) {
 	if( !m_pStudioHeader || !m_pSubModel || !m_pSubModel->nummesh)
 		return;
 
-	const r_studio_model_cache_entry_t *cached_model = findSubModelInCache( m_pSubModel );
+	const r_studio_model_cache_entry_t *cached_model = findSubModelInCacheForEntity( m_pSubModel, RI.currententity );
 
 	if (!cached_model)
-		cached_model = buildCachedStudioSubModel(m_pSubModel);
+		cached_model = buildCachedStudioSubModel(m_pSubModel, RI.currententity);
+	else if (cached_model->key_entity)
+		updateCachedStudioSubModel(cached_model);
 
 	if (!cached_model)
 		return;

@@ -345,4 +345,18 @@ rt_model:
 		- `R_StudioSetupTimings()` -- sets `g_studio.time/frametime`
 		- `R_StudioDrawModelInternal()`
 
+# E279
+## Studio model animation
+- studiohdr_t
+	- int numseq -- number of "sequences"?
+	- int seqindex -- offset to sequences:
+			`pseqdesc = (mstudioseqdesc_t *)((byte *)pstudiohdr + pstudiohdr->seqindex) + sequence;`
+- mstudioseqdesc_t
+	- int numframes
+	- int fps
+- mstudioanim_t
+	- = gEngine.R_StudioGetAnim(studiohdr, model, seqdesc)
 
+- cl_entity_t
+	- sequence -- references studio model sequence
+	- animtime/frame -- references animation state within sequence
