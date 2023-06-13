@@ -16,6 +16,7 @@
 #include "beamdef.h"
 
 #define NOISE_DIVISIONS	64	// don't touch - many tripmines cause the crash when it equal 128
+#define MODULE_NAME "beams"
 
 typedef struct
 {
@@ -31,7 +32,7 @@ static struct {
 } g_beam;
 
 qboolean R_BeamInit(void) {
-	R_SpeedsRegisterMetric(&g_beam.stats.beams, "beams_count", kSpeedsMetricCount);
+	R_SPEEDS_METRIC(g_beam.stats.beams, "count", kSpeedsMetricCount);
 	return true;
 }
 

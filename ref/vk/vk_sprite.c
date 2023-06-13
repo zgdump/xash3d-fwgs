@@ -15,6 +15,8 @@
 
 #include <memory.h>
 
+#define MODULE_NAME "sprite"
+
 // it's a Valve default value for LoadMapSprite (probably must be power of two)
 #define MAPSPRITE_SIZE	128
 #define GLARE_FALLOFF	19000.0f
@@ -126,7 +128,7 @@ static void destroyQuadModel(void) {
 }
 
 qboolean R_SpriteInit(void) {
-	R_SpeedsRegisterMetric(&g_sprite.stats.sprites, "sprites_count", kSpeedsMetricCount);
+	R_SPEEDS_METRIC(g_sprite.stats.sprites, "count", kSpeedsMetricCount);
 
 	return true;
 	// TODO return createQuadModel();

@@ -22,6 +22,8 @@
 #include <math.h>
 #include <memory.h>
 
+#define MODULE_NAME "brush"
+
 typedef struct vk_brush_model_s {
 	model_t *engine_model;
 
@@ -93,9 +95,9 @@ qboolean VK_BrushInit( void )
 {
 	VK_InitRandomTable ();
 
-	R_SpeedsRegisterMetric(&g_brush.stat.models_drawn, "models_brush", kSpeedsMetricCount);
-	R_SpeedsRegisterMetric(&g_brush.stat.water_surfaces_drawn, "water_surfaces", kSpeedsMetricCount);
-	R_SpeedsRegisterMetric(&g_brush.stat.water_polys_drawn, "water_polys", kSpeedsMetricCount);
+	R_SPEEDS_METRIC(g_brush.stat.models_drawn, "drawn", kSpeedsMetricCount);
+	R_SPEEDS_METRIC(g_brush.stat.water_surfaces_drawn, "water.surfaces", kSpeedsMetricCount);
+	R_SPEEDS_METRIC(g_brush.stat.water_polys_drawn, "water.polys", kSpeedsMetricCount);
 
 	return true;
 }

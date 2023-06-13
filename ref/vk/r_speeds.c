@@ -15,6 +15,8 @@
 #define TARGET_FRAME_TIME (1000.f / 60.f)
 #define MAX_GRAPHS 8
 
+#define MODULE_NAME "speeds"
+
 // Valid bits for `r_speeds` argument:
 enum {
 	SPEEDS_BIT_OFF = 0,       // `r_speeds 0` turns off all performance stats display
@@ -28,7 +30,10 @@ enum {
 
 typedef struct {
 	int *p_value;
-	const char *name;
+	char name[64];
+	const char *var_name;
+	const char *src_file;
+	int src_line;
 	r_speeds_metric_type_t type;
 	int low_watermark, high_watermark, max_value;
 	int graph_index;
@@ -75,6 +80,9 @@ static struct {
 			int time_us; // automatically zeroed by metrics each frame
 		} gpu_scopes[MAX_GPU_SCOPES];
 		char message[MAX_SPEEDS_MESSAGE];
+
+		qboolean list_metrics;
+		string list_metrics_filter;
 	} frame;
 } g_speeds;
 
@@ -201,7 +209,8 @@ static void drawCPUProfilerScopes(int draw, const aprof_event_t *events, uint64_
 					const uint64_t delta_ns = timestamp_ns - stack[depth].begin_ns;
 
 					if (!g_speeds.frame.scopes[scope_id].initialized) {
-						R_SpeedsRegisterMetric(&g_speeds.frame.scopes[scope_id].time_us, scope->name, kSpeedsMetricMicroseconds);
+						R_SpeedsRegisterMetric(&g_speeds.frame.scopes[scope_id].time_us, "scope", scope->name, kSpeedsMetricMicroseconds, scope->name, __FILE__, __LINE__);
+
 						g_speeds.frame.scopes[scope_id].initialized = 1;
 					}
 
@@ -366,7 +375,7 @@ static void drawGPUProfilerScopes(qboolean draw, int y, uint64_t frame_begin_tim
 			const char *name = gpurofl->scopes[scope_index].name;
 
 			if (!g_speeds.frame.gpu_scopes[scope_index].initialized) {
-				R_SpeedsRegisterMetric(&g_speeds.frame.gpu_scopes[scope_index].time_us, name, kSpeedsMetricMicroseconds);
+				R_SpeedsRegisterMetric(&g_speeds.frame.gpu_scopes[scope_index].time_us, "gpuscope", name, kSpeedsMetricMicroseconds, name, __FILE__, __LINE__);
 				g_speeds.frame.gpu_scopes[scope_index].initialized = 1;
 			}
 
@@ -612,18 +621,31 @@ static const char *getMetricTypeName(r_speeds_metric_type_t type) {
 // Ideally, we'd just autocomplete the r_speeds_graphs cvar/cmd.
 // However, autocompletion is not exposed to the renderer. It is completely internal to the engine, see con_utils.c, var cmd_list.
 static void listMetrics( void ) {
-	const int argc = gEngine.Cmd_Argc();
-	const char* filter = argc > 1 ? gEngine.Cmd_Argv(1) : NULL;
+	if (gEngine.Cmd_Argc() > 1) {
+		Q_strncpy(g_speeds.frame.list_metrics_filter, gEngine.Cmd_Argv(1), sizeof(g_speeds.frame.list_metrics_filter));
+	} else {
+		g_speeds.frame.list_metrics_filter[0] = '\0';
+	}
+
+	g_speeds.frame.list_metrics = true;
+}
+
+static void doListMetrics( void ) {
+	if (!g_speeds.frame.list_metrics)
+		return;
+
+	g_speeds.frame.list_metrics = false;
+	const char *const filter = g_speeds.frame.list_metrics_filter;
 
 	for (int i = 0; i < g_speeds.metrics_count; ++i) {
 		const r_speeds_metric_t *metric = g_speeds.metrics + i;
 
-		if (filter && !Q_strstr(metric->name, filter))
+		if (filter[0] && !Q_strstr(metric->name, filter))
 			continue;
 
 		char buf[16];
 		metricTypeSnprintf(buf, sizeof(buf), *metric->p_value, metric->type);
-		gEngine.Con_Printf("  ^2%s^7 %s, value = ^3%s^7\n", metric->name, getMetricTypeName(metric->type), buf);
+		gEngine.Con_Printf("  ^2%s^7 %s, value = ^3%s^7 (^5%s^7, ^6%s:%d^7)\n", metric->name, getMetricTypeName(metric->type), buf, metric->var_name, metric->src_file, metric->src_line);
 	}
 }
 
@@ -634,10 +656,10 @@ void R_SpeedsInit( void ) {
 	gEngine.Cmd_AddCommand("r_speeds_toggle_pause", togglePause, "Toggle frame profiler pause");
 	gEngine.Cmd_AddCommand("r_speeds_list_metrics", listMetrics, "List all registered metrics");
 
-	R_SpeedsRegisterMetric(&g_speeds.frame.frame_time_us, "frame", kSpeedsMetricMicroseconds);
-	R_SpeedsRegisterMetric(&g_speeds.frame.cpu_time_us, "cpu", kSpeedsMetricMicroseconds);
-	R_SpeedsRegisterMetric(&g_speeds.frame.cpu_wait_time_us, "cpu_wait", kSpeedsMetricMicroseconds);
-	R_SpeedsRegisterMetric(&g_speeds.frame.gpu_time_us, "gpu", kSpeedsMetricMicroseconds);
+	R_SPEEDS_METRIC(g_speeds.frame.frame_time_us, "frame", kSpeedsMetricMicroseconds);
+	R_SPEEDS_METRIC(g_speeds.frame.cpu_time_us, "cpu", kSpeedsMetricMicroseconds);
+	R_SPEEDS_METRIC(g_speeds.frame.cpu_wait_time_us, "cpu_wait", kSpeedsMetricMicroseconds);
+	R_SPEEDS_METRIC(g_speeds.frame.gpu_time_us, "gpu", kSpeedsMetricMicroseconds);
 }
 
 // grab r_speeds message
@@ -658,13 +680,18 @@ qboolean R_SpeedsMessage( char *out, size_t size )
 	return true;
 }
 
-void R_SpeedsRegisterMetric(int* p_value, const char *name, r_speeds_metric_type_t type) {
+void R_SpeedsRegisterMetric(int* p_value, const char *module, const char *name, r_speeds_metric_type_t type, const char *var_name, const char *file, int line) {
 	ASSERT(g_speeds.metrics_count < MAX_SPEEDS_METRICS);
 
 	r_speeds_metric_t *metric = g_speeds.metrics + (g_speeds.metrics_count++);
 	metric->p_value = p_value;
-	metric->name = name;
+
+	Q_snprintf(metric->name, sizeof(metric->name), "%s.%s", module, name);
+
 	metric->type = type;
+	metric->src_file = file;
+	metric->src_line = line;
+	metric->var_name = var_name;
 	metric->graph_index = -1;
 
 	// TODO how to make universally adjustable?
@@ -736,6 +763,8 @@ void R_SpeedsDisplayMore(uint32_t prev_frame_index, const struct vk_combuf_scope
 	}
 
 	processGraphCvar();
+
+	doListMetrics();
 
 	clearMetrics();
 

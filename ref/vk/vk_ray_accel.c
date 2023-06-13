@@ -16,6 +16,8 @@
 #define ARRAYSIZE(p)	(sizeof(p)/sizeof(p[0]))
 #endif // #ifndef ARRAYSIZE
 
+#define MODULE_NAME "accel"
+
 typedef struct rt_blas_s {
 	const char *debug_name;
 	rt_blas_usage_e usage;
@@ -388,8 +390,8 @@ qboolean RT_VkAccelInit(void) {
 
 	g_accel.accels_buffer_alloc = aloPoolCreate(MAX_ACCELS_BUFFER, MAX_INSTANCES, /* why */ 256);
 
-	R_SpeedsRegisterMetric(&g_accel.stats.instances_count, "accels_instances_count", kSpeedsMetricCount);
-	R_SpeedsRegisterMetric(&g_accel.stats.accels_built, "accels_built", kSpeedsMetricCount);
+	R_SPEEDS_METRIC(g_accel.stats.instances_count, "instances", kSpeedsMetricCount);
+	R_SPEEDS_METRIC(g_accel.stats.accels_built, "built", kSpeedsMetricCount);
 
 	return true;
 }

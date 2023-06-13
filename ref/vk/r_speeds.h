@@ -16,4 +16,7 @@ typedef enum {
 	kSpeedsMetricMicroseconds,
 } r_speeds_metric_type_t;
 
-void R_SpeedsRegisterMetric(int* p_value, const char *name, r_speeds_metric_type_t type);
+void R_SpeedsRegisterMetric(int* p_value, const char *module, const char *name, r_speeds_metric_type_t type, const char *var_name, const char *file, int line);
+
+#define R_SPEEDS_METRIC(var, name, type) \
+	R_SpeedsRegisterMetric(&(var), MODULE_NAME, name, type, #var, __FILE__, __LINE__)

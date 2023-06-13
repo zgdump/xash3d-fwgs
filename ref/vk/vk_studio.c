@@ -25,6 +25,8 @@
 #include <memory.h>
 #include <stdlib.h>
 
+#define MODULE_NAME "studio"
+
 #define EVENT_CLIENT	5000	// less than this value it's a server-side studio events
 #define MAX_LOCALLIGHTS	4
 
@@ -204,7 +206,7 @@ void R_StudioInit( void )
 	g_studio.framecount = 0;
 	m_fDoRemap = false;
 
-	R_SpeedsRegisterMetric(&g_studio_stats.models_count, "models_studio", kSpeedsMetricCount);
+	R_SPEEDS_METRIC(g_studio_stats.models_count, "models", kSpeedsMetricCount);
 }
 
 /*

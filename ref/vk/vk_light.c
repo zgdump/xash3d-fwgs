@@ -23,6 +23,8 @@
 #include "pm_defs.h"
 #include "pmtrace.h"
 
+#define MODULE_NAME "light"
+
 #define PROFILER_SCOPES(X) \
 	X(finalize , "RT_LightsFrameEnd"); \
 	X(emissive_surface, "VK_LightsAddEmissiveSurface"); \
@@ -104,16 +106,15 @@ qboolean VK_LightsInit( void ) {
 		return false;
 	}
 
-	R_SpeedsRegisterMetric(&g_lights_.stats.dirty_cells, "lights_dirty_cells", kSpeedsMetricCount);
-	R_SpeedsRegisterMetric(&g_lights_.stats.dirty_cells_size, "lights_dirty_cells_size", kSpeedsMetricBytes);
-	R_SpeedsRegisterMetric(&g_lights_.stats.ranges_uploaded, "lights_ranges_uploaded", kSpeedsMetricCount);
-	R_SpeedsRegisterMetric(&g_lights_.num_polygons, "lights_polygons", kSpeedsMetricCount);
-	R_SpeedsRegisterMetric(&g_lights_.num_point_lights, "lights_point", kSpeedsMetricCount);
-
-	R_SpeedsRegisterMetric(&g_lights_.stats.dynamic_polygons, "lights_polygons_dynamic", kSpeedsMetricCount);
-	R_SpeedsRegisterMetric(&g_lights_.stats.dynamic_points, "lights_point_dynamic", kSpeedsMetricCount);
-	R_SpeedsRegisterMetric(&g_lights_.stats.dlights, "lights_dlights", kSpeedsMetricCount);
-	R_SpeedsRegisterMetric(&g_lights_.stats.elights, "lights_elights", kSpeedsMetricCount);
+	R_SPEEDS_METRIC(g_lights_.stats.dirty_cells, "dirty_cells", kSpeedsMetricCount);
+	R_SPEEDS_METRIC(g_lights_.stats.dirty_cells_size, "dirty_cells_size", kSpeedsMetricBytes);
+	R_SPEEDS_METRIC(g_lights_.stats.ranges_uploaded, "ranges_uploaded", kSpeedsMetricCount);
+	R_SPEEDS_METRIC(g_lights_.num_polygons, "polygons", kSpeedsMetricCount);
+	R_SPEEDS_METRIC(g_lights_.num_point_lights, "points", kSpeedsMetricCount);
+	R_SPEEDS_METRIC(g_lights_.stats.dynamic_polygons, "polygons_dynamic", kSpeedsMetricCount);
+	R_SPEEDS_METRIC(g_lights_.stats.dynamic_points, "points_dynamic", kSpeedsMetricCount);
+	R_SPEEDS_METRIC(g_lights_.stats.dlights, "dlights", kSpeedsMetricCount);
+	R_SPEEDS_METRIC(g_lights_.stats.elights, "elights", kSpeedsMetricCount);
 
 	return true;
 }
