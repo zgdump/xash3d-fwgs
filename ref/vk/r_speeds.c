@@ -649,12 +649,72 @@ static void doListMetrics( void ) {
 	}
 }
 
+static void graphCmd( void ) {
+	enum { Unknown, Add, Remove, Clear } action = Unknown;
+
+	const int argc = gEngine.Cmd_Argc();
+
+	if (argc > 1) {
+		const char *const cmd = gEngine.Cmd_Argv(1);
+		if (0 == Q_strcmp("add", cmd) && argc > 2)
+			action = Add;
+		else if (0 == Q_strcmp("del", cmd) && argc > 2)
+			action = Remove;
+		else if (0 == Q_strcmp("clear", cmd))
+			action = Clear;
+	}
+
+
+	switch (action) {
+		case Add:
+			for (int i = 2; i < argc; ++i) {
+				const char *const arg = gEngine.Cmd_Argv(i);
+				const const_string_view_t name = {arg, Q_strlen(arg) };
+				speedsGraphAddByMetricName( name );
+			}
+			break;
+		case Remove:
+			// TODO remove
+			break;
+		case Clear:
+			speedsGraphsRemoveAll();
+			break;
+		case Unknown:
+			gEngine.Con_Printf("Usage:\n%s <add/del> metric0 metric1 ...\n", gEngine.Cmd_Argv(0));
+			gEngine.Con_Printf("\t%s <add/del> metric0 metric1 ...\n", gEngine.Cmd_Argv(0));
+			gEngine.Con_Printf("\t%s clear\n", gEngine.Cmd_Argv(0));
+			return;
+	}
+
+	// update cvar
+	{
+		char buf[1024];
+		int off = 0;
+		for (int i = 0; i < g_speeds.graphs_count; ++i) {
+			const r_speeds_graph_t *const graph = g_speeds.graphs + i;
+			ASSERT(graph->source_metric >= 0);
+			ASSERT(graph->source_metric < g_speeds.metrics_count);
+			const char *const name = g_speeds.metrics[graph->source_metric].name;
+
+			if (off)
+				buf[off++] = ',';
+
+			off += Q_strncat(buf + off, name, sizeof(buf) - off);
+			if (off == sizeof(buf))
+				break;
+		}
+
+		gEngine.Cvar_Set("r_speeds_graphs", buf);
+	}
+}
+
 void R_SpeedsInit( void ) {
 	g_speeds.r_speeds_graphs = gEngine.Cvar_Get("r_speeds_graphs", "", FCVAR_GLCONFIG, "List of metrics to plot as graphs, separated by commas");
 	g_speeds.r_speeds_graphs_width = gEngine.Cvar_Get("r_speeds_graphs_width", "", FCVAR_GLCONFIG, "Graphs width in pixels");
 
 	gEngine.Cmd_AddCommand("r_speeds_toggle_pause", togglePause, "Toggle frame profiler pause");
 	gEngine.Cmd_AddCommand("r_speeds_list_metrics", listMetrics, "List all registered metrics");
+	gEngine.Cmd_AddCommand("r_speeds_graph", graphCmd, "Manipulate add/remove metrics graphs");
 
 	R_SPEEDS_METRIC(g_speeds.frame.frame_time_us, "frame", kSpeedsMetricMicroseconds);
 	R_SPEEDS_METRIC(g_speeds.frame.cpu_time_us, "cpu", kSpeedsMetricMicroseconds);
