@@ -126,6 +126,9 @@ static studio_draw_state_t	g_studio;		// global studio state
 
 static struct {
 	int models_count;
+	int submodels_total;
+	int submodels_static;
+	int submodels_dynamic;
 } g_studio_stats;
 
 // global variables
@@ -207,6 +210,9 @@ void R_StudioInit( void )
 	m_fDoRemap = false;
 
 	R_SPEEDS_METRIC(g_studio_stats.models_count, "models", kSpeedsMetricCount);
+	R_SPEEDS_METRIC(g_studio_stats.submodels_total, "submodels_total", kSpeedsMetricCount);
+	R_SPEEDS_METRIC(g_studio_stats.submodels_static, "submodels_static", kSpeedsMetricCount);
+	R_SPEEDS_METRIC(g_studio_stats.submodels_dynamic, "submodels_dynamic", kSpeedsMetricCount);
 }
 
 /*
@@ -2342,7 +2348,7 @@ static const r_studio_model_cache_entry_t *buildCachedStudioSubModel( const mstu
 
 	const r_geometry_range_t geometry = R_GeometryRangeAlloc(vertex_count, index_count);
 	if (geometry.block_handle.size == 0) {
-		gEngine.Con_Printf(S_ERROR "Unable to allocate %d vertices %d indices for submodel %s",
+		gEngine.Con_Printf(S_ERROR "Unable to allocate %d vertices %d indices for submodel %s\n",
 			vertex_count, index_count, submodel->name);
 		return NULL;
 	}
@@ -2409,6 +2415,8 @@ static void updateCachedStudioSubModel(const r_studio_model_cache_entry_t *entry
 	if (!R_RenderModelUpdate(&entry->render_model)) {
 		gEngine.Con_Printf(S_ERROR "Unable to update render model for submodel %s", entry->key_submodel->name);
 	}
+
+	++g_studio_stats.submodels_dynamic;
 }
 
 /* TODO
@@ -2435,11 +2443,16 @@ static void R_StudioDrawPoints( void ) {
 
 	if (!cached_model)
 		cached_model = buildCachedStudioSubModel(m_pSubModel, RI.currententity);
-	else if (cached_model->key_entity)
+	else if (cached_model->key_entity) {
 		updateCachedStudioSubModel(cached_model);
+	}
 
 	if (!cached_model)
 		return;
+
+	if (!cached_model->key_entity) {
+		++g_studio_stats.submodels_static;
+	}
 
 	vec4_t color = {1, 1, 1, g_studio.blend};
 	if (g_studio.rendermode2 == kRenderTransAdd) {
@@ -2459,6 +2472,8 @@ static void R_StudioDrawPoints( void ) {
 		.geometries_changed_count = 0,
 		.textures_override = -1,
 	});
+
+	++g_studio_stats.submodels_total;
 }
 
 static void R_StudioSetRemapColors( int newTop, int newBottom )
