@@ -84,6 +84,9 @@ static struct {
 		qboolean list_metrics;
 		string list_metrics_filter;
 	} frame;
+
+	// Mask g_speeds_graphs cvar writes
+	char graphs_list[1024];
 } g_speeds;
 
 static void speedsStrcat( const char *msg ) {
@@ -572,6 +575,47 @@ static void speedsGraphAddByMetricName( const_string_view_t name ) {
 	graph->source_metric = metric_index;
 }
 
+static void speedsGraphRemoveByMetricName( const_string_view_t name ) {
+	const int metric_index = findMetricIndexByName(name);
+	if (metric_index < 0) {
+		gEngine.Con_Printf(S_ERROR "Metric \"%.*s\" not found\n", name.len, name.s);
+		return;
+	}
+
+	r_speeds_metric_t *const metric = g_speeds.metrics + metric_index;
+	if (metric->graph_index < 0) {
+		gEngine.Con_Printf(S_WARN "Metric \"%.*s\" doesn't have a graph\n", name.len, name.s);
+		return;
+	}
+
+	gEngine.Con_Printf("Removing profiler graph for metric %.*s(%d) at graph index %d\n", name.len, name.s, metric_index, metric->graph_index);
+
+	// Remove/free the graph itself
+	const int graph_index = metric->graph_index;
+	{
+		r_speeds_graph_t *const graph = g_speeds.graphs + metric->graph_index;
+		ASSERT(graph->data);
+		Mem_Free(graph->data);
+		graph->data = NULL;
+
+		ASSERT(graph->source_metric >= 0);
+		ASSERT(graph->source_metric < g_speeds.metrics_count);
+		metric->graph_index = -1;
+	}
+
+	// Move all further graphs one slot back, also updating their indices
+	for (int i = graph_index + 1; i < g_speeds.graphs_count; ++i) {
+		r_speeds_graph_t *const dst = g_speeds.graphs + i - 1;
+		const r_speeds_graph_t *const src = g_speeds.graphs + i;
+
+		g_speeds.metrics[src->source_metric].graph_index--;
+
+		memcpy(dst, src, sizeof(r_speeds_graph_t));
+	}
+
+	g_speeds.graphs_count--;
+}
+
 static void speedsGraphsRemoveAll( void ) {
 	gEngine.Con_Printf("Removing all %d profiler graphs\n", g_speeds.graphs_count);
 	for (int i = 0; i < g_speeds.graphs_count; ++i) {
@@ -590,6 +634,9 @@ static void speedsGraphsRemoveAll( void ) {
 
 static void processGraphCvar( void ) {
 	if (!(g_speeds.r_speeds_graphs->flags & FCVAR_CHANGED))
+		return;
+
+	if (0 == Q_strcmp(g_speeds.r_speeds_graphs->string, g_speeds.graphs_list))
 		return;
 
 	// TODO only remove graphs that are not present in the new list
@@ -674,7 +721,11 @@ static void graphCmd( void ) {
 			}
 			break;
 		case Remove:
-			// TODO remove
+			for (int i = 2; i < argc; ++i) {
+				const char *const arg = gEngine.Cmd_Argv(i);
+				const const_string_view_t name = {arg, Q_strlen(arg) };
+				speedsGraphRemoveByMetricName( name );
+			}
 			break;
 		case Clear:
 			speedsGraphsRemoveAll();
@@ -688,7 +739,9 @@ static void graphCmd( void ) {
 
 	// update cvar
 	{
-		char buf[1024];
+		g_speeds.graphs_list[0] = '\0';
+
+		char *const buf = g_speeds.graphs_list;
 		int off = 0;
 		for (int i = 0; i < g_speeds.graphs_count; ++i) {
 			const r_speeds_graph_t *const graph = g_speeds.graphs + i;
