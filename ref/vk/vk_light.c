@@ -106,15 +106,15 @@ qboolean VK_LightsInit( void ) {
 		return false;
 	}
 
-	R_SPEEDS_METRIC(g_lights_.stats.dirty_cells, "dirty_cells", kSpeedsMetricCount);
-	R_SPEEDS_METRIC(g_lights_.stats.dirty_cells_size, "dirty_cells_size", kSpeedsMetricBytes);
-	R_SPEEDS_METRIC(g_lights_.stats.ranges_uploaded, "ranges_uploaded", kSpeedsMetricCount);
-	R_SPEEDS_METRIC(g_lights_.num_polygons, "polygons", kSpeedsMetricCount);
-	R_SPEEDS_METRIC(g_lights_.num_point_lights, "points", kSpeedsMetricCount);
-	R_SPEEDS_METRIC(g_lights_.stats.dynamic_polygons, "polygons_dynamic", kSpeedsMetricCount);
-	R_SPEEDS_METRIC(g_lights_.stats.dynamic_points, "points_dynamic", kSpeedsMetricCount);
-	R_SPEEDS_METRIC(g_lights_.stats.dlights, "dlights", kSpeedsMetricCount);
-	R_SPEEDS_METRIC(g_lights_.stats.elights, "elights", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_lights_.stats.dirty_cells, "dirty_cells", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_lights_.stats.dirty_cells_size, "dirty_cells_size", kSpeedsMetricBytes);
+	R_SPEEDS_COUNTER(g_lights_.stats.ranges_uploaded, "ranges_uploaded", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_lights_.num_polygons, "polygons", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_lights_.num_point_lights, "points", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_lights_.stats.dynamic_polygons, "polygons_dynamic", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_lights_.stats.dynamic_points, "points_dynamic", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_lights_.stats.dlights, "dlights", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_lights_.stats.elights, "elights", kSpeedsMetricCount);
 
 	return true;
 }

@@ -32,7 +32,7 @@ static struct {
 } g_beam;
 
 qboolean R_BeamInit(void) {
-	R_SPEEDS_METRIC(g_beam.stats.beams, "count", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_beam.stats.beams, "count", kSpeedsMetricCount);
 	return true;
 }
 

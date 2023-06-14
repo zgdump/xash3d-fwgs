@@ -128,7 +128,7 @@ static void destroyQuadModel(void) {
 }
 
 qboolean R_SpriteInit(void) {
-	R_SPEEDS_METRIC(g_sprite.stats.sprites, "count", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_sprite.stats.sprites, "count", kSpeedsMetricCount);
 
 	return true;
 	// TODO return createQuadModel();

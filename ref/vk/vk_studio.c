@@ -189,6 +189,7 @@ void R_StudioCacheClear( void ) {
 }
 
 static const r_studio_model_cache_entry_t *findSubModelInCacheForEntity(const mstudiomodel_t *submodel, const cl_entity_t *ent) {
+	// FIXME hash table, there are hundreds of entries
 	for (int i = 0; i < g_studio_cache.entries_count; ++i) {
 		const r_studio_model_cache_entry_t *const entry = g_studio_cache.entries + i;
 		if (entry->key_submodel == submodel && (entry->key_entity == NULL || entry->key_entity == ent))
@@ -209,10 +210,12 @@ void R_StudioInit( void )
 	g_studio.framecount = 0;
 	m_fDoRemap = false;
 
-	R_SPEEDS_METRIC(g_studio_stats.models_count, "models", kSpeedsMetricCount);
-	R_SPEEDS_METRIC(g_studio_stats.submodels_total, "submodels_total", kSpeedsMetricCount);
-	R_SPEEDS_METRIC(g_studio_stats.submodels_static, "submodels_static", kSpeedsMetricCount);
-	R_SPEEDS_METRIC(g_studio_stats.submodels_dynamic, "submodels_dynamic", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_studio_stats.models_count, "models", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_studio_stats.submodels_total, "submodels_total", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_studio_stats.submodels_static, "submodels_static", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_studio_stats.submodels_dynamic, "submodels_dynamic", kSpeedsMetricCount);
+
+	R_SPEEDS_METRIC(g_studio_cache.entries_count, "cached_submodels", kSpeedsMetricCount);
 }
 
 /*

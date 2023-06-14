@@ -1,7 +1,9 @@
 #include "vk_geometry.h"
 #include "vk_buffer.h"
 #include "vk_staging.h"
-#include "vk_framectl.h" // MAX_CONCURRENT_FRAMES
+#include "r_speeds.h"
+
+#define MODULE_NAME "geom"
 
 #define MAX_BUFFER_VERTICES_STATIC (128 * 1024)
 #define MAX_BUFFER_INDICES_STATIC (MAX_BUFFER_VERTICES_STATIC * 3)
@@ -18,6 +20,11 @@
 static struct {
 	vk_buffer_t buffer;
 	r_blocks_t alloc;
+
+	struct {
+		int vertices, indices;
+		int dyn_vertices, dyn_indices;
+	} stats;
 } g_geom;
 
 r_geometry_range_t R_GeometryRangeAlloc(int vertices, int indices) {
@@ -38,11 +45,17 @@ r_geometry_range_t R_GeometryRangeAlloc(int vertices, int indices) {
 	ret.vertices.count = vertices;
 	ret.indices.count = indices;
 
+	g_geom.stats.indices += indices;
+	g_geom.stats.vertices += vertices;
+
 	return ret;
 }
 
 void R_GeometryRangeFree(const r_geometry_range_t* range) {
 	R_BlockRelease(&range->block_handle);
+
+	g_geom.stats.indices -= range->indices.count;
+	g_geom.stats.vertices -= range->vertices.count;
 }
 
 r_geometry_range_lock_t R_GeometryRangeLock(const r_geometry_range_t *range) {
@@ -121,6 +134,9 @@ qboolean R_GeometryBufferAllocOnceAndLock(r_geometry_buffer_lock_t *lock, int ve
 		};
 	}
 
+	g_geom.stats.dyn_vertices += vertex_count;
+	g_geom.stats.dyn_indices += index_count;
+
 	return true;
 }
 
@@ -144,6 +160,12 @@ qboolean R_GeometryBuffer_Init(void) {
 
 #define EXPECTED_ALLOCS 1024
 	R_BlocksCreate(&g_geom.alloc, GEOMETRY_BUFFER_SIZE, GEOMETRY_BUFFER_DYNAMIC_SIZE, EXPECTED_ALLOCS);
+
+	R_SPEEDS_METRIC(g_geom.alloc.allocated_long, "used", kSpeedsMetricBytes);
+	R_SPEEDS_METRIC(g_geom.stats.vertices, "vertices", kSpeedsMetricCount);
+	R_SPEEDS_METRIC(g_geom.stats.indices, "indices", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_geom.stats.dyn_vertices, "dyn_vertices", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_geom.stats.dyn_indices, "dyn_indices", kSpeedsMetricCount);
 	return true;
 }
 

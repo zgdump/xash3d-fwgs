@@ -30,6 +30,9 @@ typedef struct r_blocks_s {
 		alo_int_pool_t freelist;
 		struct r_blocks_block_s *storage;
 	} blocks;
+
+	// This is an estimate, it doesn't count alignment holes
+	int allocated_long;
 } r_blocks_t;
 
 r_block_t R_BlockAllocLong(r_blocks_t *blocks, uint32_t size, uint32_t alignment);

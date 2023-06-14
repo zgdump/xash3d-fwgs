@@ -95,9 +95,9 @@ qboolean VK_BrushInit( void )
 {
 	VK_InitRandomTable ();
 
-	R_SPEEDS_METRIC(g_brush.stat.models_drawn, "drawn", kSpeedsMetricCount);
-	R_SPEEDS_METRIC(g_brush.stat.water_surfaces_drawn, "water.surfaces", kSpeedsMetricCount);
-	R_SPEEDS_METRIC(g_brush.stat.water_polys_drawn, "water.polys", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_brush.stat.models_drawn, "drawn", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_brush.stat.water_surfaces_drawn, "water.surfaces", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_brush.stat.water_polys_drawn, "water.polys", kSpeedsMetricCount);
 
 	return true;
 }

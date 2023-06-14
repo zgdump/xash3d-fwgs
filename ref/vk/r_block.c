@@ -28,13 +28,13 @@ r_block_t R_BlockAllocLong(r_blocks_t *blocks, uint32_t size, uint32_t alignment
 
 	const alo_block_t ablock = aloPoolAllocate(blocks->long_pool, size, alignment);
 	if (ablock.offset == ALO_ALLOC_FAILED) {
-		/* gEngine.Con_Reportf("aloPoolAllocate failed\n"); */
+		gEngine.Con_Reportf(S_ERROR "aloPoolAllocate failed\n");
 		return ret;
 	}
 
 	const int metablock_index = allocMetablock(blocks);
 	if (metablock_index < 0) {
-		/* gEngine.Con_Reportf("allocMettablock failed\n"); */
+		gEngine.Con_Reportf(S_ERROR "allocMetablock failed\n");
 		aloPoolFree(blocks->long_pool, ablock.index);
 		return ret;
 	}
@@ -50,6 +50,7 @@ r_block_t R_BlockAllocLong(r_blocks_t *blocks, uint32_t size, uint32_t alignment
 
 	/* gEngine.Con_Reportf("block alloc %dKiB => index=%d offset=%u\n", (int)size/1024, metablock_index, (int)ret.offset); */
 
+	blocks->allocated_long += size;
 	return ret;
 }
 
@@ -65,6 +66,7 @@ void R_BlocksCreate(r_blocks_t *blocks, uint32_t size, uint32_t once_size, int e
 	memset(blocks, 0, sizeof(*blocks));
 
 	blocks->size = size;
+	blocks->allocated_long = 0;
 
 	blocks->long_pool = aloPoolCreate(size - once_size, expected_allocs, 4);
 	aloIntPoolGrow(&blocks->blocks.freelist, expected_allocs);
@@ -94,6 +96,7 @@ void R_BlockRelease(const r_block_t *block) {
 
 	aloPoolFree(blocks->long_pool, metablock->long_index);
 	aloIntPoolFree(&blocks->blocks.freelist, block->impl_.index);
+	blocks->allocated_long -= block->size;
 }
 
 void R_BlocksDestroy(r_blocks_t *blocks) {

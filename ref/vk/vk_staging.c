@@ -64,12 +64,12 @@ qboolean R_VkStagingInit(void) {
 
 	R_FlippingBuffer_Init(&g_staging.buffer_alloc, DEFAULT_STAGING_SIZE);
 
-	R_SPEEDS_METRIC(g_staging.stats.total_size, "total_size", kSpeedsMetricBytes);
-	R_SPEEDS_METRIC(g_staging.stats.buffers_size, "buffers_size", kSpeedsMetricBytes);
-	R_SPEEDS_METRIC(g_staging.stats.images_size, "images_size", kSpeedsMetricBytes);
+	R_SPEEDS_COUNTER(g_staging.stats.total_size, "total_size", kSpeedsMetricBytes);
+	R_SPEEDS_COUNTER(g_staging.stats.buffers_size, "buffers_size", kSpeedsMetricBytes);
+	R_SPEEDS_COUNTER(g_staging.stats.images_size, "images_size", kSpeedsMetricBytes);
 
-	R_SPEEDS_METRIC(g_staging.stats.buffer_chunks, "buffer_chunks", kSpeedsMetricCount);
-	R_SPEEDS_METRIC(g_staging.stats.images, "images", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_staging.stats.buffer_chunks, "buffer_chunks", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_staging.stats.images, "images", kSpeedsMetricCount);
 
 	g_staging.buffer_upload_scope_id = R_VkGpuScope_Register("staging_buffers");
 	g_staging.image_upload_scope_id = R_VkGpuScope_Register("staging_images");

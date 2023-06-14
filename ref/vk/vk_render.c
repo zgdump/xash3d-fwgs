@@ -338,8 +338,8 @@ qboolean VK_RenderInit( void ) {
 	if (!createPipelines())
 		return false;
 
-	R_SPEEDS_METRIC(g_render.stats.dynamic_model_count, "models_dynamic", kSpeedsMetricCount);
-	R_SPEEDS_METRIC(g_render.stats.models_count, "models", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_render.stats.dynamic_model_count, "models_dynamic", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_render.stats.models_count, "models", kSpeedsMetricCount);
 	return true;
 }
 

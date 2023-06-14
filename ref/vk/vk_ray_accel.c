@@ -390,8 +390,8 @@ qboolean RT_VkAccelInit(void) {
 
 	g_accel.accels_buffer_alloc = aloPoolCreate(MAX_ACCELS_BUFFER, MAX_INSTANCES, /* why */ 256);
 
-	R_SPEEDS_METRIC(g_accel.stats.instances_count, "instances", kSpeedsMetricCount);
-	R_SPEEDS_METRIC(g_accel.stats.accels_built, "built", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_accel.stats.instances_count, "instances", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_accel.stats.accels_built, "built", kSpeedsMetricCount);
 
 	return true;
 }

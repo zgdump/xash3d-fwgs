@@ -30,6 +30,7 @@ enum {
 
 typedef struct {
 	int *p_value;
+	qboolean reset;
 	char name[64];
 	const char *var_name;
 	const char *src_file;
@@ -213,7 +214,7 @@ static void drawCPUProfilerScopes(int draw, const aprof_event_t *events, uint64_
 					const uint64_t delta_ns = timestamp_ns - stack[depth].begin_ns;
 
 					if (!g_speeds.frame.scopes[scope_id].initialized) {
-						R_SpeedsRegisterMetric(&g_speeds.frame.scopes[scope_id].time_us, "scope", scope->name, kSpeedsMetricMicroseconds, scope->name, __FILE__, __LINE__);
+						R_SpeedsRegisterMetric(&g_speeds.frame.scopes[scope_id].time_us, "scope", scope->name, kSpeedsMetricMicroseconds, /*reset*/ true, scope->name, __FILE__, __LINE__);
 
 						g_speeds.frame.scopes[scope_id].initialized = 1;
 					}
@@ -431,7 +432,7 @@ static void drawGPUProfilerScopes(qboolean draw, int y, uint64_t frame_begin_tim
 			const char *name = gpurofl->scopes[scope_index].name;
 
 			if (!g_speeds.frame.gpu_scopes[scope_index].initialized) {
-				R_SpeedsRegisterMetric(&g_speeds.frame.gpu_scopes[scope_index].time_us, "gpuscope", name, kSpeedsMetricMicroseconds, name, __FILE__, __LINE__);
+				R_SpeedsRegisterMetric(&g_speeds.frame.gpu_scopes[scope_index].time_us, "gpuscope", name, kSpeedsMetricMicroseconds, /*reset*/ true, name, __FILE__, __LINE__);
 				g_speeds.frame.gpu_scopes[scope_index].initialized = 1;
 			}
 
@@ -523,10 +524,11 @@ static void printMetrics( void ) {
 	}
 }
 
-static void clearMetrics( void ) {
+static void resetMetrics( void ) {
 	for (int i = 0; i < g_speeds.metrics_count; ++i) {
 		const r_speeds_metric_t *const metric = g_speeds.metrics + i;
-		*metric->p_value = 0;
+		if (metric->reset)
+			*metric->p_value = 0;
 	}
 }
 
@@ -817,10 +819,10 @@ void R_SpeedsInit( void ) {
 	gEngine.Cmd_AddCommand("r_speeds_list_metrics", listMetrics, "List all registered metrics");
 	gEngine.Cmd_AddCommand("r_speeds_graph", graphCmd, "Manipulate add/remove metrics graphs");
 
-	R_SPEEDS_METRIC(g_speeds.frame.frame_time_us, "frame", kSpeedsMetricMicroseconds);
-	R_SPEEDS_METRIC(g_speeds.frame.cpu_time_us, "cpu", kSpeedsMetricMicroseconds);
-	R_SPEEDS_METRIC(g_speeds.frame.cpu_wait_time_us, "cpu_wait", kSpeedsMetricMicroseconds);
-	R_SPEEDS_METRIC(g_speeds.frame.gpu_time_us, "gpu", kSpeedsMetricMicroseconds);
+	R_SPEEDS_COUNTER(g_speeds.frame.frame_time_us, "frame", kSpeedsMetricMicroseconds);
+	R_SPEEDS_COUNTER(g_speeds.frame.cpu_time_us, "cpu", kSpeedsMetricMicroseconds);
+	R_SPEEDS_COUNTER(g_speeds.frame.cpu_wait_time_us, "cpu_wait", kSpeedsMetricMicroseconds);
+	R_SPEEDS_COUNTER(g_speeds.frame.gpu_time_us, "gpu", kSpeedsMetricMicroseconds);
 }
 
 // grab r_speeds message
@@ -841,11 +843,12 @@ qboolean R_SpeedsMessage( char *out, size_t size )
 	return true;
 }
 
-void R_SpeedsRegisterMetric(int* p_value, const char *module, const char *name, r_speeds_metric_type_t type, const char *var_name, const char *file, int line) {
+void R_SpeedsRegisterMetric(int* p_value, const char *module, const char *name, r_speeds_metric_type_t type, qboolean reset, const char *var_name, const char *file, int line) {
 	ASSERT(g_speeds.metrics_count < MAX_SPEEDS_METRICS);
 
 	r_speeds_metric_t *metric = g_speeds.metrics + (g_speeds.metrics_count++);
 	metric->p_value = p_value;
+	metric->reset = reset;
 
 	Q_snprintf(metric->name, sizeof(metric->name), "%s.%s", module, name);
 
@@ -927,7 +930,7 @@ void R_SpeedsDisplayMore(uint32_t prev_frame_index, const struct vk_combuf_scope
 
 	doListMetrics();
 
-	clearMetrics();
+	resetMetrics();
 
 	APROF_SCOPE_END(function);
 }
