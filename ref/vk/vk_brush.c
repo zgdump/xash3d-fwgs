@@ -13,7 +13,6 @@
 #include "vk_geometry.h"
 #include "vk_light.h"
 #include "vk_mapents.h"
-#include "vk_previous_frame.h"
 #include "r_speeds.h"
 
 #include "ref_params.h"
@@ -36,6 +35,7 @@ typedef struct vk_brush_model_s {
 	int animated_indexes_count;
 
 	matrix4x4 prev_transform;
+	float prev_time;
 
 	struct {
 		int surfaces_count;
@@ -124,7 +124,7 @@ static void addWarpVertIndCounts(const msurface_t *warp, int *num_vertices, int 
 }
 
 typedef struct {
-	int ent_index;
+	float prev_time;
 	float scale;
 	const msurface_t *warp;
 	qboolean reverse;
@@ -138,7 +138,6 @@ typedef struct {
 
 static void brushComputeWaterPolys( compute_water_polys_t args ) {
 	const float time = gpGlobals->time;
-	const float prev_time = R_PrevFrame_Time(args.ent_index);
 
 #define MAX_WATER_VERTICES 16
 	vk_vertex_t poly_vertices[MAX_WATER_VERTICES];
@@ -176,8 +175,8 @@ static void brushComputeWaterPolys( compute_water_polys_t args ) {
 				nv = (r_turbsin[(int)(v[0] * 5.0f + time * 171.0f - v[1]) & 255] + 8.0f ) * 0.8f + nv;
 				nv = nv * scale + v[2];
 
-				prev_nv = r_turbsin[(int)(prev_time * 160.0f + v[1] + v[0]) & 255] + 8.0f;
-				prev_nv = (r_turbsin[(int)(v[0] * 5.0f + prev_time * 171.0f - v[1]) & 255] + 8.0f ) * 0.8f + prev_nv;
+				prev_nv = r_turbsin[(int)(args.prev_time * 160.0f + v[1] + v[0]) & 255] + 8.0f;
+				prev_nv = (r_turbsin[(int)(v[0] * 5.0f + args.prev_time * 171.0f - v[1]) & 255] + 8.0f ) * 0.8f + prev_nv;
 				prev_nv = prev_nv * scale + v[2];
 			}
 			else prev_nv = nv = v[2];
@@ -341,8 +340,8 @@ static void fillWaterSurfaces( const cl_entity_t *ent, vk_brush_model_t *bmodel,
 
 		int vertices = 0, indices = 0;
 		brushComputeWaterPolys((compute_water_polys_t){
+			.prev_time = bmodel->prev_time,
 			.scale = scale,
-			.ent_index = ent ? ent->index : -1,
 			.reverse = false, // ??? is it ever true?
 			.warp = bmodel->engine_model->surfaces + surf_index,
 
@@ -689,6 +688,7 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 	});
 
 	Matrix4x4_Copy(bmodel->prev_transform, transform);
+	bmodel->prev_time = gpGlobals->time;
 }
 
 static model_sizes_t computeSizes( const model_t *mod ) {
@@ -980,6 +980,9 @@ qboolean VK_BrushModelLoad( model_t *mod ) {
 
 	bmodel->engine_model = mod;
 	mod->cache.data = bmodel;
+
+	Matrix4x4_LoadIdentity(bmodel->prev_transform);
+	bmodel->prev_time = gpGlobals->time;
 
 	const model_sizes_t sizes = computeSizes( mod );
 

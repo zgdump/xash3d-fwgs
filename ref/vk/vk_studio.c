@@ -4,7 +4,6 @@
 #include "vk_textures.h"
 #include "vk_render.h"
 #include "vk_geometry.h"
-#include "vk_previous_frame.h"
 #include "vk_renderstate.h"
 #include "vk_math.h"
 #include "vk_cvar.h"

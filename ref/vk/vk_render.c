@@ -12,7 +12,6 @@
 #include "vk_rtx.h"
 #include "vk_descriptor.h"
 #include "vk_framectl.h" // FIXME needed for dynamic models cmdbuf
-#include "vk_previous_frame.h"
 #include "alolcator.h"
 #include "profiler.h"
 #include "r_speeds.h"
