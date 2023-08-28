@@ -25,6 +25,8 @@ void studioRenderSubmodelDestroy( r_studio_submodel_render_t *submodel ) {
 	R_GeometryRangeFree(&submodel->geometry_range);
 	if (submodel->geometries)
 		Mem_Free(submodel->geometries);
+	if (submodel->prev_verts)
+		Mem_Free(submodel->prev_verts);
 }
 
 static void studioSubmodelInfoDestroy(r_studio_submodel_info_t *subinfo) {

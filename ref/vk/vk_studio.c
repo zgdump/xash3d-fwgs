@@ -81,7 +81,6 @@ typedef struct
 	vec3_t		verts[MAXSTUDIOVERTS];
 	vec3_t		norms[MAXSTUDIOVERTS];
 	vec3_t tangents[MAXSTUDIOVERTS];
-	vec3_t		prev_verts[MAXSTUDIOVERTS]; // last frame state for motion vectors
 
 	// lighting state
 	float		ambientlight;
@@ -1669,6 +1668,8 @@ static void addVerticesIndicesCounts( const short *ptricmds, int *num_vertices, 
 typedef struct {
 	const short *ptricmds;
 	const vec3_t *pstudionorms;
+	const vec3_t *prev_verts;
+
 	float s, t;
 	int texture;
 	int face_flags;
@@ -1709,7 +1710,8 @@ static void buildSubmodelMeshGeometry( build_submodel_mesh_t args ) {
 			*dst_vtx = (vk_vertex_t){0};
 
 			VectorCopy(g_studio.verts[vi], dst_vtx->pos);
-			VectorCopy(g_studio.prev_verts[vi], dst_vtx->prev_pos);
+			VectorCopy(args.prev_verts[vi], dst_vtx->prev_pos);
+
 			VectorCopy(g_studio.norms[vi], dst_vtx->normal);
 			VectorCopy(g_studio.tangents[vi], dst_vtx->tangent);
 			dst_vtx->lm_tc[0] = dst_vtx->lm_tc[1] = 0.f;
@@ -1874,6 +1876,7 @@ typedef struct {
 	const r_geometry_range_t *geometry;
 	vk_render_geometry_t *geometries;
 	int vertex_count, index_count;
+	const vec3_t *prev_verts;
 } build_submodel_geometry_t;
 
 static void buildStudioSubmodelGeometry(build_submodel_geometry_t args) {
@@ -1919,14 +1922,6 @@ static void buildStudioSubmodelGeometry(build_submodel_geometry_t args) {
 			R_LightStrength( pvertbone[i], pstudioverts[i], g_studio.lightpos[i] );
 		}
 
-		R_PrevFrame_SaveCurrentBoneTransforms( RI.currententity->index, g_studio.worldtransform, rotationmatrix_inv);
-		matrix3x4* prev_bones_transforms = R_PrevFrame_BoneTransforms( RI.currententity->index );
-		for( int i = 0; i < m_pSubModel->numverts; i++ )
-		{
-			R_StudioComputeSkinMatrix( &pvertweight[i], prev_bones_transforms, skinMat );
-			Matrix3x4_VectorTransform( skinMat, pstudioverts[i], g_studio.prev_verts[i] );
-		}
-
 		for( int i = 0; i < m_pSubModel->numnorms; i++ )
 		{
 			R_StudioComputeSkinMatrix( &pnormweight[i], g_studio.worldtransform, skinMat );
@@ -1938,17 +1933,12 @@ static void buildStudioSubmodelGeometry(build_submodel_geometry_t args) {
 	}
 	else
 	{
-		R_PrevFrame_SaveCurrentBoneTransforms( RI.currententity->index, g_studio.bonestransform, rotationmatrix_inv );
-
-		matrix3x4* prev_bones_transforms = R_PrevFrame_BoneTransforms( RI.currententity->index );
 		for( int i = 0; i < m_pSubModel->numverts; i++ )
 		{
 			vec3_t v;
 			Matrix3x4_VectorTransform( g_studio.bonestransform[pvertbone[i]], pstudioverts[i], v);
 			Matrix3x4_VectorTransform( rotationmatrix_inv, v, g_studio.verts[i] );
 			R_LightStrength( pvertbone[i], pstudioverts[i], g_studio.lightpos[i] );
-
-			Matrix3x4_VectorTransform( prev_bones_transforms[pvertbone[i]], pstudioverts[i], g_studio.prev_verts[i] );
 		}
 	}
 
@@ -2060,6 +2050,7 @@ static void buildStudioSubmodelGeometry(build_submodel_geometry_t args) {
 		buildSubmodelMeshGeometry((build_submodel_mesh_t){
 			.ptricmds = ptricmds,
 			.pstudionorms = pstudionorms,
+			.prev_verts = args.prev_verts,
 			.s = s,
 			.t = t,
 			.texture = texture,
@@ -2124,12 +2115,17 @@ static qboolean studioSubmodelRenderInit(r_studio_submodel_render_t *render_subm
 	vk_render_geometry_t *const geometries = Mem_Malloc(vk_core.pool, submodel->nummesh * sizeof(*geometries));
 	ASSERT(geometries);
 
+	const size_t verts_size = sizeof(vec3_t) * submodel->numverts;
+	render_submodel->prev_verts = Mem_Malloc(vk_core.pool, verts_size);
+	memcpy(render_submodel->prev_verts, g_studio.verts, verts_size);
+
 	buildStudioSubmodelGeometry((build_submodel_geometry_t){
 		//.submodel = submodel,
 		.geometry = &geometry,
 		.geometries = geometries,
 		.vertex_count = vertex_count,
 		.index_count = index_count,
+		.prev_verts = render_submodel->prev_verts,
 	});
 
 	render_submodel->geometries = geometries;
@@ -2155,33 +2151,22 @@ static qboolean studioSubmodelRenderInit(r_studio_submodel_render_t *render_subm
 	return true;
 }
 
-static qboolean studioSubmodelRenderUpdate(const r_studio_submodel_render_t *submodel_render) {
+static qboolean studioSubmodelRenderUpdate(const r_studio_submodel_render_t *submodel_render, const mstudiomodel_t *submodel) {
 	buildStudioSubmodelGeometry((build_submodel_geometry_t){
 		//.submodel = submodel_render->key_submodel,
 		.geometry = &submodel_render->geometry_range,
 		.geometries = submodel_render->geometries,
 		.vertex_count = submodel_render->vertex_count,
 		.index_count = submodel_render->index_count,
+		.prev_verts = submodel_render->prev_verts,
 	});
+
+	// Remember previous frame verts
+	const size_t verts_size = sizeof(vec3_t) * submodel->numverts;
+	memcpy(submodel_render->prev_verts, g_studio.verts, verts_size);
 
 	return R_RenderModelUpdate(&submodel_render->model);
 }
-
-/* TODO
- * ent -> vk_studio_model
- * vk_studio_model:
- * - transform -- update on drawing the first submodel this frame
- * - prev_transform
- * - submodels[]
- *
- * vk_studio_submodel:
- * - render_model
- * - geometry_range
- * - geometries
- * - static-vs-dynamic.
- *   - static: no animation. global "singleton" for all ents
- *   - dynamic: per-entity
-*/
 
 static void studioEntityModelDestroy(void *userdata) {
 	r_studio_entity_model_t *entmodel = (r_studio_entity_model_t*)userdata;
@@ -2200,6 +2185,8 @@ static r_studio_entity_model_t *studioEntityModelCreate(const cl_entity_t *entit
 	entmodel->bodyparts_count = m_pStudioHeader->numbodyparts; // TODO is this correct number?
 	entmodel->bodyparts = Mem_Calloc(vk_core.pool, sizeof(*entmodel->bodyparts) * entmodel->bodyparts_count);
 
+	Matrix4x4_LoadIdentity(entmodel->transform);
+	Matrix4x4_LoadIdentity(entmodel->prev_transform);
 	Matrix3x4_Copy(entmodel->prev_transform, g_studio.rotationmatrix);
 
 	entmodel->model_info = getStudioModelInfo(entity->model);
@@ -2249,8 +2236,10 @@ static void R_StudioDrawPoints( void ) {
 	// draw this entity/model. However, call structure/graph is a bit weird: we start rendering in ref code,
 	// but relevant states (transform, various headers) are updated only later, and potentially in game dll code.
 	// So we're forced to do this later here, when it is guaranteed that all the relevant state has been set.
-	if (!g_studio_current.entmodel)
+	if (!g_studio_current.entmodel) {
 		g_studio_current.entmodel = studioEntityModelGet(RI.currententity);
+		Matrix3x4_Copy(g_studio_current.entmodel->transform, g_studio.rotationmatrix);
+	}
 
 	ASSERT(g_studio_current.bodypart_index >= 0);
 	ASSERT(g_studio_current.bodypart_index < g_studio_current.entmodel->bodyparts_count);
@@ -2288,7 +2277,7 @@ static void R_StudioDrawPoints( void ) {
 
 		gEngine.Con_Reportf("Initialized studio submodel for %s // %s\n", RI.currentmodel->name, render_submodel->_.info->submodel_key->name);
 	} else if (is_dynamic) {
-		if (!studioSubmodelRenderUpdate(render_submodel)) {
+		if (!studioSubmodelRenderUpdate(render_submodel, m_pSubModel)) {
 			gEngine.Con_Printf(S_ERROR "Unable to update studio submodel for %s/%d\n", RI.currentmodel->name, g_studio_current.bodypart_index);
 			return;
 		}
@@ -2304,15 +2293,11 @@ static void R_StudioDrawPoints( void ) {
 		Vector4Set(color, g_studio.blend, g_studio.blend, g_studio.blend, 1.f);
 
 	// TODO r_model_draw_t.transform should be matrix3x4
-	matrix4x4 transform;
-	Matrix4x4_LoadIdentity(transform);
-	Matrix3x4_Copy(transform, g_studio.rotationmatrix);
-
 	R_RenderModelDraw(&render_submodel->model, (r_model_draw_t){
 		.render_type = studioRenderModeToRenderType(RI.currententity->curstate.rendermode),
 		.color = &color,
-		.transform = &transform,
-		.prev_transform = /* FIXME */ &transform,
+		.transform = &g_studio_current.entmodel->transform,
+		.prev_transform = &g_studio_current.entmodel->prev_transform,
 		.geometries_changed = NULL,
 		.geometries_changed_count = 0,
 		.textures_override = -1,
@@ -3085,6 +3070,10 @@ static void R_StudioDrawModelInternal( cl_entity_t *e, int flags )
 			pStudioDraw->StudioDrawPlayer( flags, R_StudioGetPlayerState( e->index - 1 ));
 		else
 			pStudioDraw->StudioDrawModel( flags );
+	}
+
+	if (g_studio_current.entmodel) {
+		Matrix4x4_Copy(g_studio_current.entmodel->prev_transform, g_studio_current.entmodel->transform);
 	}
 
 	// Reset current state, no drawing should happen outside of this function

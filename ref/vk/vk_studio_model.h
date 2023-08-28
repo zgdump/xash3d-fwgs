@@ -18,7 +18,7 @@ typedef struct r_studio_submodel_render_s {
 	int geometries_count;
 	int vertex_count, index_count;
 
-	// TODO vec3_t prev_verts;
+	vec3_t *prev_verts;
 
 	struct {
 		struct r_studio_submodel_info_s *info;
@@ -55,8 +55,9 @@ typedef struct {
 	const studiohdr_t *studio_header;
 	const r_studio_model_info_t *model_info;
 
-	// ??? probably unnecessary matrix3x4 transform;
-	matrix3x4 prev_transform;
+	// TODO 3x4
+	matrix4x4 transform;
+	matrix4x4 prev_transform;
 
 	int bodyparts_count;
 	r_studio_submodel_render_t **bodyparts;
