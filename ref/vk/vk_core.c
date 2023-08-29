@@ -23,6 +23,7 @@
 #include "vk_beams.h"
 #include "vk_combuf.h"
 #include "vk_entity_data.h"
+#include "vk_logs.h"
 
 // FIXME move this rt-specific stuff out
 #include "vk_light.h"
@@ -698,7 +699,9 @@ qboolean R_VkInit( void )
 	vk_core.validate = !!gEngine.Sys_CheckParm("-vkvalidate");
 	vk_core.debug = vk_core.validate || !!(gEngine.Sys_CheckParm("-vkdebug") || gEngine.Sys_CheckParm("-gldebug"));
 	vk_core.rtx = false;
+
 	VK_LoadCvars();
+	VK_LogsReadCvar();
 
 	R_SpeedsInit();
 

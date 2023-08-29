@@ -3,8 +3,11 @@
 #include "vk_mapents.h"
 #include "vk_const.h"
 #include "profiler.h"
+#include "vk_logs.h"
 
 #include <stdio.h>
+
+#define LOG_MODULE LogModule_Material
 
 #define MAX_INCLUDE_DEPTH 4
 
@@ -24,8 +27,6 @@ static xvk_material_t k_default_material = {
 
 static struct {
 	xvk_material_t materials[MAX_TEXTURES];
-
-	qboolean verbose_logs;
 } g_materials;
 
 static struct {
@@ -40,8 +41,7 @@ static struct {
 static int loadTexture( const char *filename, qboolean force_reload ) {
 	const uint64_t load_begin_ns = aprof_time_now_ns();
 	const int tex_id = force_reload ? XVK_LoadTextureReplace( filename, NULL, 0, 0 ) : VK_LoadTexture( filename, NULL, 0, 0 );
-	if (g_materials.verbose_logs)
-		gEngine.Con_Reportf("Loaded texture %s => %d\n", filename, tex_id);
+	DEBUG("Loaded texture %s => %d", filename, tex_id);
 	g_stats.texture_loads++;
 	g_stats.texture_load_duration_ns += aprof_time_now_ns() - load_begin_ns;
 	return tex_id ? tex_id : -1;
@@ -78,8 +78,7 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 
 	string basecolor_map, normal_map, metal_map, roughness_map;
 
-	if (g_materials.verbose_logs)
-		gEngine.Con_Reportf("Loading materials from %s\n", filename);
+	DEBUG("Loading materials from %s", filename);
 
 	if ( !data )
 		return;
@@ -119,7 +118,7 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 				MAKE_PATH(texture_path, name); \
 				const int tex_id = loadTexture(texture_path, force_reload); \
 				if (tex_id < 0) { \
-					gEngine.Con_Printf(S_ERROR "Failed to load texture \"%s\" for "#name"\n", name); \
+					ERR("Failed to load texture \"%s\" for "#name"", name); \
 				} else { \
 					current_material.field = tex_id; \
 				} \
@@ -144,9 +143,8 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 				current_material.metalness = 1.f;
 			}
 
-			if (g_materials.verbose_logs)
-				gEngine.Con_Reportf("Creating%s material for texture %s(%d)\n", create?" new":"",
-					findTexture(current_material_index)->name, current_material_index);
+			DEBUG("Creating%s material for texture %s(%d)", create?" new":"",
+				findTexture(current_material_index)->name, current_material_index);
 
 			g_materials.materials[current_material_index] = current_material;
 			g_materials.materials[current_material_index].set = true;
@@ -174,7 +172,7 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 				MAKE_PATH(include_path, value);
 				loadMaterialsFromFile( include_path, depth - 1);
 			} else {
-				gEngine.Con_Printf(S_ERROR "material: max include depth %d reached when including '%s' from '%s'\n", MAX_INCLUDE_DEPTH, value, filename);
+				ERR("material: max include depth %d reached when including '%s' from '%s'", MAX_INCLUDE_DEPTH, value, filename);
 			}
 		} else {
 			int *tex_id_dest = NULL;
@@ -196,7 +194,7 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 			} else if (Q_stricmp(key, "base_color") == 0) {
 				sscanf(value, "%f %f %f %f", &current_material.base_color[0], &current_material.base_color[1], &current_material.base_color[2], &current_material.base_color[3]);
 			} else {
-				gEngine.Con_Printf(S_ERROR "Unknown material key \"%s\" on line `%.*s`\n", key, (int)(pos - line_begin), line_begin);
+				ERR("Unknown material key \"%s\" on line `%.*s`", key, (int)(pos - line_begin), line_begin);
 				continue;
 			}
 		}
@@ -254,7 +252,7 @@ void XVK_ReloadMaterials( void ) {
 	// Print out statistics
 	{
 		const int duration_ms = (aprof_time_now_ns() - begin_time_ns) / 1000000ull;
-		gEngine.Con_Printf("Loading materials took %dms, .mat files parsed: %d (fread: %dms). Texture lookups: %d (%dms). Texture loads: %d (%dms).\n",
+		INFO("Loading materials took %dms, .mat files parsed: %d (fread: %dms). Texture lookups: %d (%dms). Texture loads: %d (%dms).",
 			duration_ms,
 			g_stats.mat_files_read,
 			(int)(g_stats.material_file_read_duration_ns / 1000000ull),

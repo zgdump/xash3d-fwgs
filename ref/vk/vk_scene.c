@@ -20,6 +20,7 @@
 #include "vk_mapents.h"
 #include "profiler.h"
 #include "vk_entity_data.h"
+#include "vk_logs.h"
 
 #include "com_strings.h"
 #include "ref_params.h"
@@ -137,6 +138,7 @@ static void preloadModels( void ) {
 }
 
 static void loadMap(const model_t* const map) {
+	VK_LogsReadCvar();
 	mapLoadBegin(map);
 
 	R_SpriteNewMapFIXME();

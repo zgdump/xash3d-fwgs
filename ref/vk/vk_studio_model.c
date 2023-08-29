@@ -1,10 +1,12 @@
 #include "vk_studio_model.h"
 #include "r_speeds.h"
 #include "vk_entity_data.h"
+#include "vk_logs.h"
 
 #include "xash3d_mathlib.h"
 
 #define MODULE_NAME "studio"
+#define LOG_MODULE LogModule_Studio
 
 typedef struct {
 	const studiohdr_t *studio_header_key;
@@ -157,10 +159,10 @@ static int studioModelGetSubmodels(const studiohdr_t *hdr, r_studio_submodel_inf
 	for (int i = 0; i < hdr->numbodyparts; ++i) {
 		const mstudiobodyparts_t* const bodypart = (mstudiobodyparts_t *)((byte *)hdr + hdr->bodypartindex) + i;
 		if (out_submodels) {
-			gEngine.Con_Reportf(" Bodypart %d/%d: %s (nummodels=%d)\n", i, hdr->numbodyparts - 1, bodypart->name, bodypart->nummodels);
+			DEBUG(" Bodypart %d/%d: %s (nummodels=%d)", i, hdr->numbodyparts - 1, bodypart->name, bodypart->nummodels);
 			for (int j = 0; j < bodypart->nummodels; ++j) {
 				const mstudiomodel_t * const submodel = (mstudiomodel_t *)((byte *)hdr + bodypart->modelindex) + j;
-				gEngine.Con_Reportf("  Submodel %d: %s\n", j, submodel->name);
+				DEBUG("  Submodel %d: %s", j, submodel->name);
 				out_submodels[count++].submodel_key = submodel;
 			}
 		} else {
@@ -178,10 +180,10 @@ qboolean R_StudioModelPreload(model_t *mod) {
 	r_studio_model_info_entry_t *entry = &g_studio_cache.models[g_studio_cache.models_count++];
 	entry->studio_header_key = hdr;
 
-	gEngine.Con_Reportf("Studio model %s, sequences = %d:\n", hdr->name, hdr->numseq);
+	DEBUG("Studio model %s, sequences = %d:", hdr->name, hdr->numseq);
 	for (int i = 0; i < hdr->numseq; ++i) {
 		const mstudioseqdesc_t *const pseqdesc = (mstudioseqdesc_t *)((byte *)hdr + hdr->seqindex) + i;
-		gEngine.Con_Reportf("  %d: fps=%f numframes=%d\n", i, pseqdesc->fps, pseqdesc->numframes);
+		DEBUG("  %d: fps=%f numframes=%d", i, pseqdesc->fps, pseqdesc->numframes);
 	}
 
 	// Get submodel array
@@ -192,11 +194,11 @@ qboolean R_StudioModelPreload(model_t *mod) {
 	studioModelProcessBonesAnimations(mod, hdr, submodels, submodels_count);
 
 	qboolean is_dynamic = false;
-	gEngine.Con_Reportf(" submodels_count: %d\n", submodels_count);
+	DEBUG(" submodels_count: %d", submodels_count);
 	for (int i = 0; i < submodels_count; ++i) {
 		const r_studio_submodel_info_t *const subinfo = submodels + i;
 		is_dynamic |= subinfo->is_dynamic;
-		gEngine.Con_Reportf("  Submodel %d/%d: name=\"%s\", is_dynamic=%d\n", i, submodels_count-1, subinfo->submodel_key->name, subinfo->is_dynamic);
+		DEBUG("  Submodel %d/%d: name=\"%s\", is_dynamic=%d", i, submodels_count-1, subinfo->submodel_key->name, subinfo->is_dynamic);
 	}
 
 	entry->info.submodels_count = submodels_count;

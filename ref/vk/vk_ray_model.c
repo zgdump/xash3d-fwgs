@@ -141,17 +141,11 @@ void RT_RayModel_Clear(void) {
 
 void XVK_RayModel_ClearForNextFrame( void ) {
 	g_ray_model_state.frame.instances_count = 0;
-
-	// TODO N frames in flight
-	// HACK: blas caching requires persistent memory
-	// proper fix would need some other memory allocation strategy
-	// VK_RingBuffer_ClearFrame(&g_rtx.accels_buffer_alloc);
-	//VK_RingBuffer_ClearFrame(&g_ray_model_state.kusochki_alloc);
 	R_DEBuffer_Flip(&g_ray_model_state.kusochki_alloc);
 }
 
 rt_kusochki_t RT_KusochkiAllocLong(int count) {
-	// TODO Proper block allocator
+	// TODO Proper block allocator, not just double-ended buffer
 	uint32_t kusochki_offset = R_DEBuffer_Alloc(&g_ray_model_state.kusochki_alloc, LifetimeStatic, count, 1);
 
 	if (kusochki_offset == ALO_ALLOC_FAILED) {

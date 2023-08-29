@@ -282,12 +282,8 @@ static void handlePause( uint32_t prev_frame_index ) {
 	}
 }
 
-typedef struct {
-	const char *s;
-	int len;
-} const_string_view_t;
-
-static int stringViewCmp(const_string_view_t sv, const char* s) {
+// TODO move this to vk_common or something
+int stringViewCmp(const_string_view_t sv, const char* s) {
 	for (int i = 0; i < sv.len; ++i) {
 		const int d = sv.s[i] - s[i];
 		if (d != 0)

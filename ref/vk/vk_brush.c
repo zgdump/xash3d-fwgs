@@ -14,6 +14,7 @@
 #include "vk_light.h"
 #include "vk_mapents.h"
 #include "r_speeds.h"
+#include "vk_logs.h"
 
 #include "ref_params.h"
 #include "eiface.h"
@@ -22,6 +23,7 @@
 #include <memory.h>
 
 #define MODULE_NAME "brush"
+#define LOG_MODULE LogModule_Brush
 
 typedef struct vk_brush_model_s {
 	model_t *engine_model;
@@ -396,7 +398,7 @@ typedef enum {
 static brush_surface_type_e getSurfaceType( const msurface_t *surf, int i ) {
 // 	if ( i >= 0 && (surf->flags & ~(SURF_PLANEBACK | SURF_UNDERWATER | SURF_TRANSPARENT)) != 0)
 // 	{
-// 		gEngine.Con_Reportf("\t%d flags: ", i);
+// 		DEBUG("\t%d flags: ", i);
 // #define PRINTFLAGS(X) \
 // 	X(SURF_PLANEBACK) \
 // 	X(SURF_DRAWSKY) \
@@ -407,9 +409,9 @@ static brush_surface_type_e getSurfaceType( const msurface_t *surf, int i ) {
 // 	X(SURF_UNDERWATER) \
 // 	X(SURF_TRANSPARENT)
 
-// #define PRINTFLAG(f) if (FBitSet(surf->flags, f)) gEngine.Con_Reportf(" %s", #f);
+// #define PRINTFLAG(f) if (FBitSet(surf->flags, f)) DEBUG(" %s", #f);
 // 		PRINTFLAGS(PRINTFLAG)
-// 		gEngine.Con_Reportf("\n");
+// 		DEBUG("\n");
 // 	}
 	const xvk_patch_surface_t *patch_surface = R_VkPatchGetSurface(i);
 	if (patch_surface && patch_surface->flags & Patch_Surface_Delete)
@@ -427,12 +429,12 @@ static brush_surface_type_e getSurfaceType( const msurface_t *surf, int i ) {
 	if( surf->flags & ( SURF_DRAWTURB | SURF_DRAWTURB_QUADS ) ) {
 	//if( surf->flags & ( SURF_DRAWSKY | SURF_CONVEYOR ) ) {
 		// FIXME don't print this on second sort-by-texture pass
-		//gEngine.Con_Reportf("Skipping surface %d because of flags %08x\n", i, surf->flags);
+		//DEBUG("Skipping surface %d because of flags %08x", i, surf->flags);
 		return BrushSurface_Hidden;
 	}
 
 	if( FBitSet( surf->flags, SURF_DRAWTILED )) {
-		//gEngine.Con_Reportf("Skipping surface %d because of tiled flag\n", i);
+		//DEBUG("Skipping surface %d because of tiled flag", i);
 		return BrushSurface_Hidden;
 	}
 
@@ -449,7 +451,7 @@ static qboolean brushCreateWaterModel(const model_t *mod, vk_brush_model_t *bmod
 
 	const r_geometry_range_t geometry = R_GeometryRangeAlloc(sizes.water_vertices, sizes.water_indices);
 	if (!geometry.block_handle.size) {
-		gEngine.Con_Printf(S_ERROR "Cannot allocate geometry (v=%d, i=%d) for water model %s\n",
+		ERR("Cannot allocate geometry (v=%d, i=%d) for water model %s",
 			sizes.water_vertices, sizes.water_indices, mod->name );
 		return false;
 	}
@@ -479,7 +481,7 @@ static qboolean brushCreateWaterModel(const model_t *mod, vk_brush_model_t *bmod
 		.geometries_count = sizes.water_surfaces,
 		.dynamic = true,
 		})) {
-		gEngine.Con_Printf(S_ERROR "Could not create water render model for brush model %s\n", mod->name);
+		ERR("Could not create water render model for brush model %s", mod->name);
 		return false;
 	}
 
@@ -492,7 +494,7 @@ static void brushDrawWater(vk_brush_model_t *bmodel, const cl_entity_t *ent, int
 
 	fillWaterSurfaces(NULL, bmodel, bmodel->water.render_model.geometries);
 	if (!R_RenderModelUpdate(&bmodel->water.render_model)) {
-		gEngine.Con_Printf(S_ERROR "Failed to update brush model \"%s\" water\n", bmodel->render_model.debug_name);
+		ERR("Failed to update brush model \"%s\" water", bmodel->render_model.debug_name);
 	}
 
 	R_RenderModelDraw(&bmodel->water.render_model, (r_model_draw_t){
@@ -594,7 +596,7 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 	vk_brush_model_t *bmodel = mod->cache.data;
 
 	if (!bmodel) {
-		gEngine.Con_Printf( S_ERROR "Model %s wasn't loaded\n", mod->name);
+		ERR("Model %s wasn't loaded", mod->name);
 		return;
 	}
 
@@ -782,11 +784,11 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 
 			++num_geometries;
 
-			//gEngine.Con_Reportf( "surface %d: numverts=%d numedges=%d\n", i, surf->polys ? surf->polys->numverts : -1, surf->numedges );
+			//DEBUG( "surface %d: numverts=%d numedges=%d", i, surf->polys ? surf->polys->numverts : -1, surf->numedges );
 
 			if (vertex_offset + surf->numedges >= UINT16_MAX) {
 				// We might be able to handle it by adjusting base_vertex_offset, etc
-				gEngine.Con_Printf(S_ERROR "Model %s indices don't fit into 16 bits\n", args.mod->name);
+				ERR("Model %s indices don't fit into 16 bits", args.mod->name);
 				return false;
 			}
 
@@ -920,7 +922,7 @@ static const xvk_mapent_func_wall_t *getModelFuncWallPatch( const model_t *const
 static qboolean createRenderModel( const model_t *mod, vk_brush_model_t *bmodel, const model_sizes_t sizes ) {
 	bmodel->geometry = R_GeometryRangeAlloc(sizes.num_vertices, sizes.num_indices);
 	if (!bmodel->geometry.block_handle.size) {
-		gEngine.Con_Printf(S_ERROR "Cannot allocate geometry for %s\n", mod->name );
+		ERR("Cannot allocate geometry for %s", mod->name );
 		return false;
 	}
 
@@ -959,7 +961,7 @@ static qboolean createRenderModel( const model_t *mod, vk_brush_model_t *bmodel,
 		.geometries_count = sizes.num_surfaces,
 		.dynamic = false,
 		})) {
-		gEngine.Con_Printf(S_ERROR "Could not create render model for brush model %s\n", mod->name);
+		ERR("Could not create render model for brush model %s", mod->name);
 		return false;
 	}
 
@@ -968,11 +970,11 @@ static qboolean createRenderModel( const model_t *mod, vk_brush_model_t *bmodel,
 
 qboolean VK_BrushModelLoad( model_t *mod ) {
 	if (mod->cache.data) {
-		gEngine.Con_Reportf( S_WARN "Model %s was already loaded\n", mod->name );
+		WARN("Model %s was already loaded", mod->name );
 		return true;
 	}
 
-	gEngine.Con_Reportf("%s: %s flags=%08x\n", __FUNCTION__, mod->name, mod->flags);
+	DEBUG("%s: %s flags=%08x", __FUNCTION__, mod->name, mod->flags);
 
 	vk_brush_model_t *bmodel = Mem_Calloc(vk_core.pool, sizeof(*bmodel));
 	ASSERT(g_brush.models_count < COUNTOF(g_brush.models));
@@ -988,7 +990,7 @@ qboolean VK_BrushModelLoad( model_t *mod ) {
 
 	if (sizes.num_surfaces != 0) {
 		if (!createRenderModel(mod, bmodel, sizes)) {
-			gEngine.Con_Printf(S_ERROR "Could not load brush model %s\n", mod->name);
+			ERR("Could not load brush model %s", mod->name);
 			// FIXME Cannot deallocate bmodel as we might still have staging references to its memory
 			return false;
 		}
@@ -996,7 +998,7 @@ qboolean VK_BrushModelLoad( model_t *mod ) {
 
 	if (sizes.water_surfaces) {
 		if (!brushCreateWaterModel(mod, bmodel, sizes)) {
-			gEngine.Con_Printf(S_ERROR "Could not load brush water model %s\n", mod->name);
+			ERR("Could not load brush water model %s", mod->name);
 			// FIXME Cannot deallocate bmodel as we might still have staging references to its memory
 			return false;
 		}
@@ -1005,7 +1007,7 @@ qboolean VK_BrushModelLoad( model_t *mod ) {
 	g_brush.stat.total_vertices += sizes.num_indices + sizes.water_vertices;
 	g_brush.stat.total_indices += sizes.num_vertices + sizes.water_indices;
 
-	gEngine.Con_Reportf("Model %s loaded surfaces: %d (of %d); total vertices: %u, total indices: %u\n",
+	DEBUG("Model %s loaded surfaces: %d (of %d); total vertices: %u, total indices: %u",
 		mod->name, bmodel->render_model.num_geometries, mod->nummodelsurfaces, g_brush.stat.total_vertices, g_brush.stat.total_indices);
 
 	return true;
@@ -1014,7 +1016,7 @@ qboolean VK_BrushModelLoad( model_t *mod ) {
 static void VK_BrushModelDestroy( vk_brush_model_t *bmodel ) {
 	ASSERT(bmodel->engine_model);
 
-	gEngine.Con_Reportf("%s: %s\n", __FUNCTION__, bmodel->engine_model->name);
+	DEBUG("%s: %s", __FUNCTION__, bmodel->engine_model->name);
 
 	ASSERT(bmodel->engine_model->cache.data == bmodel);
 	ASSERT(bmodel->engine_model->type == mod_brush);
@@ -1044,7 +1046,7 @@ static void VK_BrushModelDestroy( vk_brush_model_t *bmodel ) {
 }
 
 void VK_BrushModelDestroyAll( void ) {
-	gEngine.Con_Printf("Destroying %d brush models\n", g_brush.models_count);
+	DEBUG("Destroying %d brush models", g_brush.models_count);
 	for( int i = 0; i < g_brush.models_count; i++ )
 		VK_BrushModelDestroy(g_brush.models[i]);
 
@@ -1059,7 +1061,7 @@ static rt_light_add_polygon_t loadPolyLight(const model_t *mod, const int surfac
 
 	// TODO split, don't clip
 	if (surf->numedges > 7)
-		gEngine.Con_Printf(S_WARN "emissive surface %d has %d vertices; clipping to 7\n", surface_index, surf->numedges);
+		WARN("emissive surface %d has %d vertices; clipping to 7", surface_index, surf->numedges);
 
 	VectorCopy(emissive, lpoly.emissive);
 
@@ -1116,10 +1118,10 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 			continue;
 		}
 
-		//gEngine.Con_Reportf("%d: i=%d surf_index=%d patch=%d(%#x) => emissive=(%f,%f,%f)\n", emissive_surfaces_count, i, surface_index, !!psurf, psurf?psurf->flags:0, emissive[0], emissive[1], emissive[2]);
+		//DEBUG("%d: i=%d surf_index=%d patch=%d(%#x) => emissive=(%f,%f,%f)", emissive_surfaces_count, i, surface_index, !!psurf, psurf?psurf->flags:0, emissive[0], emissive[1], emissive[2]);
 
 		if (emissive_surfaces_count == MAX_SURFACE_LIGHTS) {
-			gEngine.Con_Printf(S_ERROR "Too many emissive surfaces for model %s: max=%d\n", mod->name, MAX_SURFACE_LIGHTS);
+			ERR("Too many emissive surfaces for model %s: max=%d", mod->name, MAX_SURFACE_LIGHTS);
 			break;
 		}
 
@@ -1173,5 +1175,6 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 		VectorCopy(polylight.emissive, bmodel->render_model.geometries[bmodel->surface_to_geometry_index[s->model_surface_index]].emissive);
 	}
 
-	gEngine.Con_Reportf("Loaded %d polylights for %s model %s\n", emissive_surfaces_count, is_static ? "static" : "movable", mod->name);
+	if (emissive_surfaces_count > 0)
+		INFO("Loaded %d polylights for %s model %s", emissive_surfaces_count, is_static ? "static" : "movable", mod->name);
 }

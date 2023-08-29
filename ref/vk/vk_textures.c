@@ -7,6 +7,7 @@
 #include "vk_descriptor.h"
 #include "vk_mapents.h" // wadlist
 #include "vk_combuf.h"
+#include "vk_logs.h"
 
 #include "xash3d_mathlib.h"
 #include "crtlib.h"
@@ -16,6 +17,8 @@
 
 #include <memory.h>
 #include <math.h>
+
+#define LOG_MODULE LogModule_Textures
 
 #define TEXTURES_HASH_SIZE	(MAX_TEXTURES >> 2)
 
@@ -144,7 +147,7 @@ static qboolean Common_CheckTexName( const char *name )
 	// because multi-layered textures can exceed name string
 	if( len >= sizeof( vk_textures->name ))
 	{
-		gEngine.Con_Printf( S_ERROR "LoadTexture: too long name %s (%d)\n", name, len );
+		ERR("LoadTexture: too long name %s (%d)", name, len );
 		return false;
 	}
 
@@ -342,7 +345,7 @@ static VkFormat VK_GetFormat(pixformat_t format) {
 	{
 		case PF_RGBA_32: return VK_FORMAT_R8G8B8A8_UNORM;
 		default:
-			gEngine.Con_Printf(S_WARN "FIXME unsupported pixformat_t %d\n", format);
+			WARN("FIXME unsupported pixformat_t %d", format);
 			return VK_FORMAT_UNDEFINED;
 	}
 }
@@ -375,7 +378,7 @@ static size_t CalcImageSize( pixformat_t format, int width, int height, int dept
 		size = (((width + 3) >> 2) * ((height + 3) >> 2) * 16) * depth;
 		break;
 	default:
-		gEngine.Con_Printf(S_ERROR "unsupported pixformat_t %d\n", format);
+		ERR("unsupported pixformat_t %d", format);
 		ASSERT(!"Unsupported format encountered");
 	}
 
@@ -529,7 +532,7 @@ static VkSampler pickSamplerForFlags( texFlags_t flags ) {
 			return tglob.samplers[i].sampler;
 	}
 
-	gEngine.Con_Printf(S_ERROR "Couldn't find/allocate sampler for flags %x\n", flags);
+	ERR("Couldn't find/allocate sampler for flags %x", flags);
 	return tglob.default_sampler_fixme;
 }
 
@@ -542,7 +545,7 @@ static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers,
 	for (int i = 0; i < num_layers; ++i) {
 		// FIXME create empty black texture if there's no buffer
 		if (!layers[i]->buffer) {
-			gEngine.Con_Printf(S_ERROR "Texture %s layer %d missing buffer\n", tex->name, i);
+			ERR("Texture %s layer %d missing buffer", tex->name, i);
 			return false;
 		}
 
@@ -550,18 +553,18 @@ static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers,
 			continue;
 
 		if (layers[0]->type != layers[i]->type) {
-			gEngine.Con_Printf(S_ERROR "Texture %s layer %d has type %d inconsistent with layer 0 type %d\n", tex->name, i, layers[i]->type, layers[0]->type);
+			ERR("Texture %s layer %d has type %d inconsistent with layer 0 type %d", tex->name, i, layers[i]->type, layers[0]->type);
 			return false;
 		}
 
 		if (layers[0]->width != layers[i]->width || layers[0]->height != layers[i]->height) {
-			gEngine.Con_Printf(S_ERROR "Texture %s layer %d has resolution %dx%d inconsistent with layer 0 resolution %dx%d\n",
+			ERR("Texture %s layer %d has resolution %dx%d inconsistent with layer 0 resolution %dx%d",
 				tex->name, i, layers[i]->width, layers[i]->height, layers[0]->width, layers[0]->height);
 			return false;
 		}
 
 		if ((layers[0]->flags ^ layers[i]->flags) & IMAGE_HAS_ALPHA) {
-			gEngine.Con_Printf(S_ERROR "Texture %s layer %d has_alpha=%d inconsistent with layer 0 has_alpha=%d\n",
+			ERR("Texture %s layer %d has_alpha=%d inconsistent with layer 0 has_alpha=%d",
 				tex->name, i,
 				!!(layers[i]->flags & IMAGE_HAS_ALPHA),
 				!!(layers[0]->flags & IMAGE_HAS_ALPHA));
@@ -572,7 +575,7 @@ static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers,
 	tex->height = layers[0]->height;
 	mipCount = CalcMipmapCount( tex, true);
 
-	gEngine.Con_Reportf("Uploading texture %s, mips=%d, layers=%d\n", tex->name, mipCount, num_layers);
+	DEBUG("Uploading texture %s, mips=%d, layers=%d", tex->name, mipCount, num_layers);
 
 	// TODO this vvv
 	// // NOTE: only single uncompressed textures can be resamples, no mips, no layers, no sides
@@ -753,7 +756,7 @@ const char*	VK_TextureName( unsigned int texnum )
 
 const byte*	VK_TextureData( unsigned int texnum )
 {
-	gEngine.Con_Printf(S_WARN "VK FIXME: %s\n", __FUNCTION__);
+	PRINT_NOT_IMPLEMENTED_ARGS("texnum=%d", texnum);
 	// We don't store original texture data
 	// TODO do we need to?
 	return NULL;
@@ -821,19 +824,19 @@ int	XVK_LoadTextureReplace( const char *name, const byte *buf, size_t size, int 
 
 int	VK_CreateTexture( const char *name, int width, int height, const void *buffer, texFlags_t flags )
 {
-	gEngine.Con_Printf("VK FIXME: %s\n", __FUNCTION__);
+	PRINT_NOT_IMPLEMENTED_ARGS("name=%s width=%d height=%d buffer=%p flags=%08x", name, width, height, buffer, flags);
 	return 0;
 }
 
 int	VK_LoadTextureArray( const char **names, int flags )
 {
-	gEngine.Con_Printf("VK FIXME: %s\n", __FUNCTION__);
+	PRINT_NOT_IMPLEMENTED();
 	return 0;
 }
 
 int	VK_CreateTextureArray( const char *name, int width, int height, int depth, const void *buffer, texFlags_t flags )
 {
-	gEngine.Con_Printf("VK FIXME: %s\n", __FUNCTION__);
+	PRINT_NOT_IMPLEMENTED_ARGS("name=%s width=%d height=%d buffer=%p flags=%08x", name, width, height, buffer, flags);
 	return 0;
 }
 
@@ -853,7 +856,7 @@ void VK_FreeTexture( unsigned int texnum ) {
 	// debug
 	if( !tex->name[0] )
 	{
-		gEngine.Con_Printf( S_ERROR "GL_DeleteTexture: trying to free unnamed texture with index %u\n", texnum );
+		ERR("VK_FreeTexture: trying to free unnamed texture with index %u", texnum );
 		return;
 	}
 
@@ -945,7 +948,7 @@ int XVK_TextureLookupF( const char *fmt, ...) {
 	va_end( argptr );
 
 	tex_id = VK_FindTexture(buffer);
-	//gEngine.Con_Reportf("Looked up texture %s -> %d\n", buffer, tex_id);
+	//DEBUG("Looked up texture %s -> %d", buffer, tex_id);
 	return tex_id;
 }
 
@@ -1018,7 +1021,7 @@ static qboolean loadSkybox( const char *prefix, int style ) {
 
 	// release old skybox
 	unloadSkybox();
-	gEngine.Con_DPrintf( "SKY:  " );
+	DEBUG( "SKY:  " );
 
 	for( i = 0; i < 6; i++ ) {
 		char sidename[MAX_STRING];
@@ -1037,7 +1040,7 @@ static qboolean loadSkybox( const char *prefix, int style ) {
 				img_flags |= IMAGE_FORCE_RGBA;
 			gEngine.Image_Process( &sides[i], 0, 0, img_flags, 0.f );
 		}
-		gEngine.Con_DPrintf( "%s%s%s", prefix, g_skybox_info[i].suffix, i != 5 ? ", " : ". " );
+		DEBUG( "%s%s%s", prefix, g_skybox_info[i].suffix, i != 5 ? ", " : ". " );
 	}
 
 	if( i != 6 )
@@ -1055,10 +1058,10 @@ cleanup:
 
 	if (success) {
 		tglob.fCustomSkybox = true;
-		gEngine.Con_DPrintf( "done\n" );
+		DEBUG( "Skybox done" );
 	} else {
 		tglob.skybox_cube.name[0] = '\0';
-		gEngine.Con_DPrintf( "^2failed\n" );
+		ERR( "Skybox failed" );
 		unloadSkybox();
 	}
 
@@ -1094,7 +1097,7 @@ void XVK_SetupSky( const char *skyboxname ) {
 	}
 
 	if (Q_stricmp(skyboxname, skybox_default) != 0) {
-		gEngine.Con_Reportf( S_WARN "missed or incomplete skybox '%s'\n", skyboxname );
+		WARN("missed or incomplete skybox '%s'", skyboxname);
 		XVK_SetupSky( "desert" ); // force to default
 	}
 }

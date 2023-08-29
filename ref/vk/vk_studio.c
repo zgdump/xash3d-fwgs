@@ -11,6 +11,7 @@
 #include "r_speeds.h"
 #include "vk_studio_model.h"
 #include "vk_entity_data.h"
+#include "vk_logs.h"
 
 #include "xash3d_mathlib.h"
 #include "const.h"
@@ -27,6 +28,7 @@
 #include <stdlib.h>
 
 #define MODULE_NAME "studio"
+#define LOG_MODULE LogModule_Studio
 
 #define EVENT_CLIENT	5000	// less than this value it's a server-side studio events
 #define MAX_LOCALLIGHTS	4
@@ -2105,7 +2107,7 @@ static qboolean studioSubmodelRenderInit(r_studio_submodel_render_t *render_subm
 	// TODO can be coalesced into a single allocation for the entire model
 	const r_geometry_range_t geometry = R_GeometryRangeAlloc(vertex_count, index_count);
 	if (geometry.block_handle.size == 0) {
-		gEngine.Con_Printf(S_ERROR "Unable to allocate %d vertices %d indices for submodel %s\n",
+		ERR("Unable to allocate %d vertices %d indices for submodel %s",
 			vertex_count, index_count, submodel->name);
 		return false;
 	}
@@ -2139,7 +2141,7 @@ static qboolean studioSubmodelRenderInit(r_studio_submodel_render_t *render_subm
 		.geometries_count = submodel->nummesh,
 		.dynamic = is_dynamic,
 	})) {
-		gEngine.Con_Printf(S_ERROR "Unable to create render model for studio submodel %s", submodel->name);
+		ERR("Unable to create render model for studio submodel %s", submodel->name);
 		Mem_Free(geometries);
 		// FIXME everything else leaks ;_;
 		// FIXME sync up with staging and free
@@ -2201,11 +2203,11 @@ static r_studio_entity_model_t *studioEntityModelGet(const cl_entity_t* entity) 
 
 	entmodel = studioEntityModelCreate(entity);
 	if (!entmodel) {
-		gEngine.Con_Printf(S_ERROR "Cannot create studio entity model for %s\n", entity->model->name);
+		ERR("Cannot create studio entity model for %s", entity->model->name);
 		return NULL;
 	}
 
-	gEngine.Con_Reportf("Created studio entity %p model %s: %p (bodyparts=%d)\n",
+	DEBUG("Created studio entity %p model %s: %p (bodyparts=%d)",
 		entity, entity->model->name, entmodel, entmodel->bodyparts_count);
 
 	VK_EntityDataSet(entity, entmodel, &studioEntityModelDestroy);
@@ -2249,7 +2251,7 @@ static void R_StudioDrawPoints( void ) {
 	if (!render_submodel || render_submodel->_.info->submodel_key != m_pSubModel) {
 		if (render_submodel) {
 			// This does happen in practice a lot. Shouldn't be a warning.
-			// gEngine.Con_Reportf(S_WARN "Detected bodypart submodel change from %s to %s for model %s entity %p(%d)\n", render_submodel->_.info->submodel_key->name, m_pSubModel->name, m_pStudioHeader->name, RI.currententity, RI.currententity->index);
+			DEBUG("Detected bodypart submodel change from %s to %s for model %s entity %p(%d)", render_submodel->_.info->submodel_key->name, m_pSubModel->name, m_pStudioHeader->name, RI.currententity, RI.currententity->index);
 
 			studioSubmodelRenderModelRelease(render_submodel);
 			render_submodel = g_studio_current.entmodel->bodyparts[g_studio_current.bodypart_index] = NULL;
@@ -2257,7 +2259,7 @@ static void R_StudioDrawPoints( void ) {
 
 		r_studio_submodel_info_t *const subinfo = studioModelFindSubmodelInfo();
 		if (!subinfo) {
-			gEngine.Con_Printf(S_ERROR "Submodel %s info not found for model %s, this should be impossible\n", m_pSubModel->name, m_pStudioHeader->name);
+			ERR("Submodel %s info not found for model %s, this should be impossible", m_pSubModel->name, m_pStudioHeader->name);
 			return;
 		}
 
@@ -2270,14 +2272,14 @@ static void R_StudioDrawPoints( void ) {
 
 	if (!render_submodel->geometries) {
 		if (!studioSubmodelRenderInit(render_submodel, m_pSubModel, is_dynamic)) {
-			gEngine.Con_Printf(S_ERROR "Unable to init studio submodel for %s/%d\n", RI.currentmodel->name, g_studio_current.bodypart_index);
+			ERR("Unable to init studio submodel for %s/%d", RI.currentmodel->name, g_studio_current.bodypart_index);
 			return;
 		}
 
-		gEngine.Con_Reportf("Initialized studio submodel for %s // %s\n", RI.currentmodel->name, render_submodel->_.info->submodel_key->name);
+		DEBUG("Initialized studio submodel for %s // %s", RI.currentmodel->name, render_submodel->_.info->submodel_key->name);
 	} else if (is_dynamic) {
 		if (!studioSubmodelRenderUpdate(render_submodel, m_pSubModel)) {
-			gEngine.Con_Printf(S_ERROR "Unable to update studio submodel for %s/%d\n", RI.currentmodel->name, g_studio_current.bodypart_index);
+			ERR("Unable to update studio submodel for %s/%d", RI.currentmodel->name, g_studio_current.bodypart_index);
 			return;
 		}
 	}
