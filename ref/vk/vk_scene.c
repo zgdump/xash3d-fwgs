@@ -30,6 +30,8 @@
 #include <stdlib.h> // qsort
 #include <memory.h>
 
+#define LOG_MODULE LogModule_Misc
+
 #define PROFILER_SCOPES(X) \
 	X(scene_render, "VK_SceneRender"); \
 	X(draw_viewmodel, "draw viewmodel"); \
@@ -111,14 +113,14 @@ static void preloadModels( void ) {
 	const int num_models = gEngine.EngineGetParm( PARM_NUMMODELS, 0 );
 
 	// Load all models at once
-	gEngine.Con_Reportf( "Num models: %d:\n", num_models );
+	DEBUG( "Num models: %d:", num_models );
 	for( int i = 0; i < num_models; i++ )
 	{
 		model_t	*m;
 		if(( m = gEngine.pfnGetModelByIndex( i + 1 )) == NULL )
 			continue;
 
-		gEngine.Con_Reportf( "  %d: name=%s, type=%d, submodels=%d, nodes=%d, surfaces=%d, nummodelsurfaces=%d\n", i, m->name, m->type, m->numsubmodels, m->numnodes, m->numsurfaces, m->nummodelsurfaces);
+		DEBUG( "  %d: name=%s, type=%d, submodels=%d, nodes=%d, surfaces=%d, nummodelsurfaces=%d", i, m->name, m->type, m->numsubmodels, m->numnodes, m->numsurfaces, m->nummodelsurfaces);
 
 		switch (m->type) {
 			case mod_brush:
@@ -160,7 +162,7 @@ static void loadMap(const model_t* const map) {
 }
 
 static void reloadPatches( void ) {
-	gEngine.Con_Printf("Reloading patches and materials\n");
+	INFO("Reloading patches and materials");
 
 	R_VkStagingFlushSync();
 
@@ -235,7 +237,7 @@ void R_NewMap( void ) {
 	// and this R_NewMap call is from within loading of a saved game.
 	const qboolean is_save_load = !!gEngine.pfnGetModelByIndex( 1 )->cache.data;
 
-	gEngine.Con_Reportf( "R_NewMap, loading save: %d\n", is_save_load );
+	INFO( "R_NewMap, loading save: %d", is_save_load );
 
 	// Skip clearing already loaded data if the map hasn't changed.
 	if (is_save_load)
@@ -588,7 +590,7 @@ static void drawEntity( cl_entity_t *ent, int render_mode )
 				for (int i = 0; i < g_map_entities.func_walls_count; ++i) {
 					xvk_mapent_func_wall_t *const fw = g_map_entities.func_walls + i;
 					if (Q_strcmp(ent->model->name, fw->model) == 0) {
-						/* gEngine.Con_Reportf("ent->index=%d (%s) mapent:%d off=%f %f %f\n", */
+						/* DEBUG("ent->index=%d (%s) mapent:%d off=%f %f %f", */
 						/* 		ent->index, ent->model->name, fw->entity_index, */
 						/* 		fw->origin[0], fw->origin[1], fw->origin[2]); */
 						Matrix3x4_LoadIdentity(model);
@@ -719,7 +721,7 @@ void CL_AddCustomBeam( cl_entity_t *pEnvBeam )
 {
 	if( g_lists.draw_list->num_beam_entities >= ARRAYSIZE(g_lists.draw_list->beam_entities) )
 	{
-		gEngine.Con_Printf( S_ERROR "Too many beams %d!\n", g_lists.draw_list->num_beam_entities );
+		ERR("Too many beams %d!", g_lists.draw_list->num_beam_entities );
 		return;
 	}
 

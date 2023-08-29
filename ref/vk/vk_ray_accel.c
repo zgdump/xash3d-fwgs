@@ -9,12 +9,11 @@
 #include "vk_math.h"
 #include "vk_geometry.h"
 #include "vk_render.h"
+#include "vk_logs.h"
 
 #include "xash3d_mathlib.h"
 
-#ifndef ARRAYSIZE
-#define ARRAYSIZE(p)	(sizeof(p)/sizeof(p[0]))
-#endif // #ifndef ARRAYSIZE
+#define LOG_MODULE LogModule_RT
 
 #define MODULE_NAME "accel"
 
@@ -81,7 +80,7 @@ static VkAccelerationStructureKHR createAccel(const char *name, VkAccelerationSt
 	const alo_block_t block = aloPoolAllocate(g_accel.accels_buffer_alloc, size, /*TODO why? align=*/256);
 
 	if (block.offset == ALO_ALLOC_FAILED) {
-		gEngine.Con_Printf(S_ERROR "Failed to allocated %u bytes for blas \"%s\"\n", size, name);
+		ERR("Failed to allocated %u bytes for blas \"%s\"", size, name);
 		return VK_NULL_HANDLE;
 	}
 
@@ -123,13 +122,13 @@ static qboolean buildAccel(VkBuffer geometry_buffer, VkAccelerationStructureBuil
 			VK_PIPELINE_STAGE_TRANSFER_BIT,
 			//VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
 			VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR | VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
-			0, 0, NULL, ARRAYSIZE(bmb), bmb, 0, NULL);
+			0, 0, NULL, COUNTOF(bmb), bmb, 0, NULL);
 	}
 
-	//gEngine.Con_Reportf("sratch offset = %d, req=%d\n", g_accel.frame.scratch_offset, scratch_buffer_size);
+	//gEngine.Con_Reportf("sratch offset = %d, req=%d", g_accel.frame.scratch_offset, scratch_buffer_size);
 
 	if (MAX_SCRATCH_BUFFER < g_accel.frame.scratch_offset + scratch_buffer_size) {
-		gEngine.Con_Printf(S_ERROR "Scratch buffer overflow: left %u bytes, but need %u\n",
+		ERR("Scratch buffer overflow: left %u bytes, but need %u",
 			MAX_SCRATCH_BUFFER - g_accel.frame.scratch_offset,
 			scratch_buffer_size);
 		return false;
@@ -141,7 +140,7 @@ static qboolean buildAccel(VkBuffer geometry_buffer, VkAccelerationStructureBuil
 	g_accel.frame.scratch_offset += scratch_buffer_size;
 	g_accel.frame.scratch_offset = ALIGN_UP(g_accel.frame.scratch_offset, vk_core.physical_device.properties_accel.minAccelerationStructureScratchOffsetAlignment);
 
-	//gEngine.Con_Reportf("AS=%p, n_geoms=%u, scratch: %#x %d %#x\n", *args->p_accel, args->n_geoms, scratch_offset_initial, scratch_buffer_size, scratch_offset_initial + scratch_buffer_size);
+	//gEngine.Con_Reportf("AS=%p, n_geoms=%u, scratch: %#x %d %#x", *args->p_accel, args->n_geoms, scratch_offset_initial, scratch_buffer_size, scratch_offset_initial + scratch_buffer_size);
 
 	g_accel.stats.accels_built++;
 
@@ -188,7 +187,7 @@ qboolean createOrUpdateAccelerationStructure(vk_combuf_t *combuf, const as_build
 		if (args->inout_size)
 			*args->inout_size = build_size.accelerationStructureSize;
 
-		// gEngine.Con_Reportf("AS=%p, n_geoms=%u, build: %#x %d %#x\n", *args->p_accel, args->n_geoms, buffer_offset, asci.size, buffer_offset + asci.size);
+		// gEngine.Con_Reportf("AS=%p, n_geoms=%u, build: %#x %d %#x", *args->p_accel, args->n_geoms, buffer_offset, asci.size, buffer_offset + asci.size);
 	}
 
 	// If not enough data for building, just create
@@ -343,7 +342,7 @@ vk_resource_t RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
 		vkCmdPipelineBarrier(combuf->cmdbuf,
 			VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
 			VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-			0, 0, NULL, ARRAYSIZE(bmb), bmb, 0, NULL);
+			0, 0, NULL, COUNTOF(bmb), bmb, 0, NULL);
 	}
 
 	return (vk_resource_t){
@@ -490,14 +489,14 @@ qboolean RT_BlasPreallocate(struct rt_blas_s* blas, rt_blas_preallocate_t args) 
 	};
 
 	const VkAccelerationStructureBuildSizesInfoKHR build_size = getAccelSizes(&build_info, max_prim_counts);
-	gEngine.Con_Reportf("geoms=%d max_prims=%d max_vertex=%d => blas=%dKiB\n",
+	DEBUG("geoms=%d max_prims=%d max_vertex=%d => blas=%dKiB",
 		args.max_geometries, args.max_prims_per_geometry, args.max_vertex_per_geometry, (int)build_size.accelerationStructureSize / 1024);
 
 	qboolean retval = false;
 
 	blas->blas = createAccel(blas->debug_name, VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR, build_size.accelerationStructureSize);
 	if (!blas->blas) {
-		gEngine.Con_Printf(S_ERROR "Couldn't preallocate blas %s\n", blas->debug_name);
+		ERR("Couldn't preallocate blas %s", blas->debug_name);
 		goto finalize;
 	}
 
@@ -609,7 +608,7 @@ qboolean RT_BlasBuild(struct rt_blas_s *blas, const struct vk_render_geometry_s 
 	if (!blas->blas) {
 		blas->blas = createAccel(blas->debug_name, VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR, build_size.accelerationStructureSize);
 		if (!blas->blas) {
-			gEngine.Con_Printf(S_ERROR "Couldn't create vk accel\n");
+			ERR("Couldn't create vk accel");
 			goto finalize;
 		}
 
@@ -617,7 +616,7 @@ qboolean RT_BlasBuild(struct rt_blas_s *blas, const struct vk_render_geometry_s 
 		blas->max_geoms = build_info.geometryCount;
 	} else {
 		if (blas->blas_size < build_size.accelerationStructureSize) {
-			gEngine.Con_Printf(S_ERROR "Fast dynamic BLAS %s size exceeded (need %dKiB, have %dKiB, geoms = %d)\n", blas->debug_name,
+			ERR("Fast dynamic BLAS %s size exceeded (need %dKiB, have %dKiB, geoms = %d)", blas->debug_name,
 				(int)build_size.accelerationStructureSize / 1024,
 				blas->blas_size / 1024,
 				geoms_count
@@ -629,7 +628,7 @@ qboolean RT_BlasBuild(struct rt_blas_s *blas, const struct vk_render_geometry_s 
 	// Build
 	build_info.dstAccelerationStructure = blas->blas;
 	if (!buildAccel(geometry_buffer, &build_info, is_update ? build_size.updateScratchSize : build_size.buildScratchSize, build_ranges)) {
-		gEngine.Con_Printf(S_ERROR "Couldn't build BLAS %s\n", blas->debug_name);
+		ERR("Couldn't build BLAS %s", blas->debug_name);
 		goto finalize;
 	}
 

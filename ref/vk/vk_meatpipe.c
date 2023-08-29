@@ -5,6 +5,9 @@
 
 #include "ray_pass.h"
 #include "vk_common.h"
+#include "vk_logs.h"
+
+#define LOG_MODULE LogModule_Meatpipe
 
 #define MIN(a,b) ((a)<(b)?(a):(b))
 
@@ -47,13 +50,13 @@ const void* curReadPtr(cursor_t *cur, int size) {
 
 #define CUR_ERROR(errmsg, ...) \
 	if (ctx->cur.error) { \
-		gEngine.Con_Printf(S_ERROR "(off=%d left=%d) " errmsg "\n", ctx->cur.off, (ctx->cur.size - ctx->cur.off), ##__VA_ARGS__); \
+		ERR("(off=%d left=%d) " errmsg "", ctx->cur.off, (ctx->cur.size - ctx->cur.off), ##__VA_ARGS__); \
 		goto finalize; \
 	}
 
 #define CUR_ERROR_RETURN(retval, errmsg, ...) \
 	if (ctx->cur.error) { \
-		gEngine.Con_Printf(S_ERROR "(off=%d left=%d) " errmsg "\n", ctx->cur.off, (ctx->cur.size - ctx->cur.off), ##__VA_ARGS__); \
+		ERR("(off=%d left=%d) " errmsg "", ctx->cur.off, (ctx->cur.size - ctx->cur.off), ##__VA_ARGS__); \
 		return retval; \
 	}
 
@@ -103,7 +106,7 @@ static struct ray_pass_s *pipelineLoadCompute(load_context_t *ctx, int i, const 
 	const uint32_t shader_comp = READ_U32_RETURN(NULL, "Couldn't read comp shader for %d %s", i, name);
 
 	if (shader_comp >= ctx->shaders_count) {
-		gEngine.Con_Printf(S_ERROR "Pipeline %s shader index out of bounds %d (count %d)\n", name, shader_comp, ctx->shaders_count);
+		ERR("Pipeline %s shader index out of bounds %d (count %d)", name, shader_comp, ctx->shaders_count);
 		return NULL;
 	}
 
@@ -171,7 +174,7 @@ static qboolean readBindings(load_context_t *ctx, VkDescriptorSetLayoutBinding *
 	const int count = READ_U32("Coulnd't read bindings count");
 
 	if (count > MAX_BINDINGS) {
-		gEngine.Con_Printf(S_ERROR "Too many binding (%d), max: %d\n", count, MAX_BINDINGS);
+		ERR("Too many binding (%d), max: %d", count, MAX_BINDINGS);
 		goto finalize;
 	}
 
@@ -183,7 +186,7 @@ static qboolean readBindings(load_context_t *ctx, VkDescriptorSetLayoutBinding *
 		const uint32_t stages = READ_U32("Couldn't read stages for binding %d", i);
 
 		if (res_index >= ctx->meatpipe.resources_count) {
-			gEngine.Con_Printf(S_ERROR "Resource %d is out of bound %d for binding %d", res_index, ctx->meatpipe.resources_count, i);
+			ERR("Resource %d is out of bound %d for binding %d", res_index, ctx->meatpipe.resources_count, i);
 			goto finalize;
 		}
 
@@ -200,7 +203,7 @@ static qboolean readBindings(load_context_t *ctx, VkDescriptorSetLayoutBinding *
 			write_from = i;
 
 		if (!write && write_from >= 0) {
-			gEngine.Con_Printf(S_ERROR "Unsorted non-write binding found at %d(%s), writable started at %d\n",
+			ERR("Unsorted non-write binding found at %d(%s), writable started at %d",
 				i, res->name, write_from);
 			goto finalize;
 		}
@@ -223,7 +226,7 @@ static qboolean readBindings(load_context_t *ctx, VkDescriptorSetLayoutBinding *
 		if (create)
 			res->flags |= MEATPIPE_RES_CREATE;
 
-		gEngine.Con_Reportf("Binding %d: %s ds=%d b=%d s=%08x res=%d type=%d write=%d\n",
+		DEBUG("Binding %d: %s ds=%d b=%d s=%08x res=%d type=%d write=%d",
 			i, name, descriptor_set, binding, stages, res_index, res->descriptor_type, write);
 	}
 
@@ -254,10 +257,10 @@ static qboolean readAndCreatePass(load_context_t *ctx, int i) {
 	char name[64];
 	READ_STR(name, "Couldn't read pipeline %d name", i);
 
-	gEngine.Con_Reportf("%d: loading pipeline %s\n", i, name);
+	DEBUG("%d: loading pipeline %s", i, name);
 
 	if (!readBindings(ctx, bindings, pass)) {
-		gEngine.Con_Printf(S_ERROR "Couldn't read bindings for pipeline %s\n", name);
+		ERR("Couldn't read bindings for pipeline %s", name);
 		return false;
 	}
 
@@ -275,7 +278,7 @@ static qboolean readAndCreatePass(load_context_t *ctx, int i) {
 			pass->pass = pipelineLoadRT(ctx, i, name, &layout);
 			break;
 		default:
-			gEngine.Con_Printf(S_ERROR "Unexpected pipeline type %d\n", type);
+			ERR("Unexpected pipeline type %d", type);
 	}
 
 	if (pass->pass)
@@ -307,7 +310,7 @@ static qboolean readResources(load_context_t *ctx) {
 			res->prev_frame_index_plus_1 = READ_U32("Couldn't read resource %d:%s previous frame index", i, res->name);
 		}
 
-		gEngine.Con_Reportf("Resource %d:%s = %08x is_image=%d image_format=%08x count=%d\n",
+		DEBUG("Resource %d:%s = %08x is_image=%d image_format=%08x count=%d",
 			i, res->name, res->descriptor_type, is_image, res->image_format, res->count);
 	}
 
@@ -329,11 +332,11 @@ static qboolean readAndLoadShaders(load_context_t *ctx) {
 		const void *src = READ_PTR(size, "Couldn't read shader %s data", name);
 
 		if (VK_NULL_HANDLE == (ctx->shaders[i] = R_VkShaderLoadFromMem(src, size, name))) {
-			gEngine.Con_Printf(S_ERROR "Failed to load shader %d:%s\n", i, name);
+			ERR("Failed to load shader %d:%s", i, name);
 			goto finalize;
 		}
 
-		gEngine.Con_Reportf("%d: Shader loaded %s\n", i, name);
+		DEBUG("%d: Shader loaded %s", i, name);
 	}
 
 	return true;
@@ -347,7 +350,7 @@ vk_meatpipe_t* R_VkMeatpipeCreateFromFile(const char *filename) {
 	byte* const buf = gEngine.fsapi->LoadFile(filename, &size, false);
 
 	if (!buf) {
-		gEngine.Con_Printf(S_ERROR "Couldn't read \"%s\"\n", filename);
+		ERR("Couldn't read \"%s\"", filename);
 		return NULL;
 	}
 
@@ -363,7 +366,7 @@ vk_meatpipe_t* R_VkMeatpipeCreateFromFile(const char *filename) {
 		const uint32_t magic = READ_U32("Couldn't read magic");
 
 		if (magic != k_meatpipe_magic) {
-			gEngine.Con_Printf(S_ERROR "Meatpipe magic invalid for \"%s\": got %08x expected %08x\n", filename, magic, k_meatpipe_magic);
+			ERR("Meatpipe magic invalid for \"%s\": got %08x expected %08x", filename, magic, k_meatpipe_magic);
 			goto finalize;
 		}
 	}
@@ -390,6 +393,8 @@ vk_meatpipe_t* R_VkMeatpipeCreateFromFile(const char *filename) {
 	ret = Mem_Malloc(vk_core.pool, sizeof(*ret));
 	memcpy(ret, &ctx->meatpipe, sizeof(*ret));
 	ctx->meatpipe.resources = NULL;
+
+	INFO("Loaded meatpipe %s with %d passes and %d resources", filename, ret->passes_count, ret->resources_count);
 
 finalize:
 	for (int i = 0; i < ctx->shaders_count; ++i) {

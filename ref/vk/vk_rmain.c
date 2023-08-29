@@ -112,17 +112,11 @@ static void R_InitSkyClouds( struct mip_s *mt, struct texture_s *tx, qboolean cu
 
 extern void GL_SubdivideSurface( msurface_t *fa );
 
-
-static void Mod_LoadAliasModel( model_t *mod, const void *buffer, qboolean *loaded )
-{
-	PRINT_NOT_IMPLEMENTED_ARGS("(%p, %s), %p, %d", mod, mod->name, buffer, *loaded);
-}
-
 static qboolean Mod_ProcessRenderData( model_t *mod, qboolean create, const byte *buffer )
 {
 	qboolean loaded = true;
 
-	gEngine.Con_Reportf("%s(%s, create=%d)\n", __FUNCTION__, mod->name, create);
+	//gEngine.Con_Reportf("%s(%s, create=%d)\n", __FUNCTION__, mod->name, create);
 
 	// TODO does this ever happen?
 	if (!create && mod->type == mod_brush)
@@ -141,7 +135,7 @@ static qboolean Mod_ProcessRenderData( model_t *mod, qboolean create, const byte
 				Mod_LoadSpriteModel( mod, buffer, &loaded, mod->numtexinfo );
 				break;
 			case mod_alias:
-				Mod_LoadAliasModel( mod, buffer, &loaded );
+				// TODO what ARE mod_alias? We just don't know.
 				break;
 			case mod_brush:
 				// This call happens before we get R_NewMap, which frees all current buffers

@@ -11,7 +11,6 @@
 #include "vk_staging.h"
 #include "vk_commandpool.h"
 #include "vk_combuf.h"
-#include "vk_logs.h"
 
 #include "profiler.h"
 #include "r_speeds.h"

@@ -3,13 +3,15 @@
 #include "vk_common.h"
 
 enum {
-	LogModule_Vulkan = (1<<0),
+	LogModule_Misc = (1<<0),
 	LogModule_Textures = (1<<1),
 	LogModule_Brush = (1<<2),
 	LogModule_Lights = (1<<3),
 	LogModule_Studio = (1<<4),
 	LogModule_Patch = (1<<5),
 	LogModule_Material = (1<<6),
+	LogModule_Meatpipe = (1<<7),
+	LogModule_RT = (1<<8),
 };
 
 extern uint32_t g_log_debug_bits;

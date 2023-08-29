@@ -156,7 +156,7 @@ static struct {
 
 } g_lights_bsp = {0};
 
-static void loadRadData( const model_t *map, const char *fmt, ... ) {
+static qboolean loadRadData( const model_t *map, const char *fmt, ... ) {
 	fs_offset_t size;
 	char *data;
 	byte *buffer;
@@ -170,8 +170,8 @@ static void loadRadData( const model_t *map, const char *fmt, ... ) {
 	buffer = gEngine.fsapi->LoadFile( filename, &size, false);
 
 	if (!buffer) {
-		WARN("Couldn't load RAD data from file %s, the map will be completely black", filename);
-		return;
+		DEBUG("Couldn't load RAD data from file %s", filename);
+		return false;
 	}
 
 	DEBUG("Loading RAD data from file %s", filename);
@@ -277,6 +277,7 @@ static void loadRadData( const model_t *map, const char *fmt, ... ) {
 	}
 
 	Mem_Free(buffer);
+	return true;
 }
 
 static void leafAccumPrepare( void ) {
@@ -919,8 +920,10 @@ void RT_LightsLoadBegin( const struct model_s *map ) {
 			name_len -= 4;
 
 		memset(g_lights_.map.emissive_textures, 0, sizeof(g_lights_.map.emissive_textures));
-		loadRadData( map, "maps/lights.rad" );
-		loadRadData( map, "%.*s.rad", name_len, map->name );
+		const qboolean loaded = loadRadData( map, "maps/lights.rad" ) | loadRadData( map, "%.*s.rad", name_len, map->name );
+		if (!loaded) {
+			ERR("No RAD files loaded. The map will be completely black");
+		}
 	}
 
 	// Clear static lights counts
