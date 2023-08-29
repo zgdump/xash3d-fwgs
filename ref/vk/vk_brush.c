@@ -1118,7 +1118,7 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 			continue;
 		}
 
-		//DEBUG("%d: i=%d surf_index=%d patch=%d(%#x) => emissive=(%f,%f,%f)", emissive_surfaces_count, i, surface_index, !!psurf, psurf?psurf->flags:0, emissive[0], emissive[1], emissive[2]);
+		DEBUG("%d: i=%d surf_index=%d tex_id=%d patch=%d(%#x) => emissive=(%f,%f,%f)", emissive_surfaces_count, i, surface_index, tex_id, !!psurf, psurf?psurf->flags:0, emissive[0], emissive[1], emissive[2]);
 
 		if (emissive_surfaces_count == MAX_SURFACE_LIGHTS) {
 			ERR("Too many emissive surfaces for model %s: max=%d", mod->name, MAX_SURFACE_LIGHTS);

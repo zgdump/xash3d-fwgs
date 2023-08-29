@@ -775,6 +775,8 @@ void R_RenderModelDraw(const vk_render_model_t *model, r_model_draw_t args) {
 			.transform = (const matrix3x4*)args.transform,
 			.prev_transform = (const matrix3x4*)args.prev_transform,
 			.color = args.color,
+			.dynamic_polylights = model->dynamic_polylights,
+			.dynamic_polylights_count = model->dynamic_polylights_count,
 			.override = {
 				.textures = args.textures_override,
 				.geoms = model->geometries,

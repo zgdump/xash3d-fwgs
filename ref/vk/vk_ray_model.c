@@ -284,19 +284,12 @@ void RT_FrameAddModel( struct rt_model_s *model, rt_frame_add_model_t args ) {
 		}
 	}
 
-#if 0
-	// TODO needed for brush models only
-	// (? TODO studio models?)
-	for (int i = 0; i < render_model->dynamic_polylights_count; ++i) {
-		rt_light_add_polygon_t *const polylight = render_model->dynamic_polylights + i;
-		polylight->transform_row = (const matrix3x4*)render_model->deprecate.transform;
+	for (int i = 0; i < args.dynamic_polylights_count; ++i) {
+		rt_light_add_polygon_t *const polylight = args.dynamic_polylights + i;
+		polylight->transform_row = (const matrix3x4*)args.transform;
 		polylight->dynamic = true;
 		RT_LightAddPolygon(polylight);
 	}
-
-		/* FIXME move to RT_FrameAddModel if (!uploadKusochkiSubset(model, render_model, render_model->geometries_changed, render_model->geometries_changed_count)) */
-		/* 	return; */
-#endif
 
 	rt_draw_instance_t *const draw_instance = getDrawInstance();
 	if (!draw_instance)

@@ -264,6 +264,8 @@ static qboolean loadRadData( const model_t *map, const char *fmt, ... ) {
 					// See DIRECT_SCALE in qrad/lightmap.c
 					VectorScale(etex->emissive, 0.1f, etex->emissive);
 
+					DEBUG("  texture(%s?, %d) set emissive(%f, %f, %f)", texture_name, tex_id, etex->emissive[0], etex->emissive[1], etex->emissive[2]);
+
 					if (!enabled)
 						DEBUG("rad entry %s disabled due to zero intensity", name);
 				}
