@@ -11,6 +11,7 @@
 #include "vk_staging.h"
 #include "r_speeds.h"
 #include "vk_logs.h"
+#include "vk_framectl.h"
 
 #include "mod_local.h"
 #include "xash3d_mathlib.h"
@@ -1065,6 +1066,11 @@ static void addPolygonLeafSetToClusters(const vk_light_leaf_set_t *leafs, int po
 }
 
 int RT_LightAddPolygon(const rt_light_add_polygon_t *addpoly) {
+	// FIXME We're adding lights directly from vk_brush.c w/o knowing whether current frame is
+	// ray traced. If not, this will break.
+	if (addpoly->dynamic && !vk_frame.rtx_enabled)
+		return -1;
+
 	if (g_lights_.num_polygons == MAX_SURFACE_LIGHTS) {
 		ERR("Max number of polygon lights %d reached", MAX_SURFACE_LIGHTS);
 		return -1;

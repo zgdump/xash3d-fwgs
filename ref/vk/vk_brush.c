@@ -371,6 +371,8 @@ static void fillWaterSurfaces( const cl_entity_t *ent, vk_brush_model_t *bmodel,
 	R_GeometryRangeUnlock( &geom_lock );
 }
 
+static rt_light_add_polygon_t loadPolyLight(const model_t *mod, const int surface_index, const msurface_t *surf, const vec3_t emissive);
+
 static qboolean isSurfaceAnimated( const msurface_t *s, const struct texture_s *base_override ) {
 	const texture_t	*base = base_override ? base_override : s->texinfo->texture;
 
@@ -668,7 +670,8 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 		// Update animated textures
 		int updated_textures_count = 0;
 		for (int i = 0; i < bmodel->animated_indexes_count; ++i) {
-			vk_render_geometry_t *geom = bmodel->render_model.geometries + bmodel->animated_indexes[i];
+			const int geom_index = bmodel->animated_indexes[i];
+			vk_render_geometry_t *geom = bmodel->render_model.geometries + geom_index;
 			const int surface_index = geom->surf_deprecate - mod->surfaces;
 			const xvk_patch_surface_t *const patch_surface = R_VkPatchGetSurface(surface_index);
 
@@ -682,6 +685,17 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 				if (updated_textures_count < MAX_ANIMATED_TEXTURES) {
 					g_brush.updated_textures[updated_textures_count++] = bmodel->animated_indexes[i];
 				}
+			}
+
+			// Animated textures can be emissive
+			// Add them as dynamic lights for now. It would probably be better if they were static lights (for worldmodel),
+			// but there's no easy way to do it for now.
+			vec3_t *emissive = &bmodel->render_model.geometries[geom_index].emissive;
+			if (RT_GetEmissiveForTexture(*emissive, geom->texture)) {
+				rt_light_add_polygon_t polylight = loadPolyLight(mod, surface_index, geom->surf_deprecate, *emissive);
+				polylight.dynamic = true;
+				polylight.transform_row = (const matrix3x4*)&transform;
+				RT_LightAddPolygon(&polylight);
 			}
 		}
 
