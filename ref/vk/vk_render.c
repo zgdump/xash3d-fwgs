@@ -679,6 +679,13 @@ qboolean R_RenderModelUpdate( const vk_render_model_t *model ) {
 	return RT_ModelUpdate(model->rt_model, model->geometries, model->num_geometries);
 }
 
+qboolean R_RenderModelUpdateMaterials( const vk_render_model_t *model, const int *geom_indices, int geom_indices_count) {
+	if (!model->rt_model)
+		return true;
+
+	return RT_ModelUpdateMaterials(model->rt_model, model->geometries, model->num_geometries, geom_indices, geom_indices_count);
+}
+
 static void uboComputeAndSetMVPFromModel( const matrix4x4 model ) {
 	matrix4x4 mvp;
 	Matrix4x4_Concat(mvp, g_render_state.projection_view, model);

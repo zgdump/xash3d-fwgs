@@ -177,6 +177,7 @@ void RT_KusochkiFree(const rt_kusochki_t *kusochki) {
 	PRINT_NOT_IMPLEMENTED();
 }
 
+// TODO this function can't really fail. It'd mean that staging is completely broken.
 qboolean RT_KusochkiUpload(uint32_t kusochki_offset, const struct vk_render_geometry_s *geoms, int geoms_count, int override_texture_id, const vec4_t *override_colors) {
 	const vk_staging_buffer_args_t staging_args = {
 		.buffer = g_ray_model_state.kusochki_buffer.buffer,
@@ -253,9 +254,39 @@ void RT_ModelDestroy(struct rt_model_s* model) {
 }
 
 qboolean RT_ModelUpdate(struct rt_model_s *model, const struct vk_render_geometry_s *geometries, int geometries_count) {
-	// TODO some updates, which change geometry location, textures, etc, might need kusochki update too
-	// TODO mark it with a flag or something
 	return RT_BlasBuild(model->blas, geometries, geometries_count);
+}
+
+qboolean RT_ModelUpdateMaterials(struct rt_model_s *model, const struct vk_render_geometry_s *geometries, int geometries_count, const int *geom_indices, int geom_indices_count) {
+	if (!geom_indices_count)
+		return true;
+
+	int begin = 0;
+	for (int i = 1; i < geom_indices_count; ++i) {
+		const int geom_index = geom_indices[i];
+		ASSERT(geom_index >= 0);
+		ASSERT(geom_index < geometries_count);
+
+		if (geom_indices[i - 1] + 1 != geom_index) {
+			const int offset = geom_indices[begin];
+			const int count = i - begin;
+			ASSERT(offset + count <= geometries_count);
+			if (!RT_KusochkiUpload(model->kusochki.offset + offset, geometries + offset, count, -1, NULL))
+				return false;
+
+			begin = i;
+		}
+	}
+
+	{
+		const int offset = geom_indices[begin];
+		const int count = geom_indices_count - begin;
+		ASSERT(offset + count <= geometries_count);
+		if (!RT_KusochkiUpload(model->kusochki.offset + offset, geometries + offset, count, -1, NULL))
+			return false;
+	}
+
+	return true;
 }
 
 rt_draw_instance_t *getDrawInstance(void) {
@@ -411,6 +442,5 @@ void RT_FrameAddOnce( rt_frame_add_once_t args ) {
 		Vector4Copy(*args.color, dyn->colors[dyn->geometries_count]);
 		dyn->geometries[dyn->geometries_count++] = args.geometries[i];
 	}
-
 }
 

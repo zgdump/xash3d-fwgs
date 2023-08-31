@@ -136,6 +136,7 @@ qboolean R_RenderModelCreate( vk_render_model_t *model, vk_render_model_init_t a
 void R_RenderModelDestroy( vk_render_model_t* model );
 
 qboolean R_RenderModelUpdate( const vk_render_model_t *model );
+qboolean R_RenderModelUpdateMaterials( const vk_render_model_t *model, const int *geom_indices, int geom_indices_count);
 
 typedef struct {
 	vk_render_type_e render_type;

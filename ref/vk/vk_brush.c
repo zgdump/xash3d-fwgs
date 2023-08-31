@@ -1090,6 +1090,7 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 		vec3_t emissive;
 	} emissive_surface_t;
 	emissive_surface_t emissive_surfaces[MAX_SURFACE_LIGHTS];
+	int geom_indices[MAX_SURFACE_LIGHTS];
 	int emissive_surfaces_count = 0;
 
 	// Load list of all emissive surfaces
@@ -1172,9 +1173,17 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 		}
 
 		// Assign the emissive value to the right geometry
-		VectorCopy(polylight.emissive, bmodel->render_model.geometries[bmodel->surface_to_geometry_index[s->model_surface_index]].emissive);
+		const int geom_index = bmodel->surface_to_geometry_index[s->model_surface_index];
+		geom_indices[i] = geom_index;
+		VectorCopy(polylight.emissive, bmodel->render_model.geometries[geom_index].emissive);
 	}
 
-	if (emissive_surfaces_count > 0)
+	if (emissive_surfaces_count > 0) {
+		// Update emissive values in kusochki. This is required because initial VK_BrushModelLoad happens before we've read
+		// RAD data in vk_light.c, so the emissive values are empty. This is the place and time where we actually get to
+		// know them, so let's fixup things.
+		// TODO minor optimization: sort geom_indices to have a better chance for them to be sequential
+		R_RenderModelUpdateMaterials(&bmodel->render_model, geom_indices, emissive_surfaces_count);
 		INFO("Loaded %d polylights for %s model %s", emissive_surfaces_count, is_static ? "static" : "movable", mod->name);
+	}
 }
