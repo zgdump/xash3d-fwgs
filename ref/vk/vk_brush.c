@@ -73,6 +73,9 @@ static struct {
 	// Therefore, we need to track them manually and destroy them based on some other external event, e.g. Mod_ProcessRenderData(worldmodel)
 	vk_brush_model_t *models[MAX_MODELS];
 	int models_count;
+
+#define MAX_ANIMATED_TEXTURES 256
+	int updated_textures[MAX_ANIMATED_TEXTURES];
 } g_brush;
 
 void VK_InitRandomTable( void )
@@ -502,9 +505,6 @@ static void brushDrawWater(vk_brush_model_t *bmodel, const cl_entity_t *ent, int
 		.color = (const vec4_t*)color,
 		.transform = (const matrix4x4*)transform,
 		.prev_transform = &bmodel->prev_transform,
-
-		.geometries_changed = NULL,
-		.geometries_changed_count = 0,
 	});
 }
 
@@ -666,6 +666,7 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 		}
 	} else {
 		// Update animated textures
+		int updated_textures_count = 0;
 		for (int i = 0; i < bmodel->animated_indexes_count; ++i) {
 			vk_render_geometry_t *geom = bmodel->render_model.geometries + bmodel->animated_indexes[i];
 			const int surface_index = geom->surf_deprecate - mod->surfaces;
@@ -674,8 +675,18 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 			// Optionally patch by texture_s pointer and run animations
 			const struct texture_s *texture_override = patch_surface ? patch_surface->tex : NULL;
 			const texture_t *t = R_TextureAnimation(ent, geom->surf_deprecate, texture_override);
-			if (t->gl_texturenum >= 0)
+			const int new_texture = t->gl_texturenum;
+
+			if (new_texture >= 0 && new_texture != geom->texture) {
 				geom->texture = t->gl_texturenum;
+				if (updated_textures_count < MAX_ANIMATED_TEXTURES) {
+					g_brush.updated_textures[updated_textures_count++] = bmodel->animated_indexes[i];
+				}
+			}
+		}
+
+		if (updated_textures_count > 0) {
+			R_RenderModelUpdateMaterials(&bmodel->render_model, g_brush.updated_textures, updated_textures_count);
 		}
 	}
 
@@ -684,9 +695,6 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 		.color = &color,
 		.transform = &transform,
 		.prev_transform = &bmodel->prev_transform,
-
-		.geometries_changed = bmodel->animated_indexes,
-		.geometries_changed_count = bmodel->animated_indexes_count,
 	});
 
 	Matrix4x4_Copy(bmodel->prev_transform, transform);
@@ -723,6 +731,8 @@ static model_sizes_t computeSizes( const model_t *mod ) {
 		sizes.num_vertices += surf->numedges;
 		sizes.num_indices += 3 * (surf->numedges - 1);
 	}
+
+	DEBUG("Computed sizes for brush model \"%s\": num_surfaces=%d num_vertices=%d num_indices=%d max_texture_id=%d water_surfaces=%d animated_count=%d water_vertices=%d water_indices=%d", mod->name, sizes.num_surfaces, sizes.num_vertices, sizes.num_indices, sizes.max_texture_id, sizes.water_surfaces, sizes.animated_count, sizes.water_vertices, sizes.water_indices);
 
 	return sizes;
 }
@@ -930,6 +940,10 @@ static qboolean createRenderModel( const model_t *mod, vk_brush_model_t *bmodel,
 	bmodel->surface_to_geometry_index = Mem_Malloc(vk_core.pool, sizeof(int) * mod->nummodelsurfaces);
 	bmodel->animated_indexes = Mem_Malloc(vk_core.pool, sizeof(int) * sizes.animated_count);
 	bmodel->animated_indexes_count = sizes.animated_count;
+
+	if (sizes.animated_count > MAX_ANIMATED_TEXTURES) {
+		WARN("Too many animated textures %d for model \"%s\" some surfaces can be static", sizes.animated_count, mod->name);
+	}
 
 	const r_geometry_range_lock_t geom_lock = R_GeometryRangeLock(&bmodel->geometry);
 

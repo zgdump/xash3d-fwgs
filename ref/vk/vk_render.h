@@ -145,10 +145,6 @@ typedef struct {
 	const vec4_t *color;
 	const matrix4x4 *transform, *prev_transform;
 
-	// These are expected to be alive and valid until frame end at least
-	int geometries_changed_count;
-	int *geometries_changed;
-
 	// Global texture override if > 0
 	// Used by sprite+quad instancing
 	int textures_override;

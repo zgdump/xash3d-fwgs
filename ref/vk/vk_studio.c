@@ -2299,8 +2299,6 @@ static void R_StudioDrawPoints( void ) {
 		.color = &color,
 		.transform = &g_studio_current.entmodel->transform,
 		.prev_transform = &g_studio_current.entmodel->prev_transform,
-		.geometries_changed = NULL,
-		.geometries_changed_count = 0,
 		.textures_override = -1,
 	});
 
