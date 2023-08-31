@@ -2,6 +2,7 @@
 
 #include "vk_core.h"
 #include "vk_devmem.h"
+#include "r_flipping.h"
 #include "alolcator.h"
 
 typedef struct vk_buffer_s {
@@ -16,18 +17,6 @@ qboolean VK_BufferCreate(const char *debug_name, vk_buffer_t *buf, uint32_t size
 void VK_BufferDestroy(vk_buffer_t *buf);
 
 VkDeviceAddress R_VkBufferGetDeviceAddress(VkBuffer buffer);
-
-
-typedef struct {
-	alo_ring_t ring;
-	uint32_t frame_offsets[2];
-} r_flipping_buffer_t;
-
-void R_FlippingBuffer_Init(r_flipping_buffer_t *flibuf, uint32_t size);
-void R_FlippingBuffer_Clear(r_flipping_buffer_t *flibuf);
-uint32_t R_FlippingBuffer_Alloc(r_flipping_buffer_t* flibuf, uint32_t size, uint32_t align);
-void R_FlippingBuffer_Flip(r_flipping_buffer_t* flibuf);
-
 
 typedef struct {
 	r_flipping_buffer_t dynamic;

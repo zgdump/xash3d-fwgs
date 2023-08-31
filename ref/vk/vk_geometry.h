@@ -1,5 +1,6 @@
 #pragma once
 #include "vk_common.h"
+#include "r_block.h"
 #include "vk_core.h"
 
 #include <stdint.h>
@@ -26,6 +27,35 @@ typedef struct vk_vertex_s {
 
 typedef struct {
 	struct {
+		int count, unit_offset;
+	} vertices;
+
+	struct {
+		int count, unit_offset;
+	} indices;
+
+	r_block_t block_handle;
+} r_geometry_range_t;
+
+// Allocates a range in geometry buffer with a long lifetime
+r_geometry_range_t R_GeometryRangeAlloc(int vertices, int indices);
+void R_GeometryRangeFree(const r_geometry_range_t*);
+
+typedef struct {
+	vk_vertex_t *vertices;
+	uint16_t *indices;
+
+	struct {
+		int staging_handle;
+	} impl_;
+} r_geometry_range_lock_t;
+
+// Lock staging memory for uploading
+r_geometry_range_lock_t R_GeometryRangeLock(const r_geometry_range_t *range);
+void R_GeometryRangeUnlock(const r_geometry_range_lock_t *lock);
+
+typedef struct {
+	struct {
 		vk_vertex_t *ptr;
 		int count;
 		int unit_offset;
@@ -47,9 +77,8 @@ typedef enum {
 	LifetimeSingleFrame
 } r_geometry_lifetime_t;
 
-qboolean R_GeometryBufferAllocAndLock( r_geometry_buffer_lock_t *lock, int vertex_count, int index_count, r_geometry_lifetime_t lifetime );
+qboolean R_GeometryBufferAllocOnceAndLock(r_geometry_buffer_lock_t *lock, int vertex_count, int index_count);
 void R_GeometryBufferUnlock( const r_geometry_buffer_lock_t *lock );
-//void R_VkGeometryBufferFree( int handle );
 
 void R_GeometryBuffer_MapClear( void ); // Free the entire buffer for a new map
 

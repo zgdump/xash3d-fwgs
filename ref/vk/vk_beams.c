@@ -16,6 +16,7 @@
 #include "beamdef.h"
 
 #define NOISE_DIVISIONS	64	// don't touch - many tripmines cause the crash when it equal 128
+#define MODULE_NAME "beams"
 
 typedef struct
 {
@@ -31,7 +32,7 @@ static struct {
 } g_beam;
 
 qboolean R_BeamInit(void) {
-	R_SpeedsRegisterMetric(&g_beam.stats.beams, "beams_count", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_beam.stats.beams, "count", kSpeedsMetricCount);
 	return true;
 }
 
@@ -174,19 +175,14 @@ static void TriBrightness( float brightness ) {
 	TriColor4f( brightness, brightness, brightness, 1.f );
 }
 
-static void R_DrawSegs( vec3_t source, vec3_t delta, float width, float scale, float freq, float speed, int segments, int flags, const vec4_t color, int texture, int render_mode )
+static void R_DrawSegs( vec3_t source, vec3_t delta, float width, float scale, float freq, float speed, int segments, int flags, const vec4_t color )
 {
 	int	noiseIndex, noiseStep;
 	int	i, total_segs, segs_drawn;
 	float	div, length, fraction, factor;
 	float	flMaxWidth, vLast, vStep, brightness;
-	vec3_t	perp1, vLastNormal = {0};
-	beamseg_t	curSeg = {0};
-	int total_vertices = 0;
-	int total_indices = 0;
-	r_geometry_buffer_lock_t buffer;
-	vk_vertex_t *dst_vtx;
-	uint16_t *dst_idx;
+	vec3_t	perp1, vLastNormal;
+	beamseg_t	curSeg;
 
 	if( segments < 2 ) return;
 
@@ -240,17 +236,7 @@ static void R_DrawSegs( vec3_t source, vec3_t delta, float width, float scale, f
 	total_segs = segments;
 	segs_drawn = 0;
 
-	total_vertices = (total_segs - 1) * 2 + 2;
-	total_indices = (total_vertices - 2) * 3; // STRIP unrolled into LIST (TODO get rid of this)
-	ASSERT(total_vertices < UINT16_MAX );
-
-	if (!R_GeometryBufferAllocAndLock( &buffer, total_vertices, total_indices, LifetimeSingleFrame )) {
-		gEngine.Con_Printf(S_ERROR "Cannot allocate geometry for beam\n");
-		return;
-	}
-
-	dst_vtx = buffer.vertices.ptr;
-	dst_idx = buffer.indices.ptr;
+	TriBegin( TRI_TRIANGLE_STRIP );
 
 	// specify all the segments.
 	for( i = 0; i < segments; i++ )
@@ -289,7 +275,7 @@ static void R_DrawSegs( vec3_t source, vec3_t delta, float width, float scale, f
 		nextSeg.width = width * 2.0f;
 		nextSeg.texcoord = vLast;
 
- 		if( segs_drawn > 0 )
+		if( segs_drawn > 0 )
 		{
 			// Get a vector that is perpendicular to us and perpendicular to the beam.
 			// This is used to fatten the beam.
@@ -315,21 +301,15 @@ static void R_DrawSegs( vec3_t source, vec3_t delta, float width, float scale, f
 			VectorMA( curSeg.pos, ( curSeg.width * 0.5f ), vAveNormal, vPoint1 );
 			VectorMA( curSeg.pos, (-curSeg.width * 0.5f ), vAveNormal, vPoint2 );
 
-			dst_vtx->lm_tc[0] = dst_vtx->lm_tc[1] = 0.f;
-			dst_vtx->gl_tc[0] = 0.0f;
-			dst_vtx->gl_tc[1] = curSeg.texcoord;
-			applyBrightness( brightness, dst_vtx->color );
-			VectorCopy( vPoint1, dst_vtx->pos );
-			VectorCopy( vAveNormal, dst_vtx->normal );
-			++dst_vtx;
+			TriTexCoord2f( 0.0f, curSeg.texcoord );
+			TriBrightness( brightness );
+			TriNormal3fv( vAveNormal );
+			TriVertex3fv( vPoint1 );
 
-			dst_vtx->lm_tc[0] = dst_vtx->lm_tc[1] = 0.f;
-			dst_vtx->gl_tc[0] = 1.0f;
-			dst_vtx->gl_tc[1] = curSeg.texcoord;
-			applyBrightness( brightness, dst_vtx->color );
-			VectorCopy( vPoint2, dst_vtx->pos );
-			VectorCopy( vAveNormal, dst_vtx->normal );
-			++dst_vtx;
+			TriTexCoord2f( 1.0f, curSeg.texcoord );
+			TriBrightness( brightness );
+			TriNormal3fv( vAveNormal );
+			TriVertex3fv( vPoint2 );
 		}
 
 		curSeg = nextSeg;
@@ -349,71 +329,29 @@ static void R_DrawSegs( vec3_t source, vec3_t delta, float width, float scale, f
 			brightness = 1.0f - fraction;
 		}
 
- 		if( segs_drawn == total_segs )
+		if( segs_drawn == total_segs )
 		{
 			// draw the last segment
 			VectorMA( curSeg.pos, ( curSeg.width * 0.5f ), vLastNormal, vPoint1 );
 			VectorMA( curSeg.pos, (-curSeg.width * 0.5f ), vLastNormal, vPoint2 );
 
-			dst_vtx->lm_tc[0] = dst_vtx->lm_tc[1] = 0.f;
-			dst_vtx->gl_tc[0] = 0.0f;
-			dst_vtx->gl_tc[1] = curSeg.texcoord;
-			applyBrightness( brightness, dst_vtx->color );
-			VectorCopy( vPoint1, dst_vtx->pos );
-			VectorCopy( vLastNormal, dst_vtx->normal );
-			++dst_vtx;
+			// specify the points.
+			TriTexCoord2f( 0.0f, curSeg.texcoord );
+			TriBrightness( brightness );
+			TriNormal3fv( vLastNormal );
+			TriVertex3fv( vPoint1 );
 
-			dst_vtx->lm_tc[0] = dst_vtx->lm_tc[1] = 0.f;
-			dst_vtx->gl_tc[0] = 1.0f;
-			dst_vtx->gl_tc[1] = curSeg.texcoord;
-			applyBrightness( brightness, dst_vtx->color );
-			VectorCopy( vPoint2, dst_vtx->pos );
-			VectorCopy( vLastNormal, dst_vtx->normal );
-			++dst_vtx;
+			TriTexCoord2f( 1.0f, curSeg.texcoord );
+			TriBrightness( brightness );
+			TriNormal3fv( vLastNormal );
+			TriVertex3fv( vPoint2 );
 		}
 
 		vLast += vStep; // Advance texture scroll (v axis only)
 		noiseIndex += noiseStep;
 	}
 
-	for (int i = 2; i < total_vertices; ++i) {
-		if( i & 1 )
-		{
-			// draw triangle [n-1 n-2 n]
-			dst_idx[(i-2)*3+0] = i - 1;
-			dst_idx[(i-2)*3+1] = i - 2;
-			dst_idx[(i-2)*3+2] = i;
-		}
-		else
-		{
-			// draw triangle [n-2 n-1 n]
-			dst_idx[(i-2)*3+0] = i - 2;
-			dst_idx[(i-2)*3+1] = i - 1;
-			dst_idx[(i-2)*3+2] = i;
-		}
-	}
-
-	R_GeometryBufferUnlock( &buffer );
-
-	{
-		const vk_render_geometry_t geometry = {
-			.texture = texture,
-			.material = kXVkMaterialRegular,
-
-			.max_vertex = total_vertices,
-			.vertex_offset = buffer.vertices.unit_offset,
-
-			.element_count = total_indices,
-			.index_offset = buffer.indices.unit_offset,
-
-			.emissive = { color[0], color[1], color[2] },
-		};
-
-		vk_render_type_e render_type = render_mode == kRenderNormal ? kVkRenderTypeSolid : kVkRenderType_A_1_R;
-		VK_RenderModelDynamicBegin( render_type, color, m_matrix4x4_identity, "beam" /* TODO its name */ );
-		VK_RenderModelDynamicAddGeometry( &geometry );
-		VK_RenderModelDynamicCommit();
-	}
+	TriEndEx(color, "beam segs");
 }
 
 static void R_DrawTorus( vec3_t source, vec3_t delta, float width, float scale, float freq, float speed, int segments, const vec4_t color )
@@ -1144,7 +1082,7 @@ void R_BeamDraw( BEAM *pbeam, float frametime )
 		break;
 	case TE_BEAMPOINTS:
 	case TE_BEAMHOSE:
-		R_DrawSegs( pbeam->source, pbeam->delta, pbeam->width, pbeam->amplitude, pbeam->freq, pbeam->speed, pbeam->segments, pbeam->flags, color, texturenum, render_mode );
+		R_DrawSegs( pbeam->source, pbeam->delta, pbeam->width, pbeam->amplitude, pbeam->freq, pbeam->speed, pbeam->segments, pbeam->flags, color );
 		break;
 	case TE_BEAMFOLLOW:
 		R_DrawBeamFollow( pbeam, frametime, color );

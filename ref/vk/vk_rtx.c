@@ -15,8 +15,8 @@
 #include "vk_ray_internal.h"
 #include "vk_staging.h"
 #include "vk_textures.h"
-#include "vk_previous_frame.h"
 #include "vk_combuf.h"
+#include "vk_logs.h"
 
 #include "alolcator.h"
 
@@ -25,6 +25,8 @@
 #include "xash3d_mathlib.h"
 
 #include <string.h>
+
+#define LOG_MODULE LogModule_RT
 
 #define MAX_FRAMES_IN_FLIGHT 2
 
@@ -135,7 +137,6 @@ void VK_RayFrameBegin( void ) {
 
 	RT_VkAccelFrameBegin();
 	XVK_RayModel_ClearForNextFrame();
-	R_PrevFrame_StartFrame();
 	RT_LightsFrameBegin();
 }
 
@@ -170,18 +171,6 @@ typedef struct {
 
 static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* args) {
 	const VkCommandBuffer cmdbuf = combuf->cmdbuf;
-	// TODO move this to "TLAS producer"
-	g_rtx.res[ExternalResource_tlas].resource = (vk_resource_t){
-		.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
-		.value = (vk_descriptor_value_t){
-			.accel = (VkWriteDescriptorSetAccelerationStructureKHR) {
-				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
-				.accelerationStructureCount = 1,
-				.pAccelerationStructures = &g_accel.tlas,
-				.pNext = NULL,
-			},
-		},
-	};
 
 #define RES_SET_BUFFER(name, type_, source_, offset_, size_) \
 	g_rtx.res[ExternalResource_##name].resource = (vk_resource_t){ \
@@ -278,24 +267,14 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 	}
 
 	DEBUG_BEGIN(cmdbuf, "yay tracing");
-	RT_VkAccelPrepareTlas(combuf);
-	prepareUniformBuffer(args->render_args, args->frame_index, args->fov_angle_y);
 
-	// 4. Barrier for TLAS build
-	{
-		const VkBufferMemoryBarrier bmb[] = { {
-			.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-			.srcAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
-			.dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
-			.buffer = g_accel.accels_buffer.buffer,
-			.offset = 0,
-			.size = VK_WHOLE_SIZE,
-		} };
-		vkCmdPipelineBarrier(cmdbuf,
-			VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-			VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-			0, 0, NULL, ARRAYSIZE(bmb), bmb, 0, NULL);
-	}
+	// Feed tlas with dynamic data
+	RT_DynamicModelProcessFrame();
+
+	// TODO move this to "TLAS producer"
+	g_rtx.res[ExternalResource_tlas].resource = RT_VkAccelPrepareTlas(combuf);
+
+	prepareUniformBuffer(args->render_args, args->frame_index, args->fov_angle_y);
 
 	{ // FIXME this should be done automatically inside meatpipe, TODO
 		//const uint32_t size = sizeof(struct Lights);
@@ -411,7 +390,7 @@ static void reloadMainpipe(void) {
 
 	for (int i = 0; i < newpipe->resources_count; ++i) {
 		const vk_meatpipe_resource_t *mr = newpipe->resources + i;
-		gEngine.Con_Reportf("res %d/%d: %s descriptor=%u count=%d flags=[%c%c] image_format=%u\n",
+		DEBUG("res %d/%d: %s descriptor=%u count=%d flags=[%c%c] image_format=%u",
 			i, newpipe->resources_count, mr->name, mr->descriptor_type, mr->count,
 			(mr->flags & MEATPIPE_RES_WRITE) ? 'W' : ' ',
 			(mr->flags & MEATPIPE_RES_CREATE) ? 'C' : ' ',
@@ -420,7 +399,7 @@ static void reloadMainpipe(void) {
 		const qboolean create = !!(mr->flags & MEATPIPE_RES_CREATE);
 
 		if (create && mr->descriptor_type != VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) {
-			gEngine.Con_Printf(S_ERROR "Only storage image creation is supported for meatpipes\n");
+			ERR("Only storage image creation is supported for meatpipes");
 			goto fail;
 		}
 
@@ -429,7 +408,7 @@ static void reloadMainpipe(void) {
 
 		const int index = create ? getResourceSlotForName(mr->name) : findResource(mr->name);
 		if (index < 0) {
-			gEngine.Con_Printf(S_ERROR "Couldn't find resource/slot for %s\n", mr->name);
+			ERR("Couldn't find resource/slot for %s", mr->name);
 			goto fail;
 		}
 
@@ -476,7 +455,7 @@ static void reloadMainpipe(void) {
 	}
 
 	if (!newpipe_out) {
-		gEngine.Con_Printf(S_ERROR "New rt.json doesn't define an 'dest' output texture\n");
+		ERR("New rt.json doesn't define an 'dest' output texture");
 		goto fail;
 	}
 
@@ -495,7 +474,7 @@ static void reloadMainpipe(void) {
 
 		const int dest_index = findResource(pr->name);
 		if (dest_index < 0) {
-			gEngine.Con_Printf(S_ERROR "Couldn't find prev_ resource/slot %s for resource %s\n", pr->name, mr->name);
+			ERR("Couldn't find prev_ resource/slot %s for resource %s", pr->name, mr->name);
 			goto fail;
 		}
 
@@ -553,7 +532,7 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 	// 	XVK_RayModel_Validate();
 
 	if (g_rtx.reload_pipeline) {
-		gEngine.Con_Printf(S_WARN "Reloading RTX shaders/pipelines\n");
+		WARN("Reloading RTX shaders/pipelines");
 		XVK_CHECK(vkDeviceWaitIdle(vk_core.device));
 
 		reloadMainpipe();
@@ -563,7 +542,7 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 
 	ASSERT(g_rtx.mainpipe_out);
 
-	if (g_ray_model_state.frame.num_models == 0) {
+	if (g_ray_model_state.frame.instances_count == 0) {
 		const r_vkimage_blit_args blit_args = {
 			.in_stage = VK_PIPELINE_STAGE_TRANSFER_BIT,
 			.src = {
@@ -607,6 +586,10 @@ qboolean VK_RayInit( void )
 	if (!RT_VkAccelInit())
 		return false;
 
+	// FIXME shutdown accel
+	if (!RT_DynamicModelInit())
+		return false;
+
 #define REGISTER_EXTERNAL(type, name_) \
 	Q_strncpy(g_rtx.res[ExternalResource_##name_].name, #name_, sizeof(g_rtx.res[0].name)); \
 	g_rtx.res[ExternalResource_##name_].refcount = 1;
@@ -641,7 +624,7 @@ qboolean VK_RayInit( void )
 		return false;
 	}
 
-	if (!VK_BufferCreate("model headers", &g_ray_model_state.model_headers_buffer, sizeof(struct ModelHeader) * MAX_ACCELS,
+	if (!VK_BufferCreate("model headers", &g_ray_model_state.model_headers_buffer, sizeof(struct ModelHeader) * MAX_INSTANCES,
 		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT  | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
 		// FIXME complain, handle
@@ -665,4 +648,5 @@ void VK_RayShutdown( void ) {
 	VK_BufferDestroy(&g_rtx.uniform_buffer);
 
 	RT_VkAccelShutdown();
+	RT_DynamicModelShutdown();
 }

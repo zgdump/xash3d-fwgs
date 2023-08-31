@@ -10,6 +10,8 @@
 #include "profiler.h"
 #include "vk_staging.h"
 #include "r_speeds.h"
+#include "vk_logs.h"
+#include "vk_framectl.h"
 
 #include "mod_local.h"
 #include "xash3d_mathlib.h"
@@ -22,6 +24,9 @@
 #include "camera.h"
 #include "pm_defs.h"
 #include "pmtrace.h"
+
+#define MODULE_NAME "light"
+#define LOG_MODULE LogModule_Lights
 
 #define PROFILER_SCOPES(X) \
 	X(finalize , "RT_LightsFrameEnd"); \
@@ -104,16 +109,15 @@ qboolean VK_LightsInit( void ) {
 		return false;
 	}
 
-	R_SpeedsRegisterMetric(&g_lights_.stats.dirty_cells, "lights_dirty_cells", kSpeedsMetricCount);
-	R_SpeedsRegisterMetric(&g_lights_.stats.dirty_cells_size, "lights_dirty_cells_size", kSpeedsMetricBytes);
-	R_SpeedsRegisterMetric(&g_lights_.stats.ranges_uploaded, "lights_ranges_uploaded", kSpeedsMetricCount);
-	R_SpeedsRegisterMetric(&g_lights_.num_polygons, "lights_polygons", kSpeedsMetricCount);
-	R_SpeedsRegisterMetric(&g_lights_.num_point_lights, "lights_point", kSpeedsMetricCount);
-
-	R_SpeedsRegisterMetric(&g_lights_.stats.dynamic_polygons, "lights_polygons_dynamic", kSpeedsMetricCount);
-	R_SpeedsRegisterMetric(&g_lights_.stats.dynamic_points, "lights_point_dynamic", kSpeedsMetricCount);
-	R_SpeedsRegisterMetric(&g_lights_.stats.dlights, "lights_dlights", kSpeedsMetricCount);
-	R_SpeedsRegisterMetric(&g_lights_.stats.elights, "lights_elights", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_lights_.stats.dirty_cells, "dirty_cells", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_lights_.stats.dirty_cells_size, "dirty_cells_size", kSpeedsMetricBytes);
+	R_SPEEDS_COUNTER(g_lights_.stats.ranges_uploaded, "ranges_uploaded", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_lights_.num_polygons, "polygons", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_lights_.num_point_lights, "points", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_lights_.stats.dynamic_polygons, "polygons_dynamic", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_lights_.stats.dynamic_points, "points_dynamic", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_lights_.stats.dlights, "dlights", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_lights_.stats.elights, "elights", kSpeedsMetricCount);
 
 	return true;
 }
@@ -153,7 +157,7 @@ static struct {
 
 } g_lights_bsp = {0};
 
-static void loadRadData( const model_t *map, const char *fmt, ... ) {
+static qboolean loadRadData( const model_t *map, const char *fmt, ... ) {
 	fs_offset_t size;
 	char *data;
 	byte *buffer;
@@ -167,11 +171,11 @@ static void loadRadData( const model_t *map, const char *fmt, ... ) {
 	buffer = gEngine.fsapi->LoadFile( filename, &size, false);
 
 	if (!buffer) {
-		gEngine.Con_Printf(S_ERROR "Couldn't load RAD data from file %s, the map will be completely black\n", filename);
-		return;
+		DEBUG("Couldn't load RAD data from file %s", filename);
+		return false;
 	}
 
-	gEngine.Con_Reportf("Loading RAD data from file %s\n", filename);
+	DEBUG("Loading RAD data from file %s", filename);
 
 	data = (char*)buffer;
 	for (;;) {
@@ -189,7 +193,7 @@ static void loadRadData( const model_t *map, const char *fmt, ... ) {
 
 		name[0] = '\0';
 		num = sscanf(data, "%s %f %f %f %f", name, &r, &g, &b, &scale);
-		gEngine.Con_Printf("raw rad entry (%d): %s %f %f %f %f\n", num, name, r, g, b, scale);
+		//DEBUG("raw rad entry (%d): %s %f %f %f %f", num, name, r, g, b, scale);
 		if (Q_strstr(name, "//") != NULL) {
 			num = 0;
 		}
@@ -204,12 +208,12 @@ static void loadRadData( const model_t *map, const char *fmt, ... ) {
 		} else if (num == 4) {
 			// Ok, rgb only, no scaling
 		} else {
-			gEngine.Con_Printf( "skipping rad entry %s\n", name[0] ? name : "(empty)" );
+			DEBUG( "skipping rad entry %s", name[0] ? name : "(empty)" );
 			num = 0;
 		}
 
 		if (num != 0) {
-			gEngine.Con_Printf("rad entry (%d): %s %f %f %f (%f)\n", num, name, r, g, b, scale);
+			DEBUG("rad entry (%d): %s %f %f %f (%f)", num, name, r, g, b, scale);
 
 			{
 				const char *wad_name = NULL;
@@ -261,8 +265,10 @@ static void loadRadData( const model_t *map, const char *fmt, ... ) {
 					// See DIRECT_SCALE in qrad/lightmap.c
 					VectorScale(etex->emissive, 0.1f, etex->emissive);
 
+					DEBUG("  texture(%s?, %d) set emissive(%f, %f, %f)", texture_name, tex_id, etex->emissive[0], etex->emissive[1], etex->emissive[2]);
+
 					if (!enabled)
-						gEngine.Con_Reportf("rad entry %s disabled due to zero intensity\n", name);
+						DEBUG("rad entry %s disabled due to zero intensity", name);
 				}
 			}
 		}
@@ -274,6 +280,7 @@ static void loadRadData( const model_t *map, const char *fmt, ... ) {
 	}
 
 	Mem_Free(buffer);
+	return true;
 }
 
 static void leafAccumPrepare( void ) {
@@ -321,7 +328,7 @@ static int leafAccumAddPotentiallyVisibleFromLeaf(const model_t *const map, cons
 			if (leafAccumAdd( pvs_leaf_index + 1 )) {
 				leafs_added++;
 				if (print_debug)
-					gEngine.Con_Reportf(" .%d", pvs_leaf_index + 1);
+					DEBUG(" .%d", pvs_leaf_index + 1);
 			}
 		}
 	}
@@ -336,7 +343,7 @@ vk_light_leaf_set_t *getMapLeafsAffectedByMapSurface( const msurface_t *surf ) {
 	const qboolean verbose_debug = false;
 
 	if (surf_index < 0 || surf_index >= g_lights_bsp.num_surfaces) {
-		gEngine.Con_Printf(S_ERROR "FIXME not implemented: attempting to add non-static polygon light\n");
+		ERR("FIXME not implemented: attempting to add non-static polygon light");
 		return NULL;
 	}
 
@@ -350,16 +357,16 @@ vk_light_leaf_set_t *getMapLeafsAffectedByMapSurface( const msurface_t *surf ) {
 
 		// Enumerate all the map leafs and pick ones that have this surface referenced
 		if (verbose_debug)
-			gEngine.Con_Reportf("Collecting visible leafs for surface %d:", surf_index);
+			DEBUG("Collecting visible leafs for surface %d:", surf_index);
 		for (int i = 1; i <= map->numleafs; ++i) {
 			const mleaf_t *leaf = map->leafs + i;
-			//if (verbose_debug) gEngine.Con_Reportf("    leaf %d(c%d)/%d:", i, leaf->cluster, map->numleafs);
+			//if (verbose_debug) DEBUG("    leaf %d(c%d)/%d:", i, leaf->cluster, map->numleafs);
 			for (int j = 0; j < leaf->nummarksurfaces; ++j) {
 				const msurface_t *leaf_surf = leaf->firstmarksurface[j];
 				if (leaf_surf != surf) {
 					/* if (verbose_debug) { */
 					/* 	const int leaf_surf_index = leaf_surf - map->surfaces; */
-					/* 	gEngine.Con_Reportf(" !%d", leaf_surf_index); */
+					/* 	DEBUG(" !%d", leaf_surf_index); */
 					/* } */
 					continue;
 				}
@@ -367,7 +374,7 @@ vk_light_leaf_set_t *getMapLeafsAffectedByMapSurface( const msurface_t *surf ) {
 				// FIXME split direct leafs marking from pvs propagation
 				leafs_direct++;
 				if (leafAccumAdd( i )) {
-					if (verbose_debug) gEngine.Con_Reportf(" %d", i);
+					if (verbose_debug) DEBUG(" %d", i);
 				} else {
 					// This leaf was already added earlier by PVS
 					// but it really should be counted as direct
@@ -378,10 +385,10 @@ vk_light_leaf_set_t *getMapLeafsAffectedByMapSurface( const msurface_t *surf ) {
 				leafs_pvs += leafAccumAddPotentiallyVisibleFromLeaf(map, leaf, verbose_debug);
 			}
 
-			//if (verbose_debug) gEngine.Con_Reportf("\n");
+			//if (verbose_debug) DEBUG("\n");
 		}
 		if (verbose_debug)
-			gEngine.Con_Reportf(" (sum=%d, direct=%d, pvs=%d)\n", g_lights_bsp.accum.count, leafs_direct, leafs_pvs);
+			DEBUG(" (sum=%d, direct=%d, pvs=%d)", g_lights_bsp.accum.count, leafs_direct, leafs_pvs);
 
 		leafAccumFinalize();
 
@@ -431,7 +438,7 @@ vk_light_leaf_set_t *getMapLeafsAffectedByMovingSurface( const msurface_t *surf,
 	Matrix3x4_VectorTransform(*transform_row, bbox_center, origin);
 
 	if (debug_dump_lights.enabled) {
-		gEngine.Con_Reportf("\torigin = %f, %f, %f, R = %f\n",
+		DEBUG("\torigin = %f, %f, %f, R = %f",
 			origin[0], origin[1], origin[2], radius
 		);
 	}
@@ -442,7 +449,7 @@ vk_light_leaf_set_t *getMapLeafsAffectedByMovingSurface( const msurface_t *surf,
 	// (origin + radius will accidentally touch leafs that are really should not be affected)
 	gEngine.R_FatPVS(origin, radius, g_lights_bsp.accum.visbytes, /*merge*/ false, /*fullvis*/ false);
 	if (debug_dump_lights.enabled)
-		gEngine.Con_Reportf("Collecting visible leafs for moving surface %p: %f,%f,%f %f: ", surf,
+		DEBUG("Collecting visible leafs for moving surface %p: %f,%f,%f %f: ", surf,
 			origin[0], origin[1], origin[2], radius);
 
 	for (int i = 0; i <= map->numleafs; ++i) {
@@ -454,7 +461,7 @@ vk_light_leaf_set_t *getMapLeafsAffectedByMovingSurface( const msurface_t *surf,
 
 		if (leafAccumAdd( i + 1 )) {
 			if (debug_dump_lights.enabled)
-				gEngine.Con_Reportf(" %d", i + 1);
+				DEBUG(" %d", i + 1);
 		} else {
 			// This leaf was already added earlier by PVS
 			// but it really should be counted as direct
@@ -463,7 +470,7 @@ vk_light_leaf_set_t *getMapLeafsAffectedByMovingSurface( const msurface_t *surf,
 	}
 
 	if (debug_dump_lights.enabled)
-		gEngine.Con_Reportf(" (sum=%d, direct=%d, pvs=%d)\n", g_lights_bsp.accum.count, leafs_direct, leafs_pvs);
+		DEBUG(" (sum=%d, direct=%d, pvs=%d)", g_lights_bsp.accum.count, leafs_direct, leafs_pvs);
 
 	leafAccumFinalize();
 
@@ -509,7 +516,7 @@ void RT_LightsNewMap( const struct model_s *map ) {
 
 	ASSERT(g_lights.map.grid_cells < MAX_LIGHT_CLUSTERS);
 
-	gEngine.Con_Reportf("Map mins:(%f, %f, %f), maxs:(%f, %f, %f), size:(%f, %f, %f), min_cell:(%f, %f, %f) cells:(%d, %d, %d); total: %d\n",
+	DEBUG("Map mins:(%f, %f, %f), maxs:(%f, %f, %f), size:(%f, %f, %f), min_cell:(%f, %f, %f) cells:(%d, %d, %d); total: %d",
 		map->mins[0], map->mins[1], map->mins[2],
 		map->maxs[0], map->maxs[1], map->maxs[2],
 		map_size[0], map_size[1], map_size[2],
@@ -534,7 +541,7 @@ static qboolean addSurfaceLightToCell( int cell_index, int polygon_light_index )
 	}
 
 	if (debug_dump_lights.enabled) {
-		gEngine.Con_Reportf("    adding polygon light %d to cell %d (count=%d)\n", polygon_light_index, cell_index, cluster->num_polygons+1);
+		DEBUG("    adding polygon light %d to cell %d (count=%d)", polygon_light_index, cell_index, cluster->num_polygons+1);
 	}
 
 	cluster->polygons[cluster->num_polygons++] = polygon_light_index;
@@ -552,7 +559,7 @@ static qboolean addLightToCell( int cell_index, int light_index ) {
 		return false;
 
 	if (debug_dump_lights.enabled) {
-		gEngine.Con_Reportf("    adding point light %d to cell %d (count=%d)\n", light_index, cell_index, cluster->num_point_lights+1);
+		DEBUG("    adding point light %d to cell %d (count=%d)", light_index, cell_index, cluster->num_point_lights+1);
 	}
 
 	cluster->point_lights[cluster->num_point_lights++] = light_index;
@@ -609,7 +616,7 @@ static void addLightIndexToLeaf( const mleaf_t *leaf, int index ) {
 	const int max_z = ceilf(leaf->minmaxs[5] / LIGHT_GRID_CELL_SIZE);
 
 	if (debug_dump_lights.enabled) {
-		gEngine.Con_Reportf("  adding leaf %d min=(%d, %d, %d), max=(%d, %d, %d) total=%d\n",
+		DEBUG("  adding leaf %d min=(%d, %d, %d), max=(%d, %d, %d) total=%d",
 			leaf->cluster,
 			min_x, min_y, min_z,
 			max_x, max_y, max_z,
@@ -685,7 +692,7 @@ static int addPointLight( const vec3_t origin, const vec3_t color, float radius,
 	}
 
 	if (debug_dump_lights.enabled) {
-		gEngine.Con_Printf("point light %d: origin=(%f %f %f) R=%f color=(%f %f %f)\n", index,
+		DEBUG("point light %d: origin=(%f %f %f) R=%f color=(%f %f %f)", index,
 			origin[0], origin[1], origin[2], radius,
 			color[0], color[1], color[2]);
 	}
@@ -717,7 +724,7 @@ static int addSpotLight( const vk_light_entity_t *le, float radius, int lightsty
 	}
 
 	if (debug_dump_lights.enabled) {
-		gEngine.Con_Printf("%s light %d: origin=(%f %f %f) color=(%f %f %f) dir=(%f %f %f)\n",
+		DEBUG("%s light %d: origin=(%f %f %f) color=(%f %f %f) dir=(%f %f %f)",
 			le->type == LightTypeEnvironment ? "environment" : "spot",
 			index,
 			le->origin[0], le->origin[1], le->origin[2],
@@ -835,7 +842,7 @@ void RT_LightAddFlashlight(const struct cl_entity_s *ent, qboolean local_player 
 	le.stopdot2 = cosf(_cone2 * M_PI / 180.f);
 
 	/*
-	gEngine.Con_Printf("flashlight: origin=(%f %f %f) color=(%f %f %f) dir=(%f %f %f)\n",
+	DEBUG("flashlight: origin=(%f %f %f) color=(%f %f %f) dir=(%f %f %f)",
 		le.origin[0], le.origin[1], le.origin[2],
 		le.color[0], le.color[1], le.color[2],
 		le.dir[0], le.dir[1], le.dir[2]);
@@ -916,8 +923,10 @@ void RT_LightsLoadBegin( const struct model_s *map ) {
 			name_len -= 4;
 
 		memset(g_lights_.map.emissive_textures, 0, sizeof(g_lights_.map.emissive_textures));
-		loadRadData( map, "maps/lights.rad" );
-		loadRadData( map, "%.*s.rad", name_len, map->name );
+		const qboolean loaded = loadRadData( map, "maps/lights.rad" ) | loadRadData( map, "%.*s.rad", name_len, map->name );
+		if (!loaded) {
+			ERR("No RAD files loaded. The map will be completely black");
+		}
 	}
 
 	// Clear static lights counts
@@ -960,15 +969,13 @@ qboolean RT_GetEmissiveForTexture( vec3_t out, int texture_id ) {
 	ASSERT(texture_id >= 0);
 	ASSERT(texture_id < MAX_TEXTURES);
 
-	{
-		vk_emissive_texture_t *const etex = g_lights_.map.emissive_textures + texture_id;
-		if (etex->set) {
-			VectorCopy(etex->emissive, out);
-			return true;
-		} else {
-			VectorClear(out);
-			return false;
-		}
+	vk_emissive_texture_t *const etex = g_lights_.map.emissive_textures + texture_id;
+	if (etex->set) {
+		VectorCopy(etex->emissive, out);
+		return true;
+	} else {
+		VectorClear(out);
+		return false;
 	}
 }
 
@@ -984,7 +991,7 @@ static void addPolygonLightIndexToLeaf(const mleaf_t* leaf, int poly_index) {
 	const qboolean not_visible = false; //TODO static_map && !canSurfaceLightAffectAABB(world, geom->surf, esurf->emissive, leaf->minmaxs);
 
 	if (debug_dump_lights.enabled) {
-		gEngine.Con_Reportf("  adding leaf %d min=(%d, %d, %d), max=(%d, %d, %d) total=%d\n",
+		DEBUG("  adding leaf %d min=(%d, %d, %d), max=(%d, %d, %d) total=%d",
 			leaf->cluster,
 			min_x, min_y, min_z,
 			max_x, max_y, max_z,
@@ -1059,8 +1066,13 @@ static void addPolygonLeafSetToClusters(const vk_light_leaf_set_t *leafs, int po
 }
 
 int RT_LightAddPolygon(const rt_light_add_polygon_t *addpoly) {
+	// FIXME We're adding lights directly from vk_brush.c w/o knowing whether current frame is
+	// ray traced. If not, this will break.
+	if (addpoly->dynamic && !vk_frame.rtx_enabled)
+		return -1;
+
 	if (g_lights_.num_polygons == MAX_SURFACE_LIGHTS) {
-		gEngine.Con_Printf(S_ERROR "Max number of polygon lights %d reached\n", MAX_SURFACE_LIGHTS);
+		ERR("Max number of polygon lights %d reached", MAX_SURFACE_LIGHTS);
 		return -1;
 	}
 
@@ -1103,7 +1115,7 @@ int RT_LightAddPolygon(const rt_light_add_polygon_t *addpoly) {
 		VectorM(1.f / poly->vertices.count, poly->center, poly->center);
 
 		if (!addpoly->dynamic || debug_dump_lights.enabled) {
-			gEngine.Con_Reportf("added polygon light index=%d color=(%f, %f, %f) center=(%f, %f, %f) plane=(%f, %f, %f, %f) area=%f num_vertices=%d\n",
+			DEBUG("added polygon light index=%d color=(%f, %f, %f) center=(%f, %f, %f) plane=(%f, %f, %f, %f) area=%f num_vertices=%d",
 				g_lights_.num_polygons,
 				poly->emissive[0],
 				poly->emissive[1],
@@ -1329,7 +1341,7 @@ void RT_LightsFrameEnd( void ) {
 	if (debug_dump_lights.enabled) {
 #if 0
 		// Print light grid stats
-		gEngine.Con_Reportf("Emissive surfaces found: %d\n", g_lights_.num_polygons);
+		DEBUG("Emissive surfaces found: %d", g_lights_.num_polygons);
 
 		{
 			#define GROUPSIZE 4
@@ -1340,10 +1352,10 @@ void RT_LightsFrameEnd( void ) {
 				histogram[hist_index]++;
 			}
 
-			gEngine.Con_Reportf("Built %d light clusters. Stats:\n", g_lights.map.grid_cells);
-			gEngine.Con_Reportf("  0: %d\n", histogram[0]);
+			DEBUG("Built %d light clusters. Stats:", g_lights.map.grid_cells);
+			DEBUG("  0: %d", histogram[0]);
 			for (int i = 1; i < ARRAYSIZE(histogram); ++i)
-				gEngine.Con_Reportf("  %d-%d: %d\n",
+				DEBUG("  %d-%d: %d",
 					(i - 1) * GROUPSIZE,
 					i * GROUPSIZE - 1,
 					histogram[i]);
@@ -1354,7 +1366,7 @@ void RT_LightsFrameEnd( void ) {
 			for (int i = 0; i < g_lights.map.grid_cells; ++i) {
 				const vk_lights_cell_t *cluster = g_lights.cells + i;
 				if (cluster->num_polygons > 0) {
-					gEngine.Con_Reportf(" cluster %d: polygons=%d\n", i, cluster->num_polygons);
+					DEBUG(" cluster %d: polygons=%d", i, cluster->num_polygons);
 				}
 
 				for (int j = 0; j < cluster->num_polygons; ++j) {
@@ -1365,7 +1377,7 @@ void RT_LightsFrameEnd( void ) {
 				}
 			}
 
-			gEngine.Con_Reportf("Clusters with filtered lights: %d\n", num_clusters_with_lights_in_range);
+			DEBUG("Clusters with filtered lights: %d", num_clusters_with_lights_in_range);
 		}
 #endif
 	}

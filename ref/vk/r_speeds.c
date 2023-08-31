@@ -10,10 +10,12 @@
 #include "xash3d_mathlib.h" // Q_min
 #include <limits.h>
 
-#define MAX_SPEEDS_MESSAGE 1024
-#define MAX_SPEEDS_METRICS (APROF_MAX_SCOPES + 4)
+#define MAX_SPEEDS_MESSAGE (1024)
+#define MAX_SPEEDS_METRICS (512)
 #define TARGET_FRAME_TIME (1000.f / 60.f)
 #define MAX_GRAPHS 8
+
+#define MODULE_NAME "speeds"
 
 // Valid bits for `r_speeds` argument:
 enum {
@@ -28,17 +30,22 @@ enum {
 
 typedef struct {
 	int *p_value;
-	const char *name;
+	qboolean reset;
+	char name[64];
+	const char *var_name;
+	const char *src_file;
+	int src_line;
 	r_speeds_metric_type_t type;
 	int low_watermark, high_watermark, max_value;
 	int graph_index;
 } r_speeds_metric_t;
 
 typedef struct {
+	char name[64];
 	float *data;
 	int data_count;
 	int data_write;
-	int source_metric;
+	int source_metric; // can be -1 for missing metrics
 
 	int height;
 	int max_value; // Computed automatically every frame
@@ -75,7 +82,13 @@ static struct {
 			int time_us; // automatically zeroed by metrics each frame
 		} gpu_scopes[MAX_GPU_SCOPES];
 		char message[MAX_SPEEDS_MESSAGE];
+
+		qboolean list_metrics;
+		string list_metrics_filter;
 	} frame;
+
+	// Mask g_speeds_graphs cvar writes
+	char graphs_list[1024];
 } g_speeds;
 
 static void speedsStrcat( const char *msg ) {
@@ -84,8 +97,8 @@ static void speedsStrcat( const char *msg ) {
 
 static void speedsPrintf( const char *msg, ... ) _format(1);
 static void speedsPrintf( const char *msg, ... ) {
-	va_list	argptr;
-	char	text[MAX_SPEEDS_MESSAGE];
+	va_list argptr;
+	char text[MAX_SPEEDS_MESSAGE];
 
 	va_start( argptr, msg );
 	Q_vsnprintf( text, sizeof( text ), msg, argptr );
@@ -201,7 +214,8 @@ static void drawCPUProfilerScopes(int draw, const aprof_event_t *events, uint64_
 					const uint64_t delta_ns = timestamp_ns - stack[depth].begin_ns;
 
 					if (!g_speeds.frame.scopes[scope_id].initialized) {
-						R_SpeedsRegisterMetric(&g_speeds.frame.scopes[scope_id].time_us, scope->name, kSpeedsMetricMicroseconds);
+						R_SpeedsRegisterMetric(&g_speeds.frame.scopes[scope_id].time_us, "scope", scope->name, kSpeedsMetricMicroseconds, /*reset*/ true, scope->name, __FILE__, __LINE__);
+
 						g_speeds.frame.scopes[scope_id].initialized = 1;
 					}
 
@@ -268,6 +282,38 @@ static void handlePause( uint32_t prev_frame_index ) {
 	}
 }
 
+// TODO move this to vk_common or something
+int stringViewCmp(const_string_view_t sv, const char* s) {
+	for (int i = 0; i < sv.len; ++i) {
+		const int d = sv.s[i] - s[i];
+		if (d != 0)
+			return d;
+		if (s[i] == '\0')
+			return 1;
+	}
+
+	// Check that both strings end the same
+	return '\0' - s[sv.len];
+}
+
+static int findMetricIndexByName( const_string_view_t name) {
+	for (int i = 0; i < g_speeds.metrics_count; ++i) {
+		if (stringViewCmp(name, g_speeds.metrics[i].name) == 0)
+			return i;
+	}
+
+	return -1;
+}
+
+static int findGraphIndexByName( const_string_view_t name) {
+	for (int i = 0; i < g_speeds.graphs_count; ++i) {
+		if (stringViewCmp(name, g_speeds.graphs[i].name) == 0)
+			return i;
+	}
+
+	return -1;
+}
+
 static int drawGraph( r_speeds_graph_t *const graph, int frame_bar_y ) {
 	const int min_width = 100 * g_speeds.font_metrics.scale;
 	const int graph_width = clampi32(
@@ -276,6 +322,22 @@ static int drawGraph( r_speeds_graph_t *const graph, int frame_bar_y ) {
 		: (int)(g_speeds.r_speeds_graphs_width->value * g_speeds.font_metrics.scale), // scaled value if valid
 		min_width, vk_frame.width); // clamp to min_width..frame_width
 	const int graph_height = graph->height * g_speeds.font_metrics.scale;
+
+	if (graph->source_metric < 0) {
+		// Check whether this metric has been registered
+		const int metric_index = findMetricIndexByName((const_string_view_t){graph->name, Q_strlen(graph->name)});
+
+		if (metric_index >= 0) {
+			graph->source_metric = metric_index;
+			g_speeds.metrics[metric_index].graph_index = graph - g_speeds.graphs;
+		} else {
+			const char *name = graph->name;
+			rgba_t text_color = {0xff, 0x00, 0x00, 0xff};
+			gEngine.Con_DrawString(0, frame_bar_y, name, text_color);
+			frame_bar_y += g_speeds.font_metrics.glyph_height;
+			return frame_bar_y;
+		}
+	}
 
 	const r_speeds_metric_t *const metric = g_speeds.metrics + graph->source_metric;
 	const int graph_max_value = metric->max_value ? Q_max(metric->max_value, graph->max_value) : graph->max_value;
@@ -318,10 +380,9 @@ static int drawGraph( r_speeds_graph_t *const graph, int frame_bar_y ) {
 	int max_value = INT_MIN;
 	const qboolean watermarks = metric->low_watermark && metric->high_watermark;
 	for (int i = 0; i < graph->data_count; ++i) {
-		int value = Q_max(0, graph->data[(graph->data_write + i) % graph->data_count]);
-		max_value = Q_max(max_value, value);
-
-		value = Q_min(graph_max_value, value);
+		const int raw_value = Q_max(0, graph->data[(graph->data_write + i) % graph->data_count]);
+		max_value = Q_max(max_value, raw_value);
+		const int value = Q_min(graph_max_value, raw_value);
 
 		int red = 0xed, green = 0x9f, blue = 0x01;
 		if (watermarks) {
@@ -337,7 +398,14 @@ static int drawGraph( r_speeds_graph_t *const graph, int frame_bar_y ) {
 		const int height = watermarks ? y_pos : 2 * g_speeds.font_metrics.scale;
 		const int y = frame_bar_y - y_pos;
 
+		// TODO lines
 		CL_FillRGBA(x0, y, x1-x0, height, red, green, blue, 127);
+
+		if (i == graph->data_count - 1) {
+			char buf[16];
+			metricTypeSnprintf(buf, sizeof(buf), raw_value, metric->type);
+			gEngine.Con_DrawString(x1, y - g_speeds.font_metrics.glyph_height / 2, buf, text_color);
+		}
 	}
 
 	graph->max_value = max_value ? max_value : 1;
@@ -360,7 +428,7 @@ static void drawGPUProfilerScopes(qboolean draw, int y, uint64_t frame_begin_tim
 			const char *name = gpurofl->scopes[scope_index].name;
 
 			if (!g_speeds.frame.gpu_scopes[scope_index].initialized) {
-				R_SpeedsRegisterMetric(&g_speeds.frame.gpu_scopes[scope_index].time_us, name, kSpeedsMetricMicroseconds);
+				R_SpeedsRegisterMetric(&g_speeds.frame.gpu_scopes[scope_index].time_us, "gpuscope", name, kSpeedsMetricMicroseconds, /*reset*/ true, name, __FILE__, __LINE__);
 				g_speeds.frame.gpu_scopes[scope_index].initialized = 1;
 			}
 
@@ -452,10 +520,11 @@ static void printMetrics( void ) {
 	}
 }
 
-static void clearMetrics( void ) {
+static void resetMetrics( void ) {
 	for (int i = 0; i < g_speeds.metrics_count; ++i) {
 		const r_speeds_metric_t *const metric = g_speeds.metrics + i;
-		*metric->p_value = 0;
+		if (metric->reset)
+			*metric->p_value = 0;
 	}
 }
 
@@ -475,14 +544,16 @@ static void getCurrentFontMetrics(void) {
 static int drawGraphs( int y ) {
 	for (int i = 0; i < g_speeds.graphs_count; ++i) {
 		r_speeds_graph_t *const graph = g_speeds.graphs + i;
-		graph->data[graph->data_write] = *g_speeds.metrics[graph->source_metric].p_value;
+
+		if (graph->source_metric >= 0)
+			graph->data[graph->data_write] = *g_speeds.metrics[graph->source_metric].p_value;
+
 		graph->data_write = (graph->data_write + 1) % graph->data_count;
 		y = drawGraph(graph, y) + 10;
 	}
 
 	return y;
 }
-
 
 static void togglePause( void ) {
 	if (g_speeds.paused_events) {
@@ -495,31 +566,36 @@ static void togglePause( void ) {
 	}
 }
 
-typedef struct {
-	const char *s;
-	int len;
-} const_string_view_t;
+static void speedsGraphAdd(const_string_view_t name, int metric_index) {
+	gEngine.Con_Printf("Adding profiler graph for metric %.*s(%d) at graph index %d\n", name.len, name.s, metric_index, g_speeds.graphs_count);
 
-static int stringViewCmp(const_string_view_t sv, const char* s) {
-	for (int i = 0; i < sv.len; ++i) {
-		const int d = sv.s[i] - s[i];
-		if (d != 0)
-			return d;
-		if (s[i] == '\0')
-			return 1;
+	if (g_speeds.graphs_count == MAX_GRAPHS) {
+		gEngine.Con_Printf(S_ERROR "Cannot add graph \"%.*s\", no free graphs slots (max=%d)\n", name.len, name.s, MAX_GRAPHS);
+		return;
 	}
 
-	// Check that both strings end the same
-	return '\0' - s[sv.len];
-}
-
-static int findMetricIndexByName( const_string_view_t name) {
-	for (int i = 0; i < g_speeds.metrics_count; ++i) {
-		if (stringViewCmp(name, g_speeds.metrics[i].name) == 0)
-			return i;
+	if (metric_index >= 0) {
+		r_speeds_metric_t *const metric = g_speeds.metrics + metric_index;
+		metric->graph_index = g_speeds.graphs_count;
 	}
 
-	return -1;
+	r_speeds_graph_t *const graph = g_speeds.graphs + g_speeds.graphs_count++;
+
+	// TODO make these customizable
+	graph->data_count = 256;
+	graph->height = 100;
+	graph->max_value = 1; // Will be computed automatically on first frame
+	graph->color[3] = 255;
+
+	const int len = Q_min(name.len, sizeof(graph->name) - 1);
+	memcpy(graph->name, name.s, len);
+	graph->name[len] = '\0';
+	getColorForString(graph->name, graph->color);
+
+	ASSERT(!graph->data);
+	graph->data = Mem_Calloc(vk_core.pool, graph->data_count * sizeof(float));
+	graph->data_write = 0;
+	graph->source_metric = metric_index;
 }
 
 static void speedsGraphAddByMetricName( const_string_view_t name ) {
@@ -535,40 +611,57 @@ static void speedsGraphAddByMetricName( const_string_view_t name ) {
 		return;
 	}
 
-	if (g_speeds.graphs_count == MAX_GRAPHS) {
-		gEngine.Con_Printf(S_ERROR "Cannot add graph for metric \"%.*s\", no free graphs slots (max=%d)\n", name.len, name.s, MAX_GRAPHS);
+	speedsGraphAdd( name, metric_index );
+}
+
+static void speedsGraphDelete( r_speeds_graph_t *graph ) {
+	ASSERT(graph->data);
+	Mem_Free(graph->data);
+	graph->data = NULL;
+	graph->name[0] = '\0';
+
+	if (graph->source_metric >= 0) {
+		ASSERT(graph->source_metric < g_speeds.metrics_count);
+		r_speeds_metric_t *const metric = g_speeds.metrics + graph->source_metric;
+		metric->graph_index = -1;
+	}
+
+	graph->source_metric = -1;
+}
+
+static void speedsGraphRemoveByName( const_string_view_t name ) {
+	const int graph_index = findGraphIndexByName(name);
+	if (graph_index < 0) {
+		gEngine.Con_Printf(S_ERROR "Graph \"%.*s\" not found\n", name.len, name.s);
 		return;
 	}
 
-	gEngine.Con_Printf("Adding profiler graph for metric %.*s(%d) at graph index %d\n", name.len, name.s, metric_index, g_speeds.graphs_count);
+	r_speeds_graph_t *const graph = g_speeds.graphs + graph_index;
+	speedsGraphDelete( graph );
 
-	metric->graph_index = g_speeds.graphs_count++;
-	r_speeds_graph_t *const graph = g_speeds.graphs + metric->graph_index;
+	gEngine.Con_Printf("Removing profiler graph %.*s(%d) at graph index %d\n", name.len, name.s, graph->source_metric, graph_index);
 
-	// TODO make these customizable
-	graph->data_count = 256;
-	graph->height = 100;
-	graph->max_value = 1; // Will be computed automatically on first frame
-	graph->color[3] = 255;
-	getColorForString(metric->name, graph->color);
+	// Move all further graphs one slot back, also updating their indices
+	for (int i = graph_index + 1; i < g_speeds.graphs_count; ++i) {
+		r_speeds_graph_t *const dst = g_speeds.graphs + i - 1;
+		const r_speeds_graph_t *const src = g_speeds.graphs + i;
 
-	ASSERT(!graph->data);
-	graph->data = Mem_Calloc(vk_core.pool, graph->data_count * sizeof(float));
-	graph->data_write = 0;
-	graph->source_metric = metric_index;
+		if (src->source_metric >= 0) {
+			ASSERT(src->source_metric < g_speeds.metrics_count);
+			g_speeds.metrics[src->source_metric].graph_index--;
+		}
+
+		memcpy(dst, src, sizeof(r_speeds_graph_t));
+	}
+
+	g_speeds.graphs_count--;
 }
 
 static void speedsGraphsRemoveAll( void ) {
 	gEngine.Con_Printf("Removing all %d profiler graphs\n", g_speeds.graphs_count);
 	for (int i = 0; i < g_speeds.graphs_count; ++i) {
 		r_speeds_graph_t *const graph = g_speeds.graphs + i;
-		ASSERT(graph->data);
-		Mem_Free(graph->data);
-		graph->data = NULL;
-
-		ASSERT(graph->source_metric >= 0);
-		ASSERT(graph->source_metric < g_speeds.metrics_count);
-		g_speeds.metrics[graph->source_metric].graph_index = -1;
+		speedsGraphDelete(graph);
 	}
 
 	g_speeds.graphs_count = 0;
@@ -578,6 +671,9 @@ static void processGraphCvar( void ) {
 	if (!(g_speeds.r_speeds_graphs->flags & FCVAR_CHANGED))
 		return;
 
+	if (0 == Q_strcmp(g_speeds.r_speeds_graphs->string, g_speeds.graphs_list))
+		return;
+
 	// TODO only remove graphs that are not present in the new list
 	speedsGraphsRemoveAll();
 
@@ -585,7 +681,13 @@ static void processGraphCvar( void ) {
 	while (*p) {
 		const char *next = Q_strchrnul(p, ',');
 		const const_string_view_t name = {p, next - p};
-		speedsGraphAddByMetricName( name );
+
+		const int metric_index = findMetricIndexByName(name);
+		if (metric_index < 0) {
+			gEngine.Con_Printf(S_WARN "Metric \"%.*s\" not found (yet? can be registered later)\n", name.len, name.s);
+		}
+
+		speedsGraphAdd( name, metric_index );
 		if (!*next)
 			break;
 		p = next + 1;
@@ -594,16 +696,129 @@ static void processGraphCvar( void ) {
 	g_speeds.r_speeds_graphs->flags &= ~FCVAR_CHANGED;
 }
 
+static const char *getMetricTypeName(r_speeds_metric_type_t type) {
+	switch (type) {
+		case kSpeedsMetricCount: return "count";
+		case kSpeedsMetricMicroseconds: return "ms";
+		case kSpeedsMetricBytes: return "bytes";
+	}
+
+	return "UNKNOWN";
+}
+
+// Ideally, we'd just autocomplete the r_speeds_graphs cvar/cmd.
+// However, autocompletion is not exposed to the renderer. It is completely internal to the engine, see con_utils.c, var cmd_list.
+static void listMetrics( void ) {
+	if (gEngine.Cmd_Argc() > 1) {
+		Q_strncpy(g_speeds.frame.list_metrics_filter, gEngine.Cmd_Argv(1), sizeof(g_speeds.frame.list_metrics_filter));
+	} else {
+		g_speeds.frame.list_metrics_filter[0] = '\0';
+	}
+
+	g_speeds.frame.list_metrics = true;
+}
+
+static void doListMetrics( void ) {
+	if (!g_speeds.frame.list_metrics)
+		return;
+
+	g_speeds.frame.list_metrics = false;
+	const char *const filter = g_speeds.frame.list_metrics_filter;
+
+	for (int i = 0; i < g_speeds.metrics_count; ++i) {
+		const r_speeds_metric_t *metric = g_speeds.metrics + i;
+
+		if (filter[0] && !Q_strstr(metric->name, filter))
+			continue;
+
+		char buf[16];
+		metricTypeSnprintf(buf, sizeof(buf), *metric->p_value, metric->type);
+		gEngine.Con_Printf("  ^2%s^7 %s, value = ^3%s^7 (^5%s^7, ^6%s:%d^7)\n", metric->name, getMetricTypeName(metric->type), buf, metric->var_name, metric->src_file, metric->src_line);
+	}
+}
+
+static void graphCmd( void ) {
+	enum { Unknown, Add, Remove, Clear } action = Unknown;
+
+	const int argc = gEngine.Cmd_Argc();
+
+	if (argc > 1) {
+		const char *const cmd = gEngine.Cmd_Argv(1);
+		if (0 == Q_strcmp("add", cmd) && argc > 2)
+			action = Add;
+		else if (0 == Q_strcmp("del", cmd) && argc > 2)
+			action = Remove;
+		else if (0 == Q_strcmp("clear", cmd))
+			action = Clear;
+	}
+
+
+	switch (action) {
+		case Add:
+			for (int i = 2; i < argc; ++i) {
+				const char *const arg = gEngine.Cmd_Argv(i);
+				const const_string_view_t name = {arg, Q_strlen(arg) };
+				speedsGraphAddByMetricName( name );
+			}
+			break;
+		case Remove:
+			for (int i = 2; i < argc; ++i) {
+				const char *const arg = gEngine.Cmd_Argv(i);
+				const const_string_view_t name = {arg, Q_strlen(arg) };
+				speedsGraphRemoveByName( name );
+			}
+			break;
+		case Clear:
+			speedsGraphsRemoveAll();
+			break;
+		case Unknown:
+			gEngine.Con_Printf("Usage:\n%s <add/del> metric0 metric1 ...\n", gEngine.Cmd_Argv(0));
+			gEngine.Con_Printf("\t%s <add/del> metric0 metric1 ...\n", gEngine.Cmd_Argv(0));
+			gEngine.Con_Printf("\t%s clear\n", gEngine.Cmd_Argv(0));
+			return;
+	}
+
+	// update cvar
+	{
+		const int len = sizeof(g_speeds.graphs_list) - 1;
+		char *const buf = g_speeds.graphs_list;
+
+		buf[0] = '\0';
+		int off = 0;
+		for (int i = 0; i < g_speeds.graphs_count; ++i) {
+			const r_speeds_graph_t *const graph = g_speeds.graphs + i;
+
+			if (off)
+				buf[off++] = ',';
+
+			//gEngine.Con_Reportf("buf='%s' off=%d %s(%d)\n", buf, off, graph->name, (int)Q_strlen(graph->name));
+
+			const char *s = graph->name;
+			while (off < len && *s)
+				buf[off++] = *s++;
+
+			buf[off] = '\0';
+
+			if (off >= len - 1)
+				break;
+		}
+
+		gEngine.Cvar_Set("r_speeds_graphs", buf);
+	}
+}
+
 void R_SpeedsInit( void ) {
 	g_speeds.r_speeds_graphs = gEngine.Cvar_Get("r_speeds_graphs", "", FCVAR_GLCONFIG, "List of metrics to plot as graphs, separated by commas");
 	g_speeds.r_speeds_graphs_width = gEngine.Cvar_Get("r_speeds_graphs_width", "", FCVAR_GLCONFIG, "Graphs width in pixels");
 
 	gEngine.Cmd_AddCommand("r_speeds_toggle_pause", togglePause, "Toggle frame profiler pause");
+	gEngine.Cmd_AddCommand("r_speeds_list_metrics", listMetrics, "List all registered metrics");
+	gEngine.Cmd_AddCommand("r_speeds_graph", graphCmd, "Manipulate add/remove metrics graphs");
 
-	R_SpeedsRegisterMetric(&g_speeds.frame.frame_time_us, "frame", kSpeedsMetricMicroseconds);
-	R_SpeedsRegisterMetric(&g_speeds.frame.cpu_time_us, "cpu", kSpeedsMetricMicroseconds);
-	R_SpeedsRegisterMetric(&g_speeds.frame.cpu_wait_time_us, "cpu_wait", kSpeedsMetricMicroseconds);
-	R_SpeedsRegisterMetric(&g_speeds.frame.gpu_time_us, "gpu", kSpeedsMetricMicroseconds);
+	R_SPEEDS_COUNTER(g_speeds.frame.frame_time_us, "frame", kSpeedsMetricMicroseconds);
+	R_SPEEDS_COUNTER(g_speeds.frame.cpu_time_us, "cpu", kSpeedsMetricMicroseconds);
+	R_SPEEDS_COUNTER(g_speeds.frame.cpu_wait_time_us, "cpu_wait", kSpeedsMetricMicroseconds);
+	R_SPEEDS_COUNTER(g_speeds.frame.gpu_time_us, "gpu", kSpeedsMetricMicroseconds);
 }
 
 // grab r_speeds message
@@ -624,13 +839,19 @@ qboolean R_SpeedsMessage( char *out, size_t size )
 	return true;
 }
 
-void R_SpeedsRegisterMetric(int* p_value, const char *name, r_speeds_metric_type_t type) {
+void R_SpeedsRegisterMetric(int* p_value, const char *module, const char *name, r_speeds_metric_type_t type, qboolean reset, const char *var_name, const char *file, int line) {
 	ASSERT(g_speeds.metrics_count < MAX_SPEEDS_METRICS);
 
 	r_speeds_metric_t *metric = g_speeds.metrics + (g_speeds.metrics_count++);
 	metric->p_value = p_value;
-	metric->name = name;
+	metric->reset = reset;
+
+	Q_snprintf(metric->name, sizeof(metric->name), "%s.%s", module, name);
+
 	metric->type = type;
+	metric->src_file = file;
+	metric->src_line = line;
+	metric->var_name = var_name;
 	metric->graph_index = -1;
 
 	// TODO how to make universally adjustable?
@@ -703,7 +924,9 @@ void R_SpeedsDisplayMore(uint32_t prev_frame_index, const struct vk_combuf_scope
 
 	processGraphCvar();
 
-	clearMetrics();
+	doListMetrics();
+
+	resetMetrics();
 
 	APROF_SCOPE_END(function);
 }

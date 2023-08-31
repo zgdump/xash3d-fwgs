@@ -5,6 +5,7 @@
 #include "vk_geometry.h"
 #include "vk_scene.h"
 #include "r_speeds.h"
+#include "vk_math.h"
 
 #include "sprite.h"
 #include "xash3d_mathlib.h"
@@ -14,6 +15,8 @@
 
 #include <memory.h>
 
+#define MODULE_NAME "sprite"
+
 // it's a Valve default value for LoadMapSprite (probably must be power of two)
 #define MAPSPRITE_SIZE	128
 #define GLARE_FALLOFF	19000.0f
@@ -22,11 +25,122 @@ static struct {
 	struct {
 		int sprites;
 	} stats;
+
+	struct {
+		r_geometry_range_t geom;
+		vk_render_geometry_t geometry;
+		vk_render_model_t model;
+	} quad;
 } g_sprite;
 
+static qboolean createQuadModel(void) {
+	g_sprite.quad.geom = R_GeometryRangeAlloc(4, 6);
+	if (g_sprite.quad.geom.block_handle.size == 0) {
+		gEngine.Con_Printf(S_ERROR "Cannot allocate geometry for sprite quad\n");
+		return false;
+	}
+
+	const r_geometry_range_lock_t lock = R_GeometryRangeLock(&g_sprite.quad.geom);
+
+	vec3_t point;
+	vk_vertex_t *dst_vtx;
+	uint16_t *dst_idx;
+
+	dst_vtx = lock.vertices;
+	dst_idx = lock.indices;
+
+	const vec3_t org = {0, 0, 0};
+	const vec3_t v_right = {1, 0, 0};
+	const vec3_t v_up = {0, 1, 0};
+	vec3_t v_normal;
+	CrossProduct(v_right, v_up, v_normal);
+
+	VectorMA( org, -1.f, v_up, point );
+	VectorMA( point, -1.f, v_right, dst_vtx[0].pos );
+	dst_vtx[0].gl_tc[0] = 0.f;
+	dst_vtx[0].gl_tc[1] = 1.f;
+	dst_vtx[0].lm_tc[0] = dst_vtx[0].lm_tc[1] = 0.f;
+	Vector4Set(dst_vtx[0].color, 255, 255, 255, 255);
+	VectorCopy(v_normal, dst_vtx[0].normal);
+
+	VectorMA( org, 1.f, v_up, point );
+	VectorMA( point, -1.f, v_right, dst_vtx[1].pos );
+	dst_vtx[1].gl_tc[0] = 0.f;
+	dst_vtx[1].gl_tc[1] = 0.f;
+	dst_vtx[1].lm_tc[0] = dst_vtx[1].lm_tc[1] = 0.f;
+	Vector4Set(dst_vtx[1].color, 255, 255, 255, 255);
+	VectorCopy(v_normal, dst_vtx[1].normal);
+
+	VectorMA( org, 1.f, v_up, point );
+	VectorMA( point, 1.f, v_right, dst_vtx[2].pos );
+	dst_vtx[2].gl_tc[0] = 1.f;
+	dst_vtx[2].gl_tc[1] = 0.f;
+	dst_vtx[2].lm_tc[0] = dst_vtx[2].lm_tc[1] = 0.f;
+	Vector4Set(dst_vtx[2].color, 255, 255, 255, 255);
+	VectorCopy(v_normal, dst_vtx[2].normal);
+
+	VectorMA( org, -1.f, v_up, point );
+	VectorMA( point, 1.f, v_right, dst_vtx[3].pos );
+	dst_vtx[3].gl_tc[0] = 1.f;
+	dst_vtx[3].gl_tc[1] = 1.f;
+	dst_vtx[3].lm_tc[0] = dst_vtx[3].lm_tc[1] = 0.f;
+	Vector4Set(dst_vtx[3].color, 255, 255, 255, 255);
+	VectorCopy(v_normal, dst_vtx[3].normal);
+
+	dst_idx[0] = 0;
+	dst_idx[1] = 1;
+	dst_idx[2] = 2;
+	dst_idx[3] = 0;
+	dst_idx[4] = 2;
+	dst_idx[5] = 3;
+
+	R_GeometryRangeUnlock( &lock );
+
+	g_sprite.quad.geometry = (vk_render_geometry_t){
+		.max_vertex = 4,
+		.vertex_offset = g_sprite.quad.geom.vertices.unit_offset,
+
+		.element_count = 6,
+		.index_offset = g_sprite.quad.geom.indices.unit_offset,
+
+		.material = kXVkMaterialRegular,
+		.texture = tglob.defaultTexture,
+		.emissive = {1,1,1},
+	};
+
+	return R_RenderModelCreate(&g_sprite.quad.model, (vk_render_model_init_t){
+		.name = "sprite",
+		.geometries = &g_sprite.quad.geometry,
+		.geometries_count = 1,
+		.dynamic = false,
+		});
+}
+
+static void destroyQuadModel(void) {
+	if (g_sprite.quad.model.num_geometries)
+		R_RenderModelDestroy(&g_sprite.quad.model);
+
+	if (g_sprite.quad.geom.block_handle.size)
+		R_GeometryRangeFree(&g_sprite.quad.geom);
+
+	g_sprite.quad.model.num_geometries = 0;
+	g_sprite.quad.geom.block_handle.size = 0;
+}
+
 qboolean R_SpriteInit(void) {
-	R_SpeedsRegisterMetric(&g_sprite.stats.sprites, "sprites_count", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_sprite.stats.sprites, "count", kSpeedsMetricCount);
+
 	return true;
+	// TODO return createQuadModel();
+}
+
+void R_SpriteShutdown(void) {
+	destroyQuadModel();
+}
+
+void R_SpriteNewMapFIXME(void) {
+	destroyQuadModel();
+	ASSERT(createQuadModel());
 }
 
 static mspriteframe_t *R_GetSpriteFrame( const model_t *pModel, int frame, float yaw )
@@ -672,81 +786,25 @@ static vk_render_type_e spriteRenderModeToRenderType( int render_mode ) {
 }
 
 static void R_DrawSpriteQuad( const char *debug_name, mspriteframe_t *frame, vec3_t org, vec3_t v_right, vec3_t v_up, float scale, int texture, int render_mode, const vec4_t color ) {
-	r_geometry_buffer_lock_t buffer;
-	if (!R_GeometryBufferAllocAndLock( &buffer, 4, 6, LifetimeSingleFrame )) {
-		gEngine.Con_Printf(S_ERROR "Cannot allocate geometry for sprite quad\n");
-		return;
-	}
-
-	vec3_t point;
-	vk_vertex_t *dst_vtx;
-	uint16_t *dst_idx;
-
-	dst_vtx = buffer.vertices.ptr;
-	dst_idx = buffer.indices.ptr;
-
 	vec3_t v_normal;
 	CrossProduct(v_right, v_up, v_normal);
 
-	VectorMA( org, frame->down * scale, v_up, point );
-	VectorMA( point, frame->left * scale, v_right, dst_vtx[0].pos );
-	dst_vtx[0].gl_tc[0] = 0.f;
-	dst_vtx[0].gl_tc[1] = 1.f;
-	dst_vtx[0].lm_tc[0] = dst_vtx[0].lm_tc[1] = 0.f;
-	Vector4Set(dst_vtx[0].color, 255, 255, 255, 255);
-	VectorCopy(v_normal, dst_vtx[0].normal);
+	// TODO can frame->right/left and frame->up/down be asymmetric?
+	VectorScale(v_right, frame->right * scale, v_right);
+	VectorScale(v_up, frame->up * scale, v_up);
 
-	VectorMA( org, frame->up * scale, v_up, point );
-	VectorMA( point, frame->left * scale, v_right, dst_vtx[1].pos );
-	dst_vtx[1].gl_tc[0] = 0.f;
-	dst_vtx[1].gl_tc[1] = 0.f;
-	dst_vtx[1].lm_tc[0] = dst_vtx[1].lm_tc[1] = 0.f;
-	Vector4Set(dst_vtx[1].color, 255, 255, 255, 255);
-	VectorCopy(v_normal, dst_vtx[1].normal);
+	matrix4x4 transform;
+	Matrix4x4_CreateFromVectors(transform, v_right, v_up, v_normal, org);
 
-	VectorMA( org, frame->up * scale, v_up, point );
-	VectorMA( point, frame->right * scale, v_right, dst_vtx[2].pos );
-	dst_vtx[2].gl_tc[0] = 1.f;
-	dst_vtx[2].gl_tc[1] = 0.f;
-	dst_vtx[2].lm_tc[0] = dst_vtx[2].lm_tc[1] = 0.f;
-	Vector4Set(dst_vtx[2].color, 255, 255, 255, 255);
-	VectorCopy(v_normal, dst_vtx[2].normal);
+	const vk_render_type_e render_type = spriteRenderModeToRenderType(render_mode);
 
-	VectorMA( org, frame->down * scale, v_up, point );
-	VectorMA( point, frame->right * scale, v_right, dst_vtx[3].pos );
-	dst_vtx[3].gl_tc[0] = 1.f;
-	dst_vtx[3].gl_tc[1] = 1.f;
-	dst_vtx[3].lm_tc[0] = dst_vtx[3].lm_tc[1] = 0.f;
-	Vector4Set(dst_vtx[3].color, 255, 255, 255, 255);
-	VectorCopy(v_normal, dst_vtx[3].normal);
-
-	dst_idx[0] = 0;
-	dst_idx[1] = 1;
-	dst_idx[2] = 2;
-	dst_idx[3] = 0;
-	dst_idx[4] = 2;
-	dst_idx[5] = 3;
-
-	R_GeometryBufferUnlock( &buffer );
-
-	{
-		const vk_render_geometry_t geometry = {
-			.texture = texture,
-			.material = kXVkMaterialRegular,
-
-			.max_vertex = 4,
-			.vertex_offset = buffer.vertices.unit_offset,
-
-			.element_count = 6,
-			.index_offset = buffer.indices.unit_offset,
-
-			.emissive = {1,1,1},
-		};
-
-		VK_RenderModelDynamicBegin( spriteRenderModeToRenderType(render_mode), color, m_matrix4x4_identity, "%s", debug_name );
-		VK_RenderModelDynamicAddGeometry( &geometry );
-		VK_RenderModelDynamicCommit();
-	}
+	R_RenderModelDraw(&g_sprite.quad.model, (r_model_draw_t){
+		.render_type = render_type,
+		.color = (const vec4_t*)color,
+		.transform = &transform,
+		.prev_transform = &transform,
+		.textures_override = texture,
+	});
 }
 
 static qboolean R_SpriteHasLightmap( cl_entity_t *e, int texFormat )

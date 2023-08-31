@@ -19,7 +19,10 @@ void VK_LoadCvars( void )
 	ui_infotool = gEngine.Cvar_Get( "ui_infotool", "0", FCVAR_CHEAT, "DEBUG: print entity info under crosshair" );
 	vk_only = gEngine.Cvar_Get( "vk_only", "0", FCVAR_GLCONFIG, "Full disable Ray Tracing pipeline" );
 	vk_device_target_id = gEngine.Cvar_Get( "vk_device_target_id", "", FCVAR_GLCONFIG, "Selected video device id" );
+
+	vk_debug_log = gEngine.Cvar_Get("vk_debug_log", "", FCVAR_GLCONFIG, "List of modules to enable debug logs for");
 }
+
 void VK_LoadCvarsAfterInit( void )
 {
 	vk_rtx_extension = gEngine.Cvar_Get( "vk_rtx_extension", vk_core.rtx ? "1" : "0", FCVAR_READ_ONLY, "" );

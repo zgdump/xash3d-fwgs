@@ -108,6 +108,7 @@ typedef struct alo_pool_s {
 
 #define DEFAULT_CAPACITY 256
 
+// TODO make it not a pointer. Just Init
 struct alo_pool_s* aloPoolCreate(alo_size_t size, int expected_allocations, alo_size_t min_alignment) {
 	alo_pool_t *pool = MALLOC(sizeof(*pool));
 	block_t *b;
@@ -292,6 +293,71 @@ uint32_t aloRingAlloc(alo_ring_t* ring, uint32_t size, uint32_t alignment) {
 
 	ring->head = size;
 	return 0;
+}
+
+//  free--><- allocated
+// [a....p|q.r.]
+//  free->
+// [a....|pq.r.]
+//  freeing item:
+//  - swap with first allocated
+// [a....r|q.p.]
+
+void aloIntPoolGrow(alo_int_pool_t *pool, int new_capacity) {
+	int *const new_free_list = MALLOC(sizeof(int) * new_capacity);
+	const int new_items = new_capacity - pool->capacity;
+
+	for (int i = 0; i < pool->free; ++i)
+		new_free_list[i] = pool->free_list[i];
+
+	for (int i = 0; i < new_items; ++i)
+		new_free_list[pool->free + i] = new_capacity - i - 1;
+
+	if (pool->free_list)
+		FREE(pool->free_list);
+
+	pool->free_list = new_free_list;
+	pool->free += new_items;
+	pool->capacity = new_capacity;
+}
+
+int aloIntPoolAlloc(alo_int_pool_t *pool) {
+	if (pool->free == 0)
+		return -1;
+
+	pool->free--;
+	return pool->free_list[pool->free];
+}
+
+void aloIntPoolFree(alo_int_pool_t *pool, int val) {
+	ASSERT(pool->free < pool->capacity);
+	ASSERT(val >= 0);
+	ASSERT(val < pool->capacity);
+
+	// Manager allocated tail list
+	for (int i = pool->free; i < pool->capacity; ++i) {
+		if (pool->free_list[i] != val)
+			continue;
+
+		const int tmp = pool->free_list[pool->free];
+		pool->free_list[pool->free] = val;
+		pool->free_list[i] = tmp;
+
+		++pool->free;
+		return;
+	}
+
+	ASSERT(!"Item not found");
+}
+
+void aloIntPoolClear(alo_int_pool_t *pool) {
+	// Depends on the fact that the tail free_list contains properly maintained allocated ints
+	pool->free = pool->capacity;
+}
+
+void aloIntPoolDestroy(alo_int_pool_t *pool) {
+	if (pool->free_list)
+		FREE(pool->free_list);
 }
 
 #if defined(ALOLCATOR_TEST)

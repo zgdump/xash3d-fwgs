@@ -8,6 +8,8 @@
 
 #include <memory.h>
 
+#define MODULE_NAME "staging"
+
 #define DEFAULT_STAGING_SIZE (128*1024*1024)
 #define MAX_STAGING_ALLOCS (2048)
 #define MAX_CONCURRENT_FRAMES 2
@@ -62,12 +64,12 @@ qboolean R_VkStagingInit(void) {
 
 	R_FlippingBuffer_Init(&g_staging.buffer_alloc, DEFAULT_STAGING_SIZE);
 
-	R_SpeedsRegisterMetric(&g_staging.stats.total_size, "staging_total_size", kSpeedsMetricBytes);
-	R_SpeedsRegisterMetric(&g_staging.stats.buffers_size, "staging_buffers_size", kSpeedsMetricBytes);
-	R_SpeedsRegisterMetric(&g_staging.stats.images_size, "staging_images_size", kSpeedsMetricBytes);
+	R_SPEEDS_COUNTER(g_staging.stats.total_size, "total_size", kSpeedsMetricBytes);
+	R_SPEEDS_COUNTER(g_staging.stats.buffers_size, "buffers_size", kSpeedsMetricBytes);
+	R_SPEEDS_COUNTER(g_staging.stats.images_size, "images_size", kSpeedsMetricBytes);
 
-	R_SpeedsRegisterMetric(&g_staging.stats.buffer_chunks, "staging_buffer_chunks", kSpeedsMetricCount);
-	R_SpeedsRegisterMetric(&g_staging.stats.images, "staging_images", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_staging.stats.buffer_chunks, "buffer_chunks", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_staging.stats.images, "images", kSpeedsMetricCount);
 
 	g_staging.buffer_upload_scope_id = R_VkGpuScope_Register("staging_buffers");
 	g_staging.image_upload_scope_id = R_VkGpuScope_Register("staging_images");

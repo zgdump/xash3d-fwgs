@@ -112,15 +112,11 @@ static void R_InitSkyClouds( struct mip_s *mt, struct texture_s *tx, qboolean cu
 
 extern void GL_SubdivideSurface( msurface_t *fa );
 
-
-static void Mod_LoadAliasModel( model_t *mod, const void *buffer, qboolean *loaded )
-{
-	PRINT_NOT_IMPLEMENTED_ARGS("(%p, %s), %p, %d", mod, mod->name, buffer, *loaded);
-}
-
 static qboolean Mod_ProcessRenderData( model_t *mod, qboolean create, const byte *buffer )
 {
 	qboolean loaded = true;
+
+	//gEngine.Con_Reportf("%s(%s, create=%d)\n", __FUNCTION__, mod->name, create);
 
 	// TODO does this ever happen?
 	if (!create && mod->type == mod_brush)
@@ -131,17 +127,19 @@ static qboolean Mod_ProcessRenderData( model_t *mod, qboolean create, const byte
 		switch( mod->type )
 		{
 			case mod_studio:
-				Mod_LoadStudioModel( mod, buffer, &loaded );
+				// This call happens before we get R_NewMap, which frees all current buffers
+				// So we can't really load anything here
+				// TODO we might benefit a tiny bit (a few ms loading time) from reusing studio models from previous map
 				break;
 			case mod_sprite:
 				Mod_LoadSpriteModel( mod, buffer, &loaded, mod->numtexinfo );
 				break;
 			case mod_alias:
-				Mod_LoadAliasModel( mod, buffer, &loaded );
+				// TODO what ARE mod_alias? We just don't know.
 				break;
 			case mod_brush:
-				// FIXME this happens before we get R_NewMap, which frees all current buffers
-				// loaded = VK_LoadBrushModel( mod, buffer );
+				// This call happens before we get R_NewMap, which frees all current buffers
+				// So we can't really load anything here
 				break;
 			default: gEngine.Host_Error( "Mod_LoadModel: unsupported type %d\n", mod->type );
 		}
@@ -151,10 +149,14 @@ static qboolean Mod_ProcessRenderData( model_t *mod, qboolean create, const byte
 		gEngine.drawFuncs->Mod_ProcessUserData( mod, create, buffer );
 
 	if( !create ) {
-		switch( mod->type )
-		{
+		switch( mod->type ) {
 			case mod_brush:
-				VK_BrushModelDestroy( mod );
+				// Empirically, this function only attempts to destroy the worldmodel before loading the next map.
+				// However, all brush models need to be destroyed. Use this as a signal to destroy them too.
+				// Assert that this observation is correct.
+				// ASSERT(mod == gEngine.pfnGetModelByIndex(1)); not correct when closing the game. At this point model count is zero.
+
+				R_SceneMapDestroy();
 				break;
 			default:
 				PRINT_NOT_IMPLEMENTED_ARGS("destroy (%p, %d, %s)", mod, mod->type, mod->name);

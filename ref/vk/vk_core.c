@@ -22,6 +22,8 @@
 #include "vk_sprite.h"
 #include "vk_beams.h"
 #include "vk_combuf.h"
+#include "vk_entity_data.h"
+#include "vk_logs.h"
 
 // FIXME move this rt-specific stuff out
 #include "vk_light.h"
@@ -33,6 +35,8 @@
 #include "crtlib.h"
 #include "com_strings.h"
 #include "eiface.h"
+
+#include "debugbreak.h"
 
 #include <string.h>
 #include <errno.h>
@@ -127,7 +131,7 @@ VkBool32 VKAPI_PTR debugCallback(
 #ifdef _MSC_VER
 		__debugbreak();
 #else
-		__builtin_trap();
+		debug_break();
 #endif
 	}
 	return VK_FALSE;
@@ -695,7 +699,9 @@ qboolean R_VkInit( void )
 	vk_core.validate = !!gEngine.Sys_CheckParm("-vkvalidate");
 	vk_core.debug = vk_core.validate || !!(gEngine.Sys_CheckParm("-vkdebug") || gEngine.Sys_CheckParm("-gldebug"));
 	vk_core.rtx = false;
+
 	VK_LoadCvars();
+	VK_LogsReadCvar();
 
 	R_SpeedsInit();
 
@@ -808,6 +814,10 @@ qboolean R_VkInit( void )
 void R_VkShutdown( void ) {
 	XVK_CHECK(vkDeviceWaitIdle(vk_core.device));
 
+	VK_EntityDataClear();
+
+	R_SpriteShutdown();
+
 	if (vk_core.rtx)
 	{
 		VK_LightsShutdown();
@@ -830,7 +840,7 @@ void R_VkShutdown( void ) {
 	VK_DescriptorShutdown();
 
 	R_VkStagingShutdown();
-	
+
 	R_VkCombuf_Destroy();
 
 	VK_DevMemDestroy();

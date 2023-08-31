@@ -20,6 +20,7 @@ void R_ClearScene( void );
 void R_PushScene( void );
 void R_PopScene( void );
 
+void R_SceneMapDestroy( void );
 void R_NewMap( void );
 void R_RenderScene( void );
 

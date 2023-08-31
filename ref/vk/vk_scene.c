@@ -19,6 +19,8 @@
 #include "camera.h"
 #include "vk_mapents.h"
 #include "profiler.h"
+#include "vk_entity_data.h"
+#include "vk_logs.h"
 
 #include "com_strings.h"
 #include "ref_params.h"
@@ -27,6 +29,8 @@
 
 #include <stdlib.h> // qsort
 #include <memory.h>
+
+#define LOG_MODULE LogModule_Misc
 
 #define PROFILER_SCOPES(X) \
 	X(scene_render, "VK_SceneRender"); \
@@ -85,9 +89,8 @@ static void loadLights( const model_t *const map ) {
 
 // Clears all old map data
 static void mapLoadBegin( const model_t *const map ) {
-	// TODO should we do something like VK_BrushBeginLoad?
-	VK_BrushStatsClear();
-
+	VK_EntityDataClear();
+	R_StudioCacheClear();
 	R_GeometryBuffer_MapClear();
 
 	VK_ClearLightmap();
@@ -106,46 +109,41 @@ static void mapLoadEnd(const model_t *const map) {
 	VK_UploadLightmap();
 }
 
-static void loadBrushModels( void ) {
+static void preloadModels( void ) {
 	const int num_models = gEngine.EngineGetParm( PARM_NUMMODELS, 0 );
 
 	// Load all models at once
-	gEngine.Con_Reportf( "Num models: %d:\n", num_models );
+	DEBUG( "Num models: %d:", num_models );
 	for( int i = 0; i < num_models; i++ )
 	{
 		model_t	*m;
 		if(( m = gEngine.pfnGetModelByIndex( i + 1 )) == NULL )
 			continue;
 
-		gEngine.Con_Reportf( "  %d: name=%s, type=%d, submodels=%d, nodes=%d, surfaces=%d, nummodelsurfaces=%d\n", i, m->name, m->type, m->numsubmodels, m->numnodes, m->numsurfaces, m->nummodelsurfaces);
+		DEBUG( "  %d: name=%s, type=%d, submodels=%d, nodes=%d, surfaces=%d, nummodelsurfaces=%d", i, m->name, m->type, m->numsubmodels, m->numnodes, m->numsurfaces, m->nummodelsurfaces);
 
-		if( m->type != mod_brush )
-			continue;
+		switch (m->type) {
+			case mod_brush:
+				if (!VK_BrushModelLoad(m))
+					gEngine.Host_Error( "Couldn't load brush model %s\n", m->name );
+				break;
 
-		if (!VK_BrushModelLoad(m))
-			gEngine.Host_Error( "Couldn't load model %s\n", m->name );
-	}
-}
+			case mod_studio:
+				if (!R_StudioModelPreload(m))
+					gEngine.Host_Error( "Couldn't preload studio model %s\n", m->name );
+				break;
 
-// Only used when reloading patches. In norma circumstances models get destroyed by the engine
-static void destroyBrushModels( void ) {
-	const int num_models = gEngine.EngineGetParm( PARM_NUMMODELS, 0 );
-	gEngine.Con_Printf("Destroying %d models\n", num_models);
-
-	for( int i = 0; i < num_models; i++ ) {
-		model_t *m;
-		if(( m = gEngine.pfnGetModelByIndex( i + 1 )) == NULL )
-			continue;
-
-		if( m->type != mod_brush )
-			continue;
-
-		VK_BrushModelDestroy(m);
+			default:
+				break;
+		}
 	}
 }
 
 static void loadMap(const model_t* const map) {
+	VK_LogsReadCvar();
 	mapLoadBegin(map);
+
+	R_SpriteNewMapFIXME();
 
 	// Load light entities and patch data prior to loading map brush model
 	XVK_ParseMapEntities();
@@ -157,20 +155,20 @@ static void loadMap(const model_t* const map) {
 	// Depends on loaded materials. Must preceed loading brush models.
 	XVK_ParseMapPatches();
 
-	loadBrushModels();
+	preloadModels();
 
 	loadLights(map);
 	mapLoadEnd(map);
 }
 
 static void reloadPatches( void ) {
-	gEngine.Con_Printf("Reloading patches and materials\n");
+	INFO("Reloading patches and materials");
 
 	R_VkStagingFlushSync();
 
 	XVK_CHECK(vkDeviceWaitIdle( vk_core.device ));
 
-	destroyBrushModels();
+	VK_BrushModelDestroyAll();
 
 	const model_t *const map = gEngine.pfnGetModelByIndex( 1 );
 	loadMap(map);
@@ -227,6 +225,10 @@ int R_FIXME_GetEntityRenderMode( cl_entity_t *ent )
 	return ent->curstate.rendermode;
 }
 
+void R_SceneMapDestroy( void ) {
+	VK_BrushModelDestroyAll();
+}
+
 // tell the renderer what new map is started
 void R_NewMap( void ) {
 	const model_t *const map = gEngine.pfnGetModelByIndex( 1 );
@@ -235,7 +237,7 @@ void R_NewMap( void ) {
 	// and this R_NewMap call is from within loading of a saved game.
 	const qboolean is_save_load = !!gEngine.pfnGetModelByIndex( 1 )->cache.data;
 
-	gEngine.Con_Reportf( "R_NewMap, loading save: %d\n", is_save_load );
+	INFO( "R_NewMap, loading save: %d", is_save_load );
 
 	// Skip clearing already loaded data if the map hasn't changed.
 	if (is_save_load)
@@ -247,6 +249,8 @@ void R_NewMap( void ) {
 	XVK_SetupSky( gEngine.pfnGetMoveVars()->skyName );
 
 	loadMap(map);
+
+	R_StudioResetPlayerModels();
 }
 
 qboolean R_AddEntity( struct cl_entity_s *clent, int type )
@@ -586,7 +590,7 @@ static void drawEntity( cl_entity_t *ent, int render_mode )
 				for (int i = 0; i < g_map_entities.func_walls_count; ++i) {
 					xvk_mapent_func_wall_t *const fw = g_map_entities.func_walls + i;
 					if (Q_strcmp(ent->model->name, fw->model) == 0) {
-						/* gEngine.Con_Reportf("ent->index=%d (%s) mapent:%d off=%f %f %f\n", */
+						/* DEBUG("ent->index=%d (%s) mapent:%d off=%f %f %f", */
 						/* 		ent->index, ent->model->name, fw->entity_index, */
 						/* 		fw->origin[0], fw->origin[1], fw->origin[2]); */
 						Matrix3x4_LoadIdentity(model);
@@ -717,7 +721,7 @@ void CL_AddCustomBeam( cl_entity_t *pEnvBeam )
 {
 	if( g_lists.draw_list->num_beam_entities >= ARRAYSIZE(g_lists.draw_list->beam_entities) )
 	{
-		gEngine.Con_Printf( S_ERROR "Too many beams %d!\n", g_lists.draw_list->num_beam_entities );
+		ERR("Too many beams %d!", g_lists.draw_list->num_beam_entities );
 		return;
 	}
 

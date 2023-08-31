@@ -21,6 +21,8 @@ static struct {
 	xvk_image_t depth;
 
 	uint32_t width, height;
+
+	uint32_t recreate_requested;
 } g_swapchain = {0};
 
 // TODO move to common
@@ -196,11 +198,10 @@ r_vk_swapchain_framebuffer_t R_VkSwapchainAcquire(  VkSemaphore sem_image_availa
 	APROF_SCOPE_DECLARE_BEGIN(function, __FUNCTION__);
 
 	r_vk_swapchain_framebuffer_t ret = {0};
-	qboolean force_recreate = false;
 
-	for (int i = 0;; ++i) {
+	for (;;) {
 		// Check that swapchain has the same size
-		recreateSwapchain(force_recreate);
+		recreateSwapchain(!!g_swapchain.recreate_requested);
 
 		APROF_SCOPE_DECLARE_BEGIN_EX(vkAcquireNextImageKHR, "vkAcquireNextImageKHR", APROF_SCOPE_FLAG_WAIT);
 		const VkResult acquire_result = vkAcquireNextImageKHR(vk_core.device, g_swapchain.swapchain, UINT64_MAX, sem_image_available, VK_NULL_HANDLE, &ret.index);
@@ -208,6 +209,13 @@ r_vk_swapchain_framebuffer_t R_VkSwapchainAcquire(  VkSemaphore sem_image_availa
 
 		switch (acquire_result) {
 			case VK_SUCCESS:
+				g_swapchain.recreate_requested = 0;
+				break;
+
+			case VK_SUBOPTIMAL_KHR:
+				// Would need to wait on the semaphore here somehow
+				gEngine.Con_Printf(S_WARN "vkAcquireNextImageKHR returned %s (%0#x), will recreate swapchain for the next frame\n", R_VkResultName(acquire_result), acquire_result);
+				++g_swapchain.recreate_requested;
 				break;
 
 			case VK_ERROR_OUT_OF_HOST_MEMORY:
@@ -217,14 +225,24 @@ r_vk_swapchain_framebuffer_t R_VkSwapchainAcquire(  VkSemaphore sem_image_availa
 				XVK_CHECK(acquire_result);
 				return ret;
 
-			default:
-				gEngine.Con_Printf(S_WARN "vkAcquireNextImageKHR returned %s (%0#x), recreating swapchain\n", R_VkResultName(acquire_result), acquire_result);
-				if (i == 0) {
-					force_recreate = true;
-					continue;
-				}
-				gEngine.Con_Printf(S_WARN "second vkAcquireNextImageKHR failed with %s, frame will be lost\n", R_VkResultName(acquire_result));
+			case VK_TIMEOUT:
+			case VK_NOT_READY:
+				gEngine.Con_Printf(S_ERROR "vkAcquireNextImageKHR returned %s (%0#x), frame will be lost\n", R_VkResultName(acquire_result), acquire_result);
 				return ret;
+
+			case VK_ERROR_OUT_OF_DATE_KHR:
+			case VK_ERROR_SURFACE_LOST_KHR:
+			case VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT:
+			default:
+				gEngine.Con_Printf(S_WARN "vkAcquireNextImageKHR returned %s (%0#x)\n", R_VkResultName(acquire_result), acquire_result);
+
+				if (g_swapchain.recreate_requested) {
+					gEngine.Con_Printf(S_WARN "second vkAcquireNextImageKHR failed with %s, frame will be lost\n", R_VkResultName(acquire_result));
+					return ret;
+				}
+
+				++g_swapchain.recreate_requested;
+				continue;
 		}
 
 		break;
@@ -252,12 +270,17 @@ void R_VkSwapchainPresent( uint32_t index, VkSemaphore done ) {
 	};
 
 	const VkResult present_result = vkQueuePresentKHR(vk_core.queue, &presinfo);
-	switch (present_result)
-	{
+	switch (present_result) {
 		case VK_ERROR_OUT_OF_DATE_KHR:
 		case VK_ERROR_SURFACE_LOST_KHR:
+		case VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT:
 			gEngine.Con_Printf(S_WARN "vkQueuePresentKHR returned %s, frame will be lost\n", R_VkResultName(present_result));
 			break;
+
+		case VK_SUBOPTIMAL_KHR:
+			gEngine.Con_Printf(S_WARN "vkQueuePresentKHR returned %s\n", R_VkResultName(present_result));
+			break;
+
 		default:
 			XVK_CHECK(present_result);
 	}

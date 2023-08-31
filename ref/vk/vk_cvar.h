@@ -27,6 +27,7 @@ void VK_LoadCvarsAfterInit( void );
 	X(vk_rtx_extension) \
 	X(vk_only) \
 	X(vk_device_target_id) \
+	X(vk_debug_log) \
 
 #define EXTERN_CVAR(cvar) extern cvar_t *cvar;
 DECLARE_CVAR(EXTERN_CVAR)

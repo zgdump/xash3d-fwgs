@@ -12,7 +12,6 @@
 #include "vk_rtx.h"
 #include "vk_descriptor.h"
 #include "vk_framectl.h" // FIXME needed for dynamic models cmdbuf
-#include "vk_previous_frame.h"
 #include "alolcator.h"
 #include "profiler.h"
 #include "r_speeds.h"
@@ -24,6 +23,8 @@
 #include "xash3d_types.h"
 
 #include <memory.h>
+
+#define MODULE_NAME "render"
 
 #define MAX_UNIFORM_SLOTS (MAX_SCENE_ENTITIES * 2 /* solid + trans */ + 1)
 
@@ -336,8 +337,8 @@ qboolean VK_RenderInit( void ) {
 	if (!createPipelines())
 		return false;
 
-	R_SpeedsRegisterMetric(&g_render.stats.dynamic_model_count, "models_dynamic", kSpeedsMetricCount);
-	R_SpeedsRegisterMetric(&g_render.stats.models_count, "models", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_render.stats.dynamic_model_count, "models_dynamic", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_render.stats.models_count, "models", kSpeedsMetricCount);
 	return true;
 }
 
@@ -641,33 +642,48 @@ void VK_RenderEndRTX( struct vk_combuf_s* combuf, VkImageView img_dst_view, VkIm
 	}
 }
 
-qboolean VK_RenderModelInit( vk_render_model_t *model ) {
-	if (vk_core.rtx && (g_render_state.current_frame_is_ray_traced || !model->dynamic)) {
-		const VkBuffer geom_buffer = R_GeometryBuffer_Get();
-		// TODO runtime rtx switch: ???
-		const vk_ray_model_init_t args = {
-			.buffer = geom_buffer,
-			.model = model,
-		};
-		model->ray_model = VK_RayModelCreate(args);
-		model->dynamic_polylights = NULL;
-		model->dynamic_polylights_count = 0;
-		Matrix4x4_LoadIdentity(model->transform);
-		return !!model->ray_model;
-	}
+qboolean R_RenderModelCreate( vk_render_model_t *model, vk_render_model_init_t args ) {
+	memset(model, 0, sizeof(*model));
+	Q_strncpy(model->debug_name, args.name, sizeof(model->debug_name));
 
-	// TODO pre-bake optimal draws
-	return true;
+	model->geometries = args.geometries;
+	model->num_geometries = args.geometries_count;
+
+	if (!vk_core.rtx)
+		return true;
+
+	model->rt_model = RT_ModelCreate((rt_model_create_t){
+		.debug_name = model->debug_name,
+		.geometries = args.geometries,
+		.geometries_count = args.geometries_count,
+		.usage = args.dynamic ? kBlasBuildDynamicUpdate : kBlasBuildStatic,
+	});
+	return !!model->rt_model;
 }
 
-void VK_RenderModelDestroy( vk_render_model_t* model ) {
-	// FIXME why the condition? we should do the cleanup anyway
-	if (vk_core.rtx && (g_render_state.current_frame_is_ray_traced || !model->dynamic)) {
-		if (model->ray_model)
-			VK_RayModelDestroy(model->ray_model);
-		if (model->dynamic_polylights)
-			Mem_Free(model->dynamic_polylights);
-	}
+void R_RenderModelDestroy( vk_render_model_t* model ) {
+	if (model->dynamic_polylights)
+		Mem_Free(model->dynamic_polylights);
+
+	if (model->rt_model)
+		RT_ModelDestroy(model->rt_model);
+}
+
+qboolean R_RenderModelUpdate( const vk_render_model_t *model ) {
+	// Non-RT rendering doesn't need to update anything, assuming that geometry regions offsets are not changed, and losing intermediate states is fine
+	if (!g_render_state.current_frame_is_ray_traced)
+		return true;
+
+	ASSERT(model->rt_model);
+
+	return RT_ModelUpdate(model->rt_model, model->geometries, model->num_geometries);
+}
+
+qboolean R_RenderModelUpdateMaterials( const vk_render_model_t *model, const int *geom_indices, int geom_indices_count) {
+	if (!model->rt_model)
+		return true;
+
+	return RT_ModelUpdateMaterials(model->rt_model, model->geometries, model->num_geometries, geom_indices, geom_indices_count);
 }
 
 static void uboComputeAndSetMVPFromModel( const matrix4x4 model ) {
@@ -676,47 +692,43 @@ static void uboComputeAndSetMVPFromModel( const matrix4x4 model ) {
 	Matrix4x4_ToArrayFloatGL(mvp, (float*)g_render_state.dirty_uniform_data.mvp);
 }
 
-void VK_RenderModelDraw( const cl_entity_t *ent, vk_render_model_t* model ) {
-	int current_texture = -1;
+typedef struct {
+	const char *debug_name;
+	int lightmap; // TODO per-geometry
+	const vk_render_geometry_t *geometries;
+	int geometries_count;
+	const matrix4x4 *transform;
+	const vec4_t *color;
+	int render_type;
+	int textures_override;
+} trad_submit_t;
+
+static void submitToTraditionalRender( trad_submit_t args ) {
+	int current_texture = args.textures_override;
 	int element_count = 0;
 	int index_offset = -1;
 	int vertex_offset = 0;
 
-	uboComputeAndSetMVPFromModel( model->transform );
+	uboComputeAndSetMVPFromModel( *args.transform );
 
 	// TODO get rid of this dirty ubo thing
-	Vector4Copy(model->color, g_render_state.dirty_uniform_data.color);
-	ASSERT(model->lightmap <= MAX_LIGHTMAPS);
-	const int lightmap = model->lightmap > 0 ? tglob.lightmapTextures[model->lightmap - 1] : tglob.whiteTexture;
+	Vector4Copy(*args.color, g_render_state.dirty_uniform_data.color);
+	ASSERT(args.lightmap <= MAX_LIGHTMAPS);
+	const int lightmap = args.lightmap > 0 ? tglob.lightmapTextures[args.lightmap - 1] : tglob.whiteTexture;
 
-	++g_render.stats.models_count;
+	drawCmdPushDebugLabelBegin( args.debug_name );
 
-	if (g_render_state.current_frame_is_ray_traced) {
-		if (ent != NULL && model != NULL) {
-			R_PrevFrame_SaveCurrentState( ent->index, model->transform );
-			R_PrevFrame_ModelTransform( ent->index, model->prev_transform );
-		}
-		else {
-			Matrix4x4_Copy( model->prev_transform, model->transform );
-		}
-
-		VK_RayFrameAddModel(model->ray_model, model);
-
-		return;
-	}
-
-	drawCmdPushDebugLabelBegin( model->debug_name );
-
-	for (int i = 0; i < model->num_geometries; ++i) {
-		const vk_render_geometry_t *geom = model->geometries + i;
-		const qboolean split = current_texture != geom->texture
+	for (int i = 0; i < args.geometries_count; ++i) {
+		const vk_render_geometry_t *geom = args.geometries + i;
+		const int tex = args.textures_override > 0 ? args.textures_override : geom->texture;
+		const qboolean split = current_texture != tex
 			|| vertex_offset != geom->vertex_offset
 			|| (index_offset + element_count) != geom->index_offset;
 
 		// We only support indexed geometry
 		ASSERT(geom->index_offset >= 0);
 
-		if (geom->texture < 0)
+		if (tex < 0)
 			continue;
 
 		if (split) {
@@ -724,7 +736,7 @@ void VK_RenderModelDraw( const cl_entity_t *ent, vk_render_model_t* model ) {
 				render_draw_t draw = {
 					.lightmap = lightmap,
 					.texture = current_texture,
-					.pipeline_index = model->render_type,
+					.pipeline_index = args.render_type,
 					.element_count = element_count,
 					.vertex_offset = vertex_offset,
 					.index_offset = index_offset,
@@ -733,7 +745,7 @@ void VK_RenderModelDraw( const cl_entity_t *ent, vk_render_model_t* model ) {
 				drawCmdPushDraw( &draw );
 			}
 
-			current_texture = geom->texture;
+			current_texture = tex;
 			index_offset = geom->index_offset;
 			vertex_offset = geom->vertex_offset;
 			element_count = 0;
@@ -748,7 +760,7 @@ void VK_RenderModelDraw( const cl_entity_t *ent, vk_render_model_t* model ) {
 		const render_draw_t draw = {
 			.lightmap = lightmap,
 			.texture = current_texture,
-			.pipeline_index = model->render_type,
+			.pipeline_index = args.render_type,
 			.element_count = element_count,
 			.vertex_offset = vertex_offset,
 			.index_offset = index_offset,
@@ -760,50 +772,83 @@ void VK_RenderModelDraw( const cl_entity_t *ent, vk_render_model_t* model ) {
 	drawCmdPushDebugLabelEnd();
 }
 
-#define MAX_DYNAMIC_GEOMETRY 256
+void R_RenderModelDraw(const vk_render_model_t *model, r_model_draw_t args) {
+	++g_render.stats.models_count;
 
-static struct {
-	vk_render_model_t model;
-	matrix4x4 transform;
-	vk_render_geometry_t geometries[MAX_DYNAMIC_GEOMETRY];
-} g_dynamic_model = {0};
-
-void VK_RenderModelDynamicBegin( vk_render_type_e render_type, const vec4_t color, const matrix3x4 transform, const char *debug_name_fmt, ... ) {
-	va_list argptr;
-	va_start( argptr, debug_name_fmt );
-	vsnprintf(g_dynamic_model.model.debug_name, sizeof(g_dynamic_model.model.debug_name), debug_name_fmt, argptr );
-	va_end( argptr );
-
-	ASSERT(!g_dynamic_model.model.geometries);
-	g_dynamic_model.model.geometries = g_dynamic_model.geometries;
-	g_dynamic_model.model.num_geometries = 0;
-	g_dynamic_model.model.render_type = render_type;
-	g_dynamic_model.model.lightmap = 0;
-	Vector4Copy(color, g_dynamic_model.model.color);
-	Matrix4x4_LoadIdentity(g_dynamic_model.transform);
-	if (transform)
-		Matrix3x4_Copy(g_dynamic_model.transform, transform);
+	if (g_render_state.current_frame_is_ray_traced) {
+		ASSERT(model->rt_model);
+		RT_FrameAddModel(model->rt_model, (rt_frame_add_model_t){
+			.render_type = args.render_type,
+			.transform = (const matrix3x4*)args.transform,
+			.prev_transform = (const matrix3x4*)args.prev_transform,
+			.color = args.color,
+			.dynamic_polylights = model->dynamic_polylights,
+			.dynamic_polylights_count = model->dynamic_polylights_count,
+			.override = {
+				.textures = args.textures_override,
+				.geoms = model->geometries,
+				.geoms_count = model->num_geometries,
+			},
+		});
+	} else {
+		submitToTraditionalRender((trad_submit_t){
+			.debug_name = model->debug_name,
+			.lightmap = model->lightmap,
+			.geometries = model->geometries,
+			.geometries_count = model->num_geometries,
+			.transform = args.transform,
+			.color = args.color,
+			.render_type = args.render_type,
+			.textures_override = args.textures_override
+		});
+	}
 }
-void VK_RenderModelDynamicAddGeometry( const vk_render_geometry_t *geom ) {
-	ASSERT(g_dynamic_model.model.geometries);
-	if (g_dynamic_model.model.num_geometries == MAX_DYNAMIC_GEOMETRY) {
-		ERROR_THROTTLED(10, "Ran out of dynamic model geometry slots for model %s", g_dynamic_model.model.debug_name);
+
+void R_RenderDrawOnce(r_draw_once_t args) {
+	r_geometry_buffer_lock_t buffer;
+	if (!R_GeometryBufferAllocOnceAndLock( &buffer, args.vertices_count, args.indices_count)) {
+		gEngine.Con_Printf(S_ERROR "Cannot allocate geometry for dynamic draw\n");
 		return;
 	}
 
-	g_dynamic_model.geometries[g_dynamic_model.model.num_geometries++] = *geom;
-}
-void VK_RenderModelDynamicCommit( void ) {
-	ASSERT(g_dynamic_model.model.geometries);
+	memcpy(buffer.vertices.ptr, args.vertices, sizeof(vk_vertex_t) * args.vertices_count);
+	memcpy(buffer.indices.ptr, args.indices, sizeof(uint16_t) * args.indices_count);
 
-	if (g_dynamic_model.model.num_geometries > 0) {
-		g_render.stats.dynamic_model_count++;
-		g_dynamic_model.model.dynamic = true;
-		VK_RenderModelInit( &g_dynamic_model.model );
-		Matrix4x4_Copy(g_dynamic_model.model.transform, g_dynamic_model.transform);
-		VK_RenderModelDraw( NULL, &g_dynamic_model.model );
+	R_GeometryBufferUnlock( &buffer );
+
+	const vk_render_geometry_t geometry = {
+		.texture = args.texture,
+		.material = kXVkMaterialRegular,
+
+		.max_vertex = args.vertices_count,
+		.vertex_offset = buffer.vertices.unit_offset,
+
+		.element_count = args.indices_count,
+		.index_offset = buffer.indices.unit_offset,
+
+		.emissive = { (*args.color)[0], (*args.color)[1], (*args.color)[2] },
+	};
+
+	if (g_render_state.current_frame_is_ray_traced) {
+		RT_FrameAddOnce((rt_frame_add_once_t){
+			.debug_name = args.name,
+			.geometries = &geometry,
+			.color = args.color,
+			.geometries_count = 1,
+			.render_type = args.render_type,
+		});
+	} else {
+		submitToTraditionalRender((trad_submit_t){
+			.debug_name = args.name,
+			.lightmap = 0,
+			.geometries = &geometry,
+			.geometries_count = 1,
+			.transform = &m_matrix4x4_identity,
+			.color = args.color,
+			.render_type = args.render_type,
+			.textures_override = -1,
+		});
 	}
 
-	g_dynamic_model.model.debug_name[0] = '\0';
-	g_dynamic_model.model.geometries = NULL;
+	g_render.stats.dynamic_model_count++;
 }

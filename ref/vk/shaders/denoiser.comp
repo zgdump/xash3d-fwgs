@@ -216,9 +216,6 @@ void main() {
 
 	vec3 colour = vec3(0.);
 	{
-		// DEBUG motion vectors
-		//colour = vec3(length(imageLoad(position_t, pix).rgb - imageLoad(prev_position_t, pix).rgb));
-
 		// TODO: need to extract reprojecting from this shader because reprojected stuff need svgf denoising pass after it
 		const vec3 origin = (ubo.ubo.inv_view * vec4(0., 0., 0., 1.)).xyz;
 		const float depth = length(origin - imageLoad(position_t, pix).xyz);

@@ -2,11 +2,14 @@
 #include "vk_mapents.h"
 #include "vk_core.h" // TODO we need only pool from there, not the entire vulkan garbage
 #include "vk_textures.h"
+#include "vk_logs.h"
 
 #include "eiface.h" // ARRAYSIZE
 #include "xash3d_mathlib.h"
 #include <string.h>
 #include <ctype.h>
+
+#define LOG_MODULE LogModule_Patch
 
 xvk_map_entities_t g_map_entities;
 
@@ -19,7 +22,7 @@ static unsigned parseEntPropWadList(const char* value, string *out, unsigned bit
 	int dst_left = sizeof(string) - 2; // ; \0
 	char *dst = *out;
 	*dst = '\0';
-	gEngine.Con_Reportf("WADS: %s\n", value);
+	DEBUG("WADS: %s", value);
 
 	for (; *value;) {
 		const char *file_begin = value;
@@ -31,7 +34,7 @@ static unsigned parseEntPropWadList(const char* value, string *out, unsigned bit
 
 		{
 			const int len = value - file_begin;
-			gEngine.Con_Reportf("WAD: %.*s\n", len, file_begin);
+			DEBUG("WAD: %.*s", len, file_begin);
 
 			if (len < dst_left) {
 				Q_strncpy(dst, file_begin, len + 1);
@@ -46,7 +49,7 @@ static unsigned parseEntPropWadList(const char* value, string *out, unsigned bit
 		if (*value) value++;
 	}
 
-	gEngine.Con_Reportf("wad list: %s\n", *out);
+	DEBUG("wad list: %s", *out);
 	return bit;
 }
 
@@ -78,7 +81,7 @@ static unsigned parseEntPropIntArray(const char* value, int_array_t *out, unsign
 	}
 
 	if (*value) {
-		gEngine.Con_Printf(S_ERROR "Error parsing mapents patch IntArray (wrong format? too many entries (max=%d)), portion not parsed: %s\n", MAX_INT_ARRAY_SIZE, value);
+		ERR("Error parsing mapents patch IntArray (wrong format? too many entries (max=%d)), portion not parsed: %s", MAX_INT_ARRAY_SIZE, value);
 	}
 	return retval;
 }
@@ -86,7 +89,7 @@ static unsigned parseEntPropIntArray(const char* value, int_array_t *out, unsign
 static unsigned parseEntPropString(const char* value, string *out, unsigned bit) {
 	const int len = Q_strlen(value);
 	if (len >= sizeof(string))
-		gEngine.Con_Printf(S_ERROR "Map entity value '%s' is too long, max length is %d\n",
+		ERR("Map entity value '%s' is too long, max length is %d",
 			value, (int)sizeof(string));
 	Q_strncpy(*out, value, sizeof(*out));
 	return bit;
@@ -234,7 +237,7 @@ static void fillLightFromProps( vk_light_entity_t *le, const entity_props_t *pro
 		weirdGoldsrcLightScaling(le->color);
 	}
 
-	gEngine.Con_Reportf("%s light %d (ent=%d): %s targetname=%s color=(%f %f %f) origin=(%f %f %f) style=%d R=%f dir=(%f %f %f) stopdot=(%f %f)\n",
+	DEBUG("%s light %d (ent=%d): %s targetname=%s color=(%f %f %f) origin=(%f %f %f) style=%d R=%f dir=(%f %f %f) stopdot=(%f %f)",
 		patch ? "Patch" : "Added",
 		g_map_entities.num_lights, entity_index,
 		le->type == LightTypeEnvironment ? "environment" : le->type == LightTypeSpot ? "spot" : "point",
@@ -253,7 +256,7 @@ static void addLightEntity( const entity_props_t *props, unsigned have_fields ) 
 	unsigned expected_fields = 0;
 
 	if (g_map_entities.num_lights == ARRAYSIZE(g_map_entities.lights)) {
-		gEngine.Con_Printf(S_ERROR "Too many lights entities in map\n");
+		ERR("Too many lights entities in map");
 		return;
 	}
 
@@ -284,7 +287,7 @@ static void addLightEntity( const entity_props_t *props, unsigned have_fields ) 
 	}
 
 	if ((have_fields & expected_fields) != expected_fields) {
-		gEngine.Con_Printf(S_ERROR "Missing some fields for light entity\n");
+		ERR("Missing some fields for light entity");
 		return;
 	}
 
@@ -309,11 +312,11 @@ static void addLightEntity( const entity_props_t *props, unsigned have_fields ) 
 static void addTargetEntity( const entity_props_t *props ) {
 	xvk_mapent_target_t *target = g_map_entities.targets + g_map_entities.num_targets;
 
-	gEngine.Con_Reportf("Adding target entity %s at (%f, %f, %f)\n",
+	DEBUG("Adding target entity %s at (%f, %f, %f)",
 		props->targetname, props->origin[0], props->origin[1], props->origin[2]);
 
 	if (g_map_entities.num_targets == MAX_MAPENT_TARGETS) {
-		gEngine.Con_Printf(S_ERROR "Too many map target entities\n");
+		ERR("Too many map target entities");
 		return;
 	}
 
@@ -337,10 +340,10 @@ static void readWorldspawn( const entity_props_t *props ) {
 }
 
 static void readFuncWall( const entity_props_t *const props, uint32_t have_fields, int props_count ) {
-	gEngine.Con_Reportf("func_wall entity=%d model=\"%s\", props_count=%d\n", g_map_entities.entity_count, (have_fields & Field_model) ? props->model : "N/A", props_count);
+	DEBUG("func_wall entity=%d model=\"%s\", props_count=%d", g_map_entities.entity_count, (have_fields & Field_model) ? props->model : "N/A", props_count);
 
 	if (g_map_entities.func_walls_count >= MAX_FUNC_WALL_ENTITIES) {
-		gEngine.Con_Printf(S_ERROR "Too many func_wall entities, max supported = %d\n", MAX_FUNC_WALL_ENTITIES);
+		ERR("Too many func_wall entities, max supported = %d", MAX_FUNC_WALL_ENTITIES);
 		return;
 	}
 
@@ -388,7 +391,7 @@ static void addPatchSurface( const entity_props_t *props, uint32_t have_fields )
 		const int index = props->_xvk_surface_id.values[i];
 		xvk_patch_surface_t *psurf = NULL;
 		if (index < 0 || index >= num_surfaces) {
-			gEngine.Con_Printf(S_ERROR "Incorrect patch for surface_index %d where numsurfaces=%d\n", index, num_surfaces);
+			ERR("Incorrect patch for surface_index %d where numsurfaces=%d", index, num_surfaces);
 			continue;
 		}
 
@@ -405,14 +408,14 @@ static void addPatchSurface( const entity_props_t *props, uint32_t have_fields )
 		psurf = g_patch.surfaces + index;
 
 		if (should_remove) {
-			gEngine.Con_Reportf("Patch: surface %d removed\n", index);
+			DEBUG("Patch: surface %d removed", index);
 			psurf->flags = Patch_Surface_Delete;
 			continue;
 		}
 
 		if (have_fields & Field__xvk_texture) {
 			const int tex_id = XVK_FindTextureNamedLike( props->_xvk_texture );
-			gEngine.Con_Reportf("Patch for surface %d with texture \"%s\" -> %d\n", index, props->_xvk_texture, tex_id);
+			DEBUG("Patch for surface %d with texture \"%s\" -> %d", index, props->_xvk_texture, tex_id);
 			psurf->tex_id = tex_id;
 
 			// Find texture_t for this index
@@ -431,7 +434,7 @@ static void addPatchSurface( const entity_props_t *props, uint32_t have_fields )
 		if (have_fields & Field__light) {
 			VectorScale(props->_light, 0.1f, psurf->emissive);
 			psurf->flags |= Patch_Surface_Emissive;
-			gEngine.Con_Reportf("Patch for surface %d: assign emissive %f %f %f\n", index,
+			DEBUG("Patch for surface %d: assign emissive %f %f %f", index,
 				psurf->emissive[0],
 				psurf->emissive[1],
 				psurf->emissive[2]
@@ -442,13 +445,13 @@ static void addPatchSurface( const entity_props_t *props, uint32_t have_fields )
 			Vector4Copy(props->_xvk_svec, psurf->s_vec);
 			Vector4Copy(props->_xvk_tvec, psurf->t_vec);
 			psurf->flags |= Patch_Surface_STvecs;
-			gEngine.Con_Reportf("Patch for surface %d: assign stvec\n", index);
+			DEBUG("Patch for surface %d: assign stvec", index);
 		}
 
 		if (have_fields & Field__xvk_tex_scale) {
 			Vector2Copy(props->_xvk_tex_scale, psurf->tex_scale);
 			psurf->flags |= Patch_Surface_TexScale;
-			gEngine.Con_Reportf("Patch for surface %d: assign tex scale %f %f\n",
+			DEBUG("Patch for surface %d: assign tex scale %f %f",
 				index, psurf->tex_scale[0], psurf->tex_scale[1]
 			);
 		}
@@ -456,7 +459,7 @@ static void addPatchSurface( const entity_props_t *props, uint32_t have_fields )
 		if (have_fields & Field__xvk_tex_offset) {
 			Vector2Copy(props->_xvk_tex_offset, psurf->tex_offset);
 			psurf->flags |= Patch_Surface_TexOffset;
-			gEngine.Con_Reportf("Patch for surface %d: assign tex offset %f %f\n",
+			DEBUG("Patch for surface %d: assign tex offset %f %f",
 				index, psurf->tex_offset[0], psurf->tex_offset[1]
 			);
 		}
@@ -470,7 +473,7 @@ static void patchLightEntity( const entity_props_t *props, int ent_id, uint32_t 
 	vk_light_entity_t *const light = g_map_entities.lights + index;
 
 	if (have_fields == Field__xvk_ent_id) {
-		gEngine.Con_Reportf("Deleting light entity (%d of %d) with index=%d\n", index, g_map_entities.num_lights, ent_id);
+		DEBUG("Deleting light entity (%d of %d) with index=%d", index, g_map_entities.num_lights, ent_id);
 
 		// Mark it as deleted
 		light->entity_index = -1;
@@ -488,7 +491,7 @@ static void patchFuncWallEntity( const entity_props_t *props, uint32_t have_fiel
 	if (have_fields & Field_origin)
 		VectorCopy(props->origin, fw->origin);
 
-	gEngine.Con_Reportf("Patching ent=%d func_wall=%d %f %f %f\n", fw->entity_index, index, fw->origin[0], fw->origin[1], fw->origin[2]);
+	DEBUG("Patching ent=%d func_wall=%d %f %f %f", fw->entity_index, index, fw->origin[0], fw->origin[1], fw->origin[2]);
 }
 
 static void patchEntity( const entity_props_t *props, uint32_t have_fields ) {
@@ -497,7 +500,7 @@ static void patchEntity( const entity_props_t *props, uint32_t have_fields ) {
 	for (int i = 0; i < props->_xvk_ent_id.num; ++i) {
 		const int ei = props->_xvk_ent_id.values[i];
 		if (ei < 0 || ei >= g_map_entities.entity_count) {
-			gEngine.Con_Printf(S_ERROR "_xvk_ent_id value %d is out of bounds, max=%d\n", ei, g_map_entities.entity_count);
+			ERR("_xvk_ent_id value %d is out of bounds, max=%d", ei, g_map_entities.entity_count);
 			continue;
 		}
 
@@ -512,7 +515,7 @@ static void patchEntity( const entity_props_t *props, uint32_t have_fields ) {
 				patchFuncWallEntity(props, have_fields, ref->index);
 				break;
 			default:
-				gEngine.Con_Printf(S_WARN "vk_mapents: trying to patch unsupported entity %d class %d\n", ei, ref->class);
+				WARN("vk_mapents: trying to patch unsupported entity %d class %d", ei, ref->class);
 		}
 	}
 
@@ -523,7 +526,7 @@ static void parseEntities( char *string, qboolean is_patch ) {
 	int props_count = 0;
 	entity_props_t values;
 	char *pos = string;
-	//gEngine.Con_Reportf("ENTITIES: %s\n", pos);
+	//DEBUG("ENTITIES: %s", pos);
 	for (;;) {
 		char key[1024];
 		char value[1024];
@@ -578,7 +581,7 @@ static void parseEntities( char *string, qboolean is_patch ) {
 
 			g_map_entities.entity_count++;
 			if (g_map_entities.entity_count == MAX_MAP_ENTITIES) {
-				gEngine.Con_Printf(S_ERROR "vk_mapents: too many entities, skipping the rest");\
+				ERR("vk_mapents: too many entities, skipping the rest");\
 				break;
 			}
 			continue;
@@ -593,12 +596,12 @@ static void parseEntities( char *string, qboolean is_patch ) {
 		if (Q_strcmp(key, #name) == 0) { \
 			const unsigned bit = parseEntProp##kind(value, &values.name, Field_##name); \
 			if (bit == 0) { \
-				gEngine.Con_Printf( S_ERROR "Error parsing entity property " #name ", invalid value: %s\n", value); \
+				ERR("Error parsing entity property " #name ", invalid value: %s", value); \
 			} else have_fields |= bit; \
 		} else
 		ENT_PROP_LIST(READ_FIELD)
 		{
-			//gEngine.Con_Reportf("Unknown field %s with value %s\n", key, value);
+			//DEBUG("Unknown field %s with value %s", key, value);
 		}
 		++props_count;
 #undef CHECK_FIELD
@@ -629,14 +632,14 @@ static void orientSpotlights( void ) {
 
 		target = findTargetByName(light->target_entity);
 		if (!target) {
-			gEngine.Con_Printf(S_ERROR "Couldn't find target entity '%s' for spot light %d\n", light->target_entity, i);
+			ERR("Couldn't find target entity '%s' for spot light %d", light->target_entity, i);
 			continue;
 		}
 
 		VectorSubtract(target->origin, light->origin, light->dir);
 		VectorNormalize(light->dir);
 
-		gEngine.Con_Reportf("Light %d patched direction towards '%s': %f %f %f\n", i, target->targetname,
+		DEBUG("Light %d patched direction towards '%s': %f %f %f", i, target->targetname,
 			light->dir[0], light->dir[1], light->dir[2]);
 	}
 }
@@ -652,10 +655,10 @@ static void parsePatches( const model_t *const map ) {
 	}
 
 	Q_snprintf(filename, sizeof(filename), "luchiki/%s.patch", map->name);
-	gEngine.Con_Reportf("Loading patches from file \"%s\"\n", filename);
+	DEBUG("Loading patches from file \"%s\"", filename);
 	data = gEngine.fsapi->LoadFile( filename, 0, false );
 	if (!data) {
-		gEngine.Con_Reportf("No patch file \"%s\"\n", filename);
+		DEBUG("No patch file \"%s\"", filename);
 		return;
 	}
 

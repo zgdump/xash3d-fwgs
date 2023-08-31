@@ -97,46 +97,73 @@ typedef enum {
 } vk_render_type_e;
 
 struct rt_light_add_polygon_s;
-struct vk_ray_model_s;
+struct rt_model_s;
 
 typedef struct vk_render_model_s {
 #define MAX_MODEL_NAME_LENGTH 64
 	char debug_name[MAX_MODEL_NAME_LENGTH];
 
-	vk_render_type_e render_type;
-	vec4_t color;
+	// TODO per-geometry?
 	int lightmap; // <= 0 if no lightmap
 
 	int num_geometries;
 	vk_render_geometry_t *geometries;
 
-	int geometries_changed_count;
-	int *geometries_changed;
+	struct rt_model_s *rt_model;
 
 	// This model will be one-frame only, its buffers are not preserved between frames
+	// TODO deprecate
 	qboolean dynamic;
-
-	// Non-NULL only for ray tracing
-	struct vk_ray_model_s *ray_model;
 
 	// Polylights which need to be added per-frame dynamically
 	// Used for non-worldmodel brush models which are not static
+	// TODO this doesn't belong here at all
 	struct rt_light_add_polygon_s *dynamic_polylights;
 	int dynamic_polylights_count;
-
-	matrix4x4 transform;
-
-	// previous frame ObjectToWorld (model) matrix
-	matrix4x4 prev_transform;
 } vk_render_model_t;
 
-qboolean VK_RenderModelInit( vk_render_model_t* model );
-void VK_RenderModelDestroy( vk_render_model_t* model );
-void VK_RenderModelDraw( const cl_entity_t *ent, vk_render_model_t* model );
+// Initialize model from scratch
+typedef struct {
+	const char *name;
+	vk_render_geometry_t *geometries;
+	int geometries_count;
 
-void VK_RenderModelDynamicBegin( vk_render_type_e render_type, const vec4_t color, const matrix3x4 transform, const char *debug_name_fmt, ... );
-void VK_RenderModelDynamicAddGeometry( const vk_render_geometry_t *geom );
-void VK_RenderModelDynamicCommit( void );
+	// Geometry data can and will be updated
+	// Upading geometry locations is not supported though, only vertex/index values
+	qboolean dynamic;
+} vk_render_model_init_t;
+qboolean R_RenderModelCreate( vk_render_model_t *model, vk_render_model_init_t args );
+void R_RenderModelDestroy( vk_render_model_t* model );
+
+qboolean R_RenderModelUpdate( const vk_render_model_t *model );
+qboolean R_RenderModelUpdateMaterials( const vk_render_model_t *model, const int *geom_indices, int geom_indices_count);
+
+typedef struct {
+	vk_render_type_e render_type;
+
+	// These are "consumed": copied into internal storage and can be pointers to stack vars
+	const vec4_t *color;
+	const matrix4x4 *transform, *prev_transform;
+
+	// Global texture override if > 0
+	// Used by sprite+quad instancing
+	int textures_override;
+} r_model_draw_t;
+
+void R_RenderModelDraw(const vk_render_model_t *model, r_model_draw_t args);
+
+typedef struct {
+	const char *name;
+	const struct vk_vertex_s *vertices;
+	const uint16_t *indices;
+	int vertices_count, indices_count;
+
+	int render_type;
+	int texture;
+	const vec4_t *emissive;
+	const vec4_t *color;
+} r_draw_once_t;
+void R_RenderDrawOnce(r_draw_once_t args);
 
 void VK_RenderDebugLabelBegin( const char *label );
 void VK_RenderDebugLabelEnd( void );

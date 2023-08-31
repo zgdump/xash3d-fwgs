@@ -69,6 +69,7 @@ LIST_SPECIALIZATION_CONSTANTS(DECLARE_SPECIALIZATION_CONSTANT)
 #define MATERIAL_MODE_BLEND_ADD 3
 #define MATERIAL_MODE_BLEND_MIX 4
 #define MATERIAL_MODE_BLEND_GLOW 5
+#define MATERIAL_MODE_COUNT 6
 
 #define TEX_BASE_SKYBOX 0xffffffffu
 
@@ -100,16 +101,16 @@ struct ModelHeader {
 };
 
 struct Kusok {
-	// Geometry data
+	// Geometry data, static
 	uint index_offset;
 	uint vertex_offset;
-	uint triangles;
 
 	// material below consists of scalar fields only, so it's not aligned to vec4.
 	// Alignt it here to vec4 explicitly, so that later vector fields are properly aligned (for simplicity).
-	uint _padding0;
+	uint _padding0[2];
 
 	// Per-kusok because individual surfaces can be patched
+	// TODO? still move to material, or its own table? As this can be dynamic
 	vec3 emissive;
 	PAD(1)
 

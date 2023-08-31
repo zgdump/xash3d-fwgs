@@ -13,8 +13,8 @@
 #include "vk_geometry.h"
 #include "vk_light.h"
 #include "vk_mapents.h"
-#include "vk_previous_frame.h"
 #include "r_speeds.h"
+#include "vk_logs.h"
 
 #include "ref_params.h"
 #include "eiface.h"
@@ -22,25 +22,60 @@
 #include <math.h>
 #include <memory.h>
 
+#define MODULE_NAME "brush"
+#define LOG_MODULE LogModule_Brush
+
 typedef struct vk_brush_model_s {
+	model_t *engine_model;
+
+	r_geometry_range_t geometry;
+
 	vk_render_model_t render_model;
-	int num_water_surfaces;
 	int *surface_to_geometry_index;
 
 	int *animated_indexes;
 	int animated_indexes_count;
+
+	matrix4x4 prev_transform;
+	float prev_time;
+
+	struct {
+		int surfaces_count;
+		const int *surfaces_indices;
+
+		r_geometry_range_t geometry;
+		vk_render_model_t render_model;
+	} water;
 } vk_brush_model_t;
+
+typedef struct {
+	int num_surfaces, num_vertices, num_indices;
+	int max_texture_id;
+	int water_surfaces;
+	int animated_count;
+
+	int water_vertices;
+	int water_indices;
+} model_sizes_t;
 
 static struct {
 	struct {
-		int num_vertices, num_indices;
-
+		int total_vertices, total_indices;
 		int models_drawn;
 		int water_surfaces_drawn;
 		int water_polys_drawn;
 	} stat;
 
 	int rtable[MOD_FRAMES][MOD_FRAMES];
+
+	// Unfortunately the engine only tracks the toplevel worldmodel. *xx submodels, while having their own entities and models, are not lifetime-tracked.
+	// I.e. the engine doesn't call Mod_ProcessRenderData() on them, so we don't directly know when to create or destroy them.
+	// Therefore, we need to track them manually and destroy them based on some other external event, e.g. Mod_ProcessRenderData(worldmodel)
+	vk_brush_model_t *models[MAX_MODELS];
+	int models_count;
+
+#define MAX_ANIMATED_TEXTURES 256
+	int updated_textures[MAX_ANIMATED_TEXTURES];
 } g_brush;
 
 void VK_InitRandomTable( void )
@@ -65,9 +100,9 @@ qboolean VK_BrushInit( void )
 {
 	VK_InitRandomTable ();
 
-	R_SpeedsRegisterMetric(&g_brush.stat.models_drawn, "models_brush", kSpeedsMetricCount);
-	R_SpeedsRegisterMetric(&g_brush.stat.water_surfaces_drawn, "water_surfaces", kSpeedsMetricCount);
-	R_SpeedsRegisterMetric(&g_brush.stat.water_polys_drawn, "water_polys", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_brush.stat.models_drawn, "drawn", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_brush.stat.water_surfaces_drawn, "water.surfaces", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_brush.stat.water_polys_drawn, "water.polys", kSpeedsMetricCount);
 
 	return true;
 }
@@ -85,91 +120,79 @@ static const float r_turbsin[] =
 #define SUBDIVIDE_SIZE	64
 #define TURBSCALE		( 256.0f / ( M_PI2 ))
 
-/*
-=============
-EmitWaterPolys
+static void addWarpVertIndCounts(const msurface_t *warp, int *num_vertices, int *num_indices) {
+	for( glpoly_t *p = warp->polys; p; p = p->next ) {
+		const int triangles = p->numverts - 2;
+		*num_vertices += p->numverts;
+		*num_indices += triangles * 3;
+	}
+}
 
-Does a water warp on the pre-fragmented glpoly_t chain
-=============
-*/
-static void EmitWaterPolys( const cl_entity_t *ent, const msurface_t *warp, qboolean reverse )
-{
+typedef struct {
+	float prev_time;
+	float scale;
+	const msurface_t *warp;
+	qboolean reverse;
+
+	vk_vertex_t *dst_vertices;
+	uint16_t *dst_indices;
+	vk_render_geometry_t *dst_geometry;
+
+	int *out_vertex_count, *out_index_count;
+} compute_water_polys_t;
+
+static void brushComputeWaterPolys( compute_water_polys_t args ) {
 	const float time = gpGlobals->time;
-	float	*v, nv, waveHeight;
-	float prev_nv, prev_time;
-	float	s, t, os, ot;
-	glpoly_t	*p;
-	int	i;
-	int num_vertices = 0, num_indices = 0;
-	int vertex_offset = 0;
-	uint16_t *indices;
-	r_geometry_buffer_lock_t buffer;
-
-	++g_brush.stat.water_surfaces_drawn;
-
-	prev_time = R_PrevFrame_Time(ent->index);
 
 #define MAX_WATER_VERTICES 16
 	vk_vertex_t poly_vertices[MAX_WATER_VERTICES];
 
-	const qboolean useQuads = FBitSet( warp->flags, SURF_DRAWTURB_QUADS );
+	// FIXME unused? const qboolean useQuads = FBitSet( warp->flags, SURF_DRAWTURB_QUADS );
 
-	if( !warp->polys ) return;
+	ASSERT(args.warp->polys);
 
 	// set the current waveheight
 	// FIXME VK if( warp->polys->verts[0][2] >= RI.vieworg[2] )
 	// 	waveHeight = -ent->curstate.scale;
 	// else
-	waveHeight = ent->curstate.scale;
+	// 	waveHeight = ent->curstate.scale;
+	const float scale = args.scale;
 
 	// reset fog color for nonlightmapped water
 	// FIXME VK GL_ResetFogColor();
 
-	// Compute vertex count
-	for( p = warp->polys; p; p = p->next ) {
-		const int triangles = p->numverts - 2;
-		num_vertices += p->numverts;
-		num_indices += triangles * 3;
-	}
+	int vertices = 0;
+	int indices = 0;
 
-	if (!R_GeometryBufferAllocAndLock( &buffer, num_vertices, num_indices, LifetimeSingleFrame )) {
-		gEngine.Con_Printf(S_ERROR "Cannot allocate geometry for %s\n", ent->model->name );
-		return;
-	}
-
-	g_brush.stat.water_polys_drawn += num_indices / 3;
-
-	indices = buffer.indices.ptr;
-
-	for( p = warp->polys; p; p = p->next )
-	{
+	for( glpoly_t *p = args.warp->polys; p; p = p->next ) {
 		ASSERT(p->numverts <= MAX_WATER_VERTICES);
-
-		if( reverse )
+		float *v;
+		if( args.reverse )
 			v = p->verts[0] + ( p->numverts - 1 ) * VERTEXSIZE;
 		else v = p->verts[0];
 
-		for( i = 0; i < p->numverts; i++ )
+		for( int i = 0; i < p->numverts; i++ )
 		{
-			if( waveHeight )
+			float nv, prev_nv;
+			if( scale )
 			{
 				nv = r_turbsin[(int)(time * 160.0f + v[1] + v[0]) & 255] + 8.0f;
 				nv = (r_turbsin[(int)(v[0] * 5.0f + time * 171.0f - v[1]) & 255] + 8.0f ) * 0.8f + nv;
-				nv = nv * waveHeight + v[2];
+				nv = nv * scale + v[2];
 
-				prev_nv = r_turbsin[(int)(prev_time * 160.0f + v[1] + v[0]) & 255] + 8.0f;
-				prev_nv = (r_turbsin[(int)(v[0] * 5.0f + prev_time * 171.0f - v[1]) & 255] + 8.0f ) * 0.8f + prev_nv;
-				prev_nv = prev_nv * waveHeight + v[2];
+				prev_nv = r_turbsin[(int)(args.prev_time * 160.0f + v[1] + v[0]) & 255] + 8.0f;
+				prev_nv = (r_turbsin[(int)(v[0] * 5.0f + args.prev_time * 171.0f - v[1]) & 255] + 8.0f ) * 0.8f + prev_nv;
+				prev_nv = prev_nv * scale + v[2];
 			}
 			else prev_nv = nv = v[2];
 
-			os = v[3];
-			ot = v[4];
+			const float os = v[3];
+			const float ot = v[4];
 
-			s = os + r_turbsin[(int)((ot * 0.125f + gpGlobals->time) * TURBSCALE) & 255];
+			float s = os + r_turbsin[(int)((ot * 0.125f + gpGlobals->time) * TURBSCALE) & 255];
 			s *= ( 1.0f / SUBDIVIDE_SIZE );
 
-			t = ot + r_turbsin[(int)((os * 0.125f + gpGlobals->time) * TURBSCALE) & 255];
+			float t = ot + r_turbsin[(int)((os * 0.125f + gpGlobals->time) * TURBSCALE) & 255];
 			t *= ( 1.0f / SUBDIVIDE_SIZE );
 
 			poly_vertices[i].pos[0] = v[0];
@@ -188,73 +211,59 @@ static void EmitWaterPolys( const cl_entity_t *ent, const msurface_t *warp, qboo
 
 			Vector4Set(poly_vertices[i].color, 255, 255, 255, 255);
 
-#define WATER_NORMALS
 			poly_vertices[i].normal[0] = 0;
 			poly_vertices[i].normal[1] = 0;
-#ifdef WATER_NORMALS
 			poly_vertices[i].normal[2] = 0;
-#else
-			poly_vertices[i].normal[2] = 1;
-#endif
 
-			// Ray tracing apparently expects triangle list only (although spec is not very clear about this kekw)
 			if (i > 1) {
-#ifdef WATER_NORMALS
 				vec3_t e0, e1, normal;
 				VectorSubtract( poly_vertices[i - 1].pos, poly_vertices[0].pos, e0 );
 				VectorSubtract( poly_vertices[i].pos, poly_vertices[0].pos, e1 );
 				CrossProduct( e1, e0, normal );
-				//VectorNormalize(normal);
 
 				VectorAdd(normal, poly_vertices[0].normal, poly_vertices[0].normal);
 				VectorAdd(normal, poly_vertices[i].normal, poly_vertices[i].normal);
 				VectorAdd(normal, poly_vertices[i - 1].normal, poly_vertices[i - 1].normal);
-#endif
-				*(indices++) = (uint16_t)(vertex_offset);
-				*(indices++) = (uint16_t)(vertex_offset + i - 1);
-				*(indices++) = (uint16_t)(vertex_offset + i);
+
+				args.dst_indices[indices++] = (uint16_t)(vertices);
+				args.dst_indices[indices++] = (uint16_t)(vertices + i - 1);
+				args.dst_indices[indices++] = (uint16_t)(vertices + i);
 			}
 
-			if( reverse )
+			if( args.reverse )
 				v -= VERTEXSIZE;
 			else
 				v += VERTEXSIZE;
 		}
 
-#ifdef WATER_NORMALS
-		for( i = 0; i < p->numverts; i++ ) {
+		for( int i = 0; i < p->numverts; i++ )
 			VectorNormalize(poly_vertices[i].normal);
-		}
-#endif
 
-		memcpy(buffer.vertices.ptr + vertex_offset, poly_vertices, sizeof(vk_vertex_t) * p->numverts);
-		vertex_offset += p->numverts;
-	}
-
-	R_GeometryBufferUnlock( &buffer );
-
-	// Render
-	{
-		vec3_t emissive;
-		RT_GetEmissiveForTexture(emissive, warp->texinfo->texture->gl_texturenum);
-
-		const vk_render_geometry_t geometry = {
-			.texture = warp->texinfo->texture->gl_texturenum, // FIXME assert >= 0
-			.material = kXVkMaterialRegular,
-			.surf_deprecate = warp,
-
-			.max_vertex = num_vertices,
-			.vertex_offset = buffer.vertices.unit_offset,
-
-			.element_count = num_indices,
-			.index_offset = buffer.indices.unit_offset,
-			.emissive = {emissive[0], emissive[1], emissive[2]},
-		};
-
-		VK_RenderModelDynamicAddGeometry( &geometry );
+		memcpy(args.dst_vertices + vertices, poly_vertices, sizeof(vk_vertex_t) * p->numverts);
+		vertices += p->numverts;
 	}
 
 	// FIXME VK GL_SetupFogColorForSurfaces();
+
+	// Render
+	const int tex_id = args.warp->texinfo->texture->gl_texturenum;
+	*args.dst_geometry = (vk_render_geometry_t){
+		.texture = tex_id, // FIXME assert >= 0
+		.material = kXVkMaterialRegular,
+		.surf_deprecate = args.warp,
+
+		.max_vertex = vertices,
+		.element_count = indices,
+
+		.emissive = {0,0,0},
+	};
+
+	RT_GetEmissiveForTexture(args.dst_geometry->emissive, tex_id);
+	*args.out_vertex_count = vertices;
+	*args.out_index_count = indices;
+
+	g_brush.stat.water_surfaces_drawn++;
+	g_brush.stat.water_polys_drawn += indices / 3;
 }
 
 static vk_render_type_e brushRenderModeToRenderType( int render_mode ) {
@@ -271,10 +280,10 @@ static vk_render_type_e brushRenderModeToRenderType( int render_mode ) {
 	return kVkRenderTypeSolid;
 }
 
-static void brushDrawWaterSurfaces( const cl_entity_t *ent, const vec4_t color, const matrix4x4 transform )
-{
+#if 0 // TOO OLD
+static void brushDrawWaterSurfaces( const cl_entity_t *ent, const vec4_t color, const matrix4x4 transform ) {
 	const model_t *model = ent->model;
-	vec3_t		mins, maxs;
+	vec3_t mins, maxs;
 
 	if( !VectorIsNull( ent->angles ))
 	{
@@ -319,6 +328,215 @@ static void brushDrawWaterSurfaces( const cl_entity_t *ent, const vec4_t color, 
 
 	// TODO:
 	// - upload water geometry only once, animate in compute/vertex shader
+}
+#endif
+
+static void fillWaterSurfaces( const cl_entity_t *ent, vk_brush_model_t *bmodel, vk_render_geometry_t *geometries ) {
+	ASSERT(bmodel->water.surfaces_count > 0);
+
+	const r_geometry_range_lock_t geom_lock = R_GeometryRangeLock(&bmodel->water.geometry);
+
+	const float scale = ent ? ent->curstate.scale : 1.f;
+
+	int vertices_offset = 0;
+	int indices_offset = 0;
+	for (int i = 0; i < bmodel->water.surfaces_count; ++i) {
+		const int surf_index = bmodel->water.surfaces_indices[i];
+
+		int vertices = 0, indices = 0;
+		brushComputeWaterPolys((compute_water_polys_t){
+			.prev_time = bmodel->prev_time,
+			.scale = scale,
+			.reverse = false, // ??? is it ever true?
+			.warp = bmodel->engine_model->surfaces + surf_index,
+
+			.dst_vertices = geom_lock.vertices + vertices_offset,
+			.dst_indices = geom_lock.indices + indices_offset,
+			.dst_geometry = geometries + i,
+
+			.out_vertex_count = &vertices,
+			.out_index_count = &indices,
+		});
+
+		geometries[i].vertex_offset = bmodel->water.geometry.vertices.unit_offset + vertices_offset;
+		geometries[i].index_offset = bmodel->water.geometry.indices.unit_offset + indices_offset;
+
+		vertices_offset += vertices;
+		indices_offset += indices;
+
+		ASSERT(vertices_offset  <= bmodel->water.geometry.vertices.count);
+		ASSERT(indices_offset <= bmodel->water.geometry.indices.count);
+	}
+
+	R_GeometryRangeUnlock( &geom_lock );
+}
+
+static rt_light_add_polygon_t loadPolyLight(const model_t *mod, const int surface_index, const msurface_t *surf, const vec3_t emissive);
+
+static qboolean isSurfaceAnimated( const msurface_t *s, const struct texture_s *base_override ) {
+	const texture_t	*base = base_override ? base_override : s->texinfo->texture;
+
+	/* FIXME don't have ent here, need to check both explicitly
+	if( ent && ent->curstate.frame ) {
+		if( base->alternate_anims )
+			base = base->alternate_anims;
+	}
+	*/
+
+	if( !base->anim_total )
+		return false;
+
+	if( base->name[0] == '-' )
+		return false;
+
+	return true;
+}
+
+typedef enum {
+	BrushSurface_Hidden = 0,
+	BrushSurface_Regular,
+	BrushSurface_Animated,
+	BrushSurface_Water,
+	BrushSurface_Sky,
+} brush_surface_type_e;
+
+static brush_surface_type_e getSurfaceType( const msurface_t *surf, int i ) {
+// 	if ( i >= 0 && (surf->flags & ~(SURF_PLANEBACK | SURF_UNDERWATER | SURF_TRANSPARENT)) != 0)
+// 	{
+// 		DEBUG("\t%d flags: ", i);
+// #define PRINTFLAGS(X) \
+// 	X(SURF_PLANEBACK) \
+// 	X(SURF_DRAWSKY) \
+// 	X(SURF_DRAWTURB_QUADS) \
+// 	X(SURF_DRAWTURB) \
+// 	X(SURF_DRAWTILED) \
+// 	X(SURF_CONVEYOR) \
+// 	X(SURF_UNDERWATER) \
+// 	X(SURF_TRANSPARENT)
+
+// #define PRINTFLAG(f) if (FBitSet(surf->flags, f)) DEBUG(" %s", #f);
+// 		PRINTFLAGS(PRINTFLAG)
+// 		DEBUG("\n");
+// 	}
+	const xvk_patch_surface_t *patch_surface = R_VkPatchGetSurface(i);
+	if (patch_surface && patch_surface->flags & Patch_Surface_Delete)
+		return BrushSurface_Hidden;
+
+	if (surf->flags & (SURF_DRAWTURB | SURF_DRAWTURB_QUADS)) {
+		return (!surf->polys) ? BrushSurface_Hidden : BrushSurface_Water;
+	}
+
+	// Explicitly enable SURF_SKY, otherwise they will be skipped by SURF_DRAWTILED
+	if( FBitSet( surf->flags, SURF_DRAWSKY ))
+		return BrushSurface_Sky;
+
+	//if( surf->flags & ( SURF_DRAWSKY | SURF_DRAWTURB | SURF_CONVEYOR | SURF_DRAWTURB_QUADS ) ) {
+	if( surf->flags & ( SURF_DRAWTURB | SURF_DRAWTURB_QUADS ) ) {
+	//if( surf->flags & ( SURF_DRAWSKY | SURF_CONVEYOR ) ) {
+		// FIXME don't print this on second sort-by-texture pass
+		//DEBUG("Skipping surface %d because of flags %08x", i, surf->flags);
+		return BrushSurface_Hidden;
+	}
+
+	if( FBitSet( surf->flags, SURF_DRAWTILED )) {
+		//DEBUG("Skipping surface %d because of tiled flag", i);
+		return BrushSurface_Hidden;
+	}
+
+	const struct texture_s *texture_override = patch_surface ? patch_surface->tex : NULL;
+	if (isSurfaceAnimated(surf, texture_override)) {
+		return BrushSurface_Animated;
+	}
+
+	return BrushSurface_Regular;
+}
+
+static qboolean brushCreateWaterModel(const model_t *mod, vk_brush_model_t *bmodel, const model_sizes_t sizes) {
+	bmodel->water.surfaces_count = sizes.water_surfaces;
+
+	const r_geometry_range_t geometry = R_GeometryRangeAlloc(sizes.water_vertices, sizes.water_indices);
+	if (!geometry.block_handle.size) {
+		ERR("Cannot allocate geometry (v=%d, i=%d) for water model %s",
+			sizes.water_vertices, sizes.water_indices, mod->name );
+		return false;
+	}
+
+	vk_render_geometry_t *const geometries = Mem_Malloc(vk_core.pool, sizeof(vk_render_geometry_t) * sizes.water_surfaces);
+
+	int* const surfaces_indices = Mem_Malloc(vk_core.pool, sizes.water_surfaces * sizeof(int));
+	int index_index = 0;
+	for( int i = 0; i < mod->nummodelsurfaces; ++i) {
+		const int surface_index = mod->firstmodelsurface + i;
+		const msurface_t *surf = mod->surfaces + surface_index;
+
+		if (getSurfaceType(surf, surface_index) != BrushSurface_Water)
+			continue;
+
+		surfaces_indices[index_index++] = surface_index;
+	}
+	ASSERT(index_index == sizes.water_surfaces);
+
+	bmodel->water.surfaces_indices = surfaces_indices;
+	bmodel->water.geometry = geometry;
+	fillWaterSurfaces(NULL, bmodel, geometries);
+
+	if (!R_RenderModelCreate(&bmodel->water.render_model, (vk_render_model_init_t){
+		.name = mod->name,
+		.geometries = geometries,
+		.geometries_count = sizes.water_surfaces,
+		.dynamic = true,
+		})) {
+		ERR("Could not create water render model for brush model %s", mod->name);
+		return false;
+	}
+
+	bmodel->water.surfaces_indices = surfaces_indices;
+	return true;
+}
+
+static void brushDrawWater(vk_brush_model_t *bmodel, const cl_entity_t *ent, int render_type, const vec4_t color, const matrix4x4 transform) {
+	ASSERT(bmodel->water.surfaces_count > 0);
+
+	fillWaterSurfaces(NULL, bmodel, bmodel->water.render_model.geometries);
+	if (!R_RenderModelUpdate(&bmodel->water.render_model)) {
+		ERR("Failed to update brush model \"%s\" water", bmodel->render_model.debug_name);
+	}
+
+	R_RenderModelDraw(&bmodel->water.render_model, (r_model_draw_t){
+		.render_type = render_type,
+		.color = (const vec4_t*)color,
+		.transform = (const matrix4x4*)transform,
+		.prev_transform = &bmodel->prev_transform,
+	});
+}
+
+// FIXME use this
+static void computeConveyorSpeed(const color24 rendercolor, int tex_index, vec2_t speed) {
+	float sy, cy;
+	float flConveyorSpeed = 0.0f;
+	float flRate, flAngle;
+	vk_texture_t *texture = findTexture( tex_index );
+	//gl_texture_t	*texture;
+
+	// FIXME
+	/* if( ENGINE_GET_PARM( PARM_QUAKE_COMPATIBLE ) && RI.currententity == gEngfuncs.GetEntityByIndex( 0 ) ) */
+	/* { */
+	/* 	// same as doom speed */
+	/* 	flConveyorSpeed = -35.0f; */
+	/* } */
+	/* else */
+	{
+		flConveyorSpeed = (rendercolor.g<<8|rendercolor.b) / 16.0f;
+		if( rendercolor.r ) flConveyorSpeed = -flConveyorSpeed;
+	}
+	//texture = R_GetTexture( glState.currentTextures[glState.activeTMU] );
+
+	flRate = fabs( flConveyorSpeed ) / (float)texture->width;
+	flAngle = ( flConveyorSpeed >= 0 ) ? 180 : 0;
+
+	SinCos( flAngle * ( M_PI_F / 180.0f ), &sy, &cy );
+	speed[0] = cy * flRate;
+	speed[1] = sy * flRate;
 }
 
 /*
@@ -374,75 +592,57 @@ const texture_t *R_TextureAnimation( const cl_entity_t *ent, const msurface_t *s
 	return base;
 }
 
-static qboolean isSurfaceAnimated( const msurface_t *s, const struct texture_s *base_override ) {
-	const texture_t	*base = base_override ? base_override : s->texinfo->texture;
-
-	/* FIXME don't have ent here, need to check both explicitly
-	if( ent && ent->curstate.frame ) {
-		if( base->alternate_anims )
-			base = base->alternate_anims;
-	}
-	*/
-
-	if( !base->anim_total )
-		return false;
-
-	if( base->name[0] == '-' )
-		return false;
-
-	return true;
-}
-
-void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, const matrix4x4 transform ) {
+void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, const matrix4x4 in_transform ) {
 	// Expect all buffers to be bound
 	const model_t *mod = ent->model;
 	vk_brush_model_t *bmodel = mod->cache.data;
 
 	if (!bmodel) {
-		gEngine.Con_Printf( S_ERROR "Model %s wasn't loaded\n", mod->name);
+		ERR("Model %s wasn't loaded", mod->name);
 		return;
 	}
 
-	if (transform)
-		Matrix4x4_Copy(bmodel->render_model.transform, transform);
+	matrix4x4 transform;
+	if (in_transform)
+		Matrix4x4_Copy(transform, in_transform);
 	else
-		Matrix4x4_LoadIdentity(bmodel->render_model.transform);
+		Matrix4x4_LoadIdentity(transform);
 
-	Vector4Set(bmodel->render_model.color, 1.f, 1.f, 1.f, 1.f);
+	vec4_t color = {1, 1, 1, 1};
 	vk_render_type_e render_type = kVkRenderTypeSolid;
 	switch (render_mode) {
 		case kRenderNormal:
-			Vector4Set(bmodel->render_model.color, 1.f, 1.f, 1.f, 1.f);
+			Vector4Set(color, 1.f, 1.f, 1.f, 1.f);
 			render_type = kVkRenderTypeSolid;
 			break;
 		case kRenderTransColor:
 			render_type = kVkRenderType_A_1mA_RW;
-			Vector4Set(bmodel->render_model.color,
+			Vector4Set(color,
 				ent->curstate.rendercolor.r / 255.f,
 				ent->curstate.rendercolor.g / 255.f,
 				ent->curstate.rendercolor.b / 255.f,
 				blend);
 			break;
 		case kRenderTransAdd:
-			Vector4Set(bmodel->render_model.color, blend, blend, blend, 1.f);
+			Vector4Set(color, blend, blend, blend, 1.f);
 			render_type = kVkRenderType_A_1_R;
 			break;
 		case kRenderTransAlpha:
 			if( gEngine.EngineGetParm( PARM_QUAKE_COMPATIBLE, 0 ))
 			{
 				render_type = kVkRenderType_A_1mA_RW;
-				Vector4Set(bmodel->render_model.color, 1.f, 1.f, 1.f, blend);
+				Vector4Set(color, 1.f, 1.f, 1.f, blend);
 			}
 			else
 			{
-				Vector4Set(bmodel->render_model.color, 1.f, 1.f, 1.f, 1.f);
+				Vector4Set(color, 1.f, 1.f, 1.f, 1.f);
 				render_type = kVkRenderType_AT;
 			}
 			break;
 		case kRenderTransTexture:
 		case kRenderGlow:
 			render_type = kVkRenderType_A_1mA_R;
-			Vector4Set(bmodel->render_model.color, 1.f, 1.f, 1.f, blend);
+			Vector4Set(color, 1.f, 1.f, 1.f, blend);
 			break;
 	}
 
@@ -450,14 +650,13 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 	// TODO: on big maps more than a single lightmap texture is possible
 	bmodel->render_model.lightmap = (render_mode == kRenderNormal || render_mode == kRenderTransAlpha) ? 1 : 0;
 
-	if (bmodel->num_water_surfaces) {
-		brushDrawWaterSurfaces(ent, bmodel->render_model.color, bmodel->render_model.transform);
-	}
+	if (bmodel->water.surfaces_count)
+		brushDrawWater(bmodel, ent, render_type, color, transform);
+
+	++g_brush.stat.models_drawn;
 
 	if (bmodel->render_model.num_geometries == 0)
 		return;
-
-	++g_brush.stat.models_drawn;
 
 	// TransColor means ignore textures and draw just color
 	if (render_mode == kRenderTransColor) {
@@ -469,87 +668,52 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 		}
 	} else {
 		// Update animated textures
+		int updated_textures_count = 0;
 		for (int i = 0; i < bmodel->animated_indexes_count; ++i) {
-			vk_render_geometry_t *geom = bmodel->render_model.geometries + bmodel->animated_indexes[i];
+			const int geom_index = bmodel->animated_indexes[i];
+			vk_render_geometry_t *geom = bmodel->render_model.geometries + geom_index;
 			const int surface_index = geom->surf_deprecate - mod->surfaces;
 			const xvk_patch_surface_t *const patch_surface = R_VkPatchGetSurface(surface_index);
 
 			// Optionally patch by texture_s pointer and run animations
 			const struct texture_s *texture_override = patch_surface ? patch_surface->tex : NULL;
 			const texture_t *t = R_TextureAnimation(ent, geom->surf_deprecate, texture_override);
-			if (t->gl_texturenum >= 0)
+			const int new_texture = t->gl_texturenum;
+
+			if (new_texture >= 0 && new_texture != geom->texture) {
 				geom->texture = t->gl_texturenum;
+				if (updated_textures_count < MAX_ANIMATED_TEXTURES) {
+					g_brush.updated_textures[updated_textures_count++] = bmodel->animated_indexes[i];
+				}
+			}
+
+			// Animated textures can be emissive
+			// Add them as dynamic lights for now. It would probably be better if they were static lights (for worldmodel),
+			// but there's no easy way to do it for now.
+			vec3_t *emissive = &bmodel->render_model.geometries[geom_index].emissive;
+			if (RT_GetEmissiveForTexture(*emissive, geom->texture)) {
+				rt_light_add_polygon_t polylight = loadPolyLight(mod, surface_index, geom->surf_deprecate, *emissive);
+				polylight.dynamic = true;
+				polylight.transform_row = (const matrix3x4*)&transform;
+				RT_LightAddPolygon(&polylight);
+			}
+		}
+
+		if (updated_textures_count > 0) {
+			R_RenderModelUpdateMaterials(&bmodel->render_model, g_brush.updated_textures, updated_textures_count);
 		}
 	}
 
-	bmodel->render_model.render_type = render_type;
-	VK_RenderModelDraw(ent, &bmodel->render_model);
+	R_RenderModelDraw(&bmodel->render_model, (r_model_draw_t){
+		.render_type = render_type,
+		.color = &color,
+		.transform = &transform,
+		.prev_transform = &bmodel->prev_transform,
+	});
+
+	Matrix4x4_Copy(bmodel->prev_transform, transform);
+	bmodel->prev_time = gpGlobals->time;
 }
-
-typedef enum {
-	BrushSurface_Hidden = 0,
-	BrushSurface_Regular,
-	BrushSurface_Animated,
-	BrushSurface_Water,
-	BrushSurface_Sky,
-} brush_surface_type_e;
-
-static brush_surface_type_e getSurfaceType( const msurface_t *surf, int i ) {
-// 	if ( i >= 0 && (surf->flags & ~(SURF_PLANEBACK | SURF_UNDERWATER | SURF_TRANSPARENT)) != 0)
-// 	{
-// 		gEngine.Con_Reportf("\t%d flags: ", i);
-// #define PRINTFLAGS(X) \
-// 	X(SURF_PLANEBACK) \
-// 	X(SURF_DRAWSKY) \
-// 	X(SURF_DRAWTURB_QUADS) \
-// 	X(SURF_DRAWTURB) \
-// 	X(SURF_DRAWTILED) \
-// 	X(SURF_CONVEYOR) \
-// 	X(SURF_UNDERWATER) \
-// 	X(SURF_TRANSPARENT)
-
-// #define PRINTFLAG(f) if (FBitSet(surf->flags, f)) gEngine.Con_Reportf(" %s", #f);
-// 		PRINTFLAGS(PRINTFLAG)
-// 		gEngine.Con_Reportf("\n");
-// 	}
-	const xvk_patch_surface_t *patch_surface = R_VkPatchGetSurface(i);
-	if (patch_surface && patch_surface->flags & Patch_Surface_Delete)
-		return BrushSurface_Hidden;
-
-	if (surf->flags & (SURF_DRAWTURB | SURF_DRAWTURB_QUADS))
-		return BrushSurface_Water;
-
-	// Explicitly enable SURF_SKY, otherwise they will be skipped by SURF_DRAWTILED
-	if( FBitSet( surf->flags, SURF_DRAWSKY ))
-		return BrushSurface_Sky;
-
-	//if( surf->flags & ( SURF_DRAWSKY | SURF_DRAWTURB | SURF_CONVEYOR | SURF_DRAWTURB_QUADS ) ) {
-	if( surf->flags & ( SURF_DRAWTURB | SURF_DRAWTURB_QUADS ) ) {
-	//if( surf->flags & ( SURF_DRAWSKY | SURF_CONVEYOR ) ) {
-		// FIXME don't print this on second sort-by-texture pass
-		//gEngine.Con_Reportf("Skipping surface %d because of flags %08x\n", i, surf->flags);
-		return BrushSurface_Hidden;
-	}
-
-	if( FBitSet( surf->flags, SURF_DRAWTILED )) {
-		//gEngine.Con_Reportf("Skipping surface %d because of tiled flag\n", i);
-		return BrushSurface_Hidden;
-	}
-
-	const struct texture_s *texture_override = patch_surface ? patch_surface->tex : NULL;
-	if (isSurfaceAnimated(surf, texture_override)) {
-		return BrushSurface_Animated;
-	}
-
-	return BrushSurface_Regular;
-}
-
-typedef struct {
-	int num_surfaces, num_vertices, num_indices;
-	int max_texture_id;
-	int water_surfaces;
-	int animated_count;
-} model_sizes_t;
 
 static model_sizes_t computeSizes( const model_t *mod ) {
 	model_sizes_t sizes = {0};
@@ -566,6 +730,7 @@ static model_sizes_t computeSizes( const model_t *mod ) {
 		switch (getSurfaceType(surf, surface_index)) {
 		case BrushSurface_Water:
 			sizes.water_surfaces++;
+			addWarpVertIndCounts(surf, &sizes.water_vertices, &sizes.water_indices);
 		case BrushSurface_Hidden:
 			continue;
 
@@ -581,39 +746,40 @@ static model_sizes_t computeSizes( const model_t *mod ) {
 		sizes.num_indices += 3 * (surf->numedges - 1);
 	}
 
+	DEBUG("Computed sizes for brush model \"%s\": num_surfaces=%d num_vertices=%d num_indices=%d max_texture_id=%d water_surfaces=%d animated_count=%d water_vertices=%d water_indices=%d", mod->name, sizes.num_surfaces, sizes.num_vertices, sizes.num_indices, sizes.max_texture_id, sizes.water_surfaces, sizes.animated_count, sizes.water_vertices, sizes.water_indices);
+
 	return sizes;
 }
 
-static qboolean loadBrushSurfaces( model_sizes_t sizes, const model_t *mod ) {
-	vk_brush_model_t *bmodel = mod->cache.data;
-	uint32_t vertex_offset = 0;
+typedef struct {
+	const model_t *mod;
+	const vk_brush_model_t *bmodel;
+	model_sizes_t sizes;
+	uint32_t base_vertex_offset;
+	uint32_t base_index_offset;
+
+	vk_render_geometry_t *out_geometries;
+	vk_vertex_t *out_vertices;
+	uint16_t *out_indices;
+} fill_geometries_args_t;
+
+static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
+	int vertex_offset = 0;
 	int num_geometries = 0;
-	vk_vertex_t *bvert = NULL;
-	uint16_t *bind = NULL;
-	uint32_t index_offset = 0;
-	r_geometry_buffer_lock_t buffer;
 	int animated_count = 0;
 
-	if (!R_GeometryBufferAllocAndLock( &buffer, sizes.num_vertices, sizes.num_indices, LifetimeLong )) {
-		gEngine.Con_Printf(S_ERROR "Cannot allocate geometry for %s\n", mod->name );
-		return false;
-	}
-
-	bvert = buffer.vertices.ptr;
-	bind = buffer.indices.ptr;
-
-	index_offset = buffer.indices.unit_offset;
+	vk_vertex_t *p_vert = args.out_vertices;
+	uint16_t *p_ind = args.out_indices;
+	int index_offset = args.base_index_offset;
 
 	// Load sorted by gl_texturenum
 	// TODO this does not make that much sense in vulkan (can sort later)
-	for (int t = 0; t <= sizes.max_texture_id; ++t)
-	{
-		for( int i = 0; i < mod->nummodelsurfaces; ++i)
-		{
-			const int surface_index = mod->firstmodelsurface + i;
-			msurface_t *surf = mod->surfaces + surface_index;
-			mextrasurf_t	*info = surf->info;
-			vk_render_geometry_t *model_geometry = bmodel->render_model.geometries + num_geometries;
+	for (int t = 0; t <= args.sizes.max_texture_id; ++t) {
+		for( int i = 0; i < args.mod->nummodelsurfaces; ++i) {
+			const int surface_index = args.mod->firstmodelsurface + i;
+			msurface_t *surf = args.mod->surfaces + surface_index;
+			mextrasurf_t *info = surf->info;
+			vk_render_geometry_t *model_geometry = args.out_geometries + num_geometries;
 			const float sample_size = gEngine.Mod_SampleSizeForFace( surf );
 			int index_count = 0;
 			vec3_t tangent;
@@ -632,22 +798,21 @@ static qboolean loadBrushSurfaces( model_sizes_t sizes, const model_t *mod ) {
 			case BrushSurface_Hidden:
 				continue;
 			case BrushSurface_Animated:
-				bmodel->animated_indexes[animated_count++] = num_geometries;
+				args.bmodel->animated_indexes[animated_count++] = num_geometries;
 			case BrushSurface_Regular:
 			case BrushSurface_Sky:
 				break;
 			}
 
-			bmodel->surface_to_geometry_index[i] = num_geometries;
+			args.bmodel->surface_to_geometry_index[i] = num_geometries;
 
 			++num_geometries;
 
-			//gEngine.Con_Reportf( "surface %d: numverts=%d numedges=%d\n", i, surf->polys ? surf->polys->numverts : -1, surf->numedges );
+			//DEBUG( "surface %d: numverts=%d numedges=%d", i, surf->polys ? surf->polys->numverts : -1, surf->numedges );
 
-			if (vertex_offset + surf->numedges >= UINT16_MAX)
-			{
-				gEngine.Con_Printf(S_ERROR "Model %s indices don't fit into 16 bits\n", mod->name);
-				// FIXME unlock and free buffers
+			if (vertex_offset + surf->numedges >= UINT16_MAX) {
+				// We might be able to handle it by adjusting base_vertex_offset, etc
+				ERR("Model %s indices don't fit into 16 bits", args.mod->name);
 				return false;
 			}
 
@@ -656,7 +821,7 @@ static qboolean loadBrushSurfaces( model_sizes_t sizes, const model_t *mod ) {
 			model_geometry->surf_deprecate = surf;
 			model_geometry->texture = tex_id;
 
-			model_geometry->vertex_offset = buffer.vertices.unit_offset;
+			model_geometry->vertex_offset = args.base_vertex_offset;
 			model_geometry->max_vertex = vertex_offset + surf->numedges;
 
 			model_geometry->index_offset = index_offset;
@@ -666,7 +831,7 @@ static qboolean loadBrushSurfaces( model_sizes_t sizes, const model_t *mod ) {
 			} else {
 				model_geometry->material = kXVkMaterialRegular;
 				ASSERT(!FBitSet( surf->flags, SURF_DRAWTILED ));
-				VK_CreateSurfaceLightmap( surf, mod );
+				VK_CreateSurfaceLightmap( surf, args.mod );
 			}
 
 			if (FBitSet( surf->flags, SURF_CONVEYOR )) {
@@ -678,9 +843,9 @@ static qboolean loadBrushSurfaces( model_sizes_t sizes, const model_t *mod ) {
 
 			for( int k = 0; k < surf->numedges; k++ )
 			{
-				const int iedge = mod->surfedges[surf->firstedge + k];
-				const medge_t *edge = mod->edges + (iedge >= 0 ? iedge : -iedge);
-				const mvertex_t *in_vertex = mod->vertexes + (iedge >= 0 ? edge->v[0] : edge->v[1]);
+				const int iedge = args.mod->surfedges[surf->firstedge + k];
+				const medge_t *edge = args.mod->edges + (iedge >= 0 ? iedge : -iedge);
+				const mvertex_t *in_vertex = args.mod->vertexes + (iedge >= 0 ? edge->v[0] : edge->v[1]);
 				vk_vertex_t vertex = {
 					{in_vertex->position[0], in_vertex->position[1], in_vertex->position[2]},
 				};
@@ -745,13 +910,13 @@ static qboolean loadBrushSurfaces( model_sizes_t sizes, const model_t *mod ) {
 
 				Vector4Set(vertex.color, 255, 255, 255, 255);
 
-				*(bvert++) = vertex;
+				*(p_vert++) = vertex;
 
 				// Ray tracing apparently expects triangle list only (although spec is not very clear about this kekw)
 				if (k > 1) {
-					*(bind++) = (uint16_t)(vertex_offset + 0);
-					*(bind++) = (uint16_t)(vertex_offset + k - 1);
-					*(bind++) = (uint16_t)(vertex_offset + k);
+					*(p_ind++) = (uint16_t)(vertex_offset + 0);
+					*(p_ind++) = (uint16_t)(vertex_offset + k - 1);
+					*(p_ind++) = (uint16_t)(vertex_offset + k);
 					index_count += 3;
 					index_offset += 3;
 				}
@@ -762,15 +927,8 @@ static qboolean loadBrushSurfaces( model_sizes_t sizes, const model_t *mod ) {
 		}
 	}
 
-	R_GeometryBufferUnlock( &buffer );
-
-	bmodel->render_model.dynamic_polylights = NULL;
-	bmodel->render_model.dynamic_polylights_count = 0;
-
-	ASSERT(sizes.num_surfaces == num_geometries);
-	ASSERT(sizes.animated_count == animated_count);
-	bmodel->render_model.num_geometries = num_geometries;
-
+	ASSERT(args.sizes.num_surfaces == num_geometries);
+	ASSERT(args.sizes.animated_count == animated_count);
 	return true;
 }
 
@@ -785,73 +943,144 @@ static const xvk_mapent_func_wall_t *getModelFuncWallPatch( const model_t *const
 	return NULL;
 }
 
-qboolean VK_BrushModelLoad( model_t *mod ) {
-	if (mod->cache.data) {
-		gEngine.Con_Reportf( S_WARN "Model %s was already loaded\n", mod->name );
-		return true;
+static qboolean createRenderModel( const model_t *mod, vk_brush_model_t *bmodel, const model_sizes_t sizes ) {
+	bmodel->geometry = R_GeometryRangeAlloc(sizes.num_vertices, sizes.num_indices);
+	if (!bmodel->geometry.block_handle.size) {
+		ERR("Cannot allocate geometry for %s", mod->name );
+		return false;
 	}
 
-	gEngine.Con_Reportf("%s: %s flags=%08x\n", __FUNCTION__, mod->name, mod->flags);
+	vk_render_geometry_t *const geometries = Mem_Malloc(vk_core.pool, sizeof(vk_render_geometry_t) * sizes.num_surfaces);
+	bmodel->surface_to_geometry_index = Mem_Malloc(vk_core.pool, sizeof(int) * mod->nummodelsurfaces);
+	bmodel->animated_indexes = Mem_Malloc(vk_core.pool, sizeof(int) * sizes.animated_count);
+	bmodel->animated_indexes_count = sizes.animated_count;
 
-	{
-		const model_sizes_t sizes = computeSizes( mod );
-		const size_t model_size = sizeof(vk_brush_model_t);
+	if (sizes.animated_count > MAX_ANIMATED_TEXTURES) {
+		WARN("Too many animated textures %d for model \"%s\" some surfaces can be static", sizes.animated_count, mod->name);
+	}
 
-		vk_brush_model_t *bmodel = Mem_Calloc(vk_core.pool, sizeof(*bmodel));
-		mod->cache.data = bmodel;
-		Q_strncpy(bmodel->render_model.debug_name, mod->name, sizeof(bmodel->render_model.debug_name));
-		bmodel->render_model.render_type = kVkRenderTypeSolid;
+	const r_geometry_range_lock_t geom_lock = R_GeometryRangeLock(&bmodel->geometry);
 
-		bmodel->num_water_surfaces = sizes.water_surfaces;
-		Vector4Set(bmodel->render_model.color, 1, 1, 1, 1);
+	const qboolean fill_result = fillBrushSurfaces((fill_geometries_args_t){
+			.mod = mod,
+			.bmodel = bmodel,
+			.sizes = sizes,
+			.base_vertex_offset = bmodel->geometry.vertices.unit_offset,
+			.base_index_offset = bmodel->geometry.indices.unit_offset,
+			.out_geometries = geometries,
+			.out_vertices = geom_lock.vertices,
+			.out_indices = geom_lock.indices,
+		});
 
-		if (sizes.num_surfaces != 0) {
-			bmodel->render_model.geometries = Mem_Malloc(vk_core.pool, sizeof(vk_render_geometry_t) * sizes.num_surfaces);
-			bmodel->surface_to_geometry_index = Mem_Malloc(vk_core.pool, sizeof(int) * mod->nummodelsurfaces);
-			bmodel->animated_indexes = Mem_Malloc(vk_core.pool, sizeof(int) * sizes.animated_count);
-			bmodel->animated_indexes_count = sizes.animated_count;
+	R_GeometryRangeUnlock( &geom_lock );
 
-			bmodel->render_model.geometries_changed = bmodel->animated_indexes;
-			bmodel->render_model.geometries_changed_count = bmodel->animated_indexes_count;
+	if (!fill_result) {
+		// TODO unlock and free buffers if failed? Currently we can't free geometry range, as it is being implicitly referenced by staging queue. Flush staging and free?
+		// This shouldn't really happen btw, kind of unrecoverable for now tbh.
+		// Also, we might just handle it, as the only reason it can fail is 16 bit index overflow.
+		// I. Split into smaller geometries sets.
+		// II. Make indices 32 bit
+		return false;
+	}
 
-			if (!loadBrushSurfaces(sizes, mod) || !VK_RenderModelInit(&bmodel->render_model)) {
-				gEngine.Con_Printf(S_ERROR "Could not load model %s\n", mod->name);
-				Mem_Free(bmodel);
-				return false;
-			}
-		}
-
-		g_brush.stat.num_indices += sizes.num_indices;
-		g_brush.stat.num_vertices += sizes.num_vertices;
-
-		gEngine.Con_Reportf("Model %s loaded surfaces: %d (of %d); total vertices: %u, total indices: %u\n", mod->name, bmodel->render_model.num_geometries, mod->nummodelsurfaces, g_brush.stat.num_vertices, g_brush.stat.num_indices);
+	if (!R_RenderModelCreate(&bmodel->render_model, (vk_render_model_init_t){
+		.name = mod->name,
+		.geometries = geometries,
+		.geometries_count = sizes.num_surfaces,
+		.dynamic = false,
+		})) {
+		ERR("Could not create render model for brush model %s", mod->name);
+		return false;
 	}
 
 	return true;
 }
 
-void VK_BrushModelDestroy( model_t *mod ) {
-	vk_brush_model_t *bmodel = mod->cache.data;
-	ASSERT(mod->type == mod_brush);
-	if (!bmodel)
-		return;
+qboolean VK_BrushModelLoad( model_t *mod ) {
+	if (mod->cache.data) {
+		WARN("Model %s was already loaded", mod->name );
+		return true;
+	}
 
-	VK_RenderModelDestroy(&bmodel->render_model);
-	if (bmodel->animated_indexes)
-		Mem_Free(bmodel->animated_indexes);
-	if (bmodel->surface_to_geometry_index)
-		Mem_Free(bmodel->surface_to_geometry_index);
-	if (bmodel->render_model.geometries)
-		Mem_Free(bmodel->render_model.geometries);
-	Mem_Free(bmodel);
-	mod->cache.data = NULL;
+	DEBUG("%s: %s flags=%08x", __FUNCTION__, mod->name, mod->flags);
+
+	vk_brush_model_t *bmodel = Mem_Calloc(vk_core.pool, sizeof(*bmodel));
+	ASSERT(g_brush.models_count < COUNTOF(g_brush.models));
+	g_brush.models[g_brush.models_count++] = bmodel;
+
+	bmodel->engine_model = mod;
+	mod->cache.data = bmodel;
+
+	Matrix4x4_LoadIdentity(bmodel->prev_transform);
+	bmodel->prev_time = gpGlobals->time;
+
+	const model_sizes_t sizes = computeSizes( mod );
+
+	if (sizes.num_surfaces != 0) {
+		if (!createRenderModel(mod, bmodel, sizes)) {
+			ERR("Could not load brush model %s", mod->name);
+			// FIXME Cannot deallocate bmodel as we might still have staging references to its memory
+			return false;
+		}
+	}
+
+	if (sizes.water_surfaces) {
+		if (!brushCreateWaterModel(mod, bmodel, sizes)) {
+			ERR("Could not load brush water model %s", mod->name);
+			// FIXME Cannot deallocate bmodel as we might still have staging references to its memory
+			return false;
+		}
+	}
+
+	g_brush.stat.total_vertices += sizes.num_indices + sizes.water_vertices;
+	g_brush.stat.total_indices += sizes.num_vertices + sizes.water_indices;
+
+	DEBUG("Model %s loaded surfaces: %d (of %d); total vertices: %u, total indices: %u",
+		mod->name, bmodel->render_model.num_geometries, mod->nummodelsurfaces, g_brush.stat.total_vertices, g_brush.stat.total_indices);
+
+	return true;
 }
 
-void VK_BrushStatsClear( void )
-{
-	// Free previous map data
-	g_brush.stat.num_vertices = 0;
-	g_brush.stat.num_indices = 0;
+static void VK_BrushModelDestroy( vk_brush_model_t *bmodel ) {
+	ASSERT(bmodel->engine_model);
+
+	DEBUG("%s: %s", __FUNCTION__, bmodel->engine_model->name);
+
+	ASSERT(bmodel->engine_model->cache.data == bmodel);
+	ASSERT(bmodel->engine_model->type == mod_brush);
+
+	if (bmodel->water.surfaces_count) {
+		R_RenderModelDestroy(&bmodel->water.render_model);
+		Mem_Free((int*)bmodel->water.surfaces_indices);
+		Mem_Free(bmodel->water.render_model.geometries);
+		R_GeometryRangeFree(&bmodel->water.geometry);
+	}
+
+	R_RenderModelDestroy(&bmodel->render_model);
+
+	if (bmodel->animated_indexes)
+		Mem_Free(bmodel->animated_indexes);
+
+	if (bmodel->surface_to_geometry_index)
+		Mem_Free(bmodel->surface_to_geometry_index);
+
+	if (bmodel->render_model.geometries) {
+		Mem_Free(bmodel->render_model.geometries);
+		R_GeometryRangeFree(&bmodel->geometry);
+	}
+
+	bmodel->engine_model->cache.data = NULL;
+	Mem_Free(bmodel);
+}
+
+void VK_BrushModelDestroyAll( void ) {
+	DEBUG("Destroying %d brush models", g_brush.models_count);
+	for( int i = 0; i < g_brush.models_count; i++ )
+		VK_BrushModelDestroy(g_brush.models[i]);
+
+	g_brush.stat.total_vertices = 0;
+	g_brush.stat.total_indices = 0;
+	g_brush.models_count = 0;
 }
 
 static rt_light_add_polygon_t loadPolyLight(const model_t *mod, const int surface_index, const msurface_t *surf, const vec3_t emissive) {
@@ -860,7 +1089,7 @@ static rt_light_add_polygon_t loadPolyLight(const model_t *mod, const int surfac
 
 	// TODO split, don't clip
 	if (surf->numedges > 7)
-		gEngine.Con_Printf(S_WARN "emissive surface %d has %d vertices; clipping to 7\n", surface_index, surf->numedges);
+		WARN("emissive surface %d has %d vertices; clipping to 7", surface_index, surf->numedges);
 
 	VectorCopy(emissive, lpoly.emissive);
 
@@ -889,6 +1118,7 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 		vec3_t emissive;
 	} emissive_surface_t;
 	emissive_surface_t emissive_surfaces[MAX_SURFACE_LIGHTS];
+	int geom_indices[MAX_SURFACE_LIGHTS];
 	int emissive_surfaces_count = 0;
 
 	// Load list of all emissive surfaces
@@ -917,10 +1147,10 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 			continue;
 		}
 
-		//gEngine.Con_Reportf("%d: i=%d surf_index=%d patch=%d(%#x) => emissive=(%f,%f,%f)\n", emissive_surfaces_count, i, surface_index, !!psurf, psurf?psurf->flags:0, emissive[0], emissive[1], emissive[2]);
+		DEBUG("%d: i=%d surf_index=%d tex_id=%d patch=%d(%#x) => emissive=(%f,%f,%f)", emissive_surfaces_count, i, surface_index, tex_id, !!psurf, psurf?psurf->flags:0, emissive[0], emissive[1], emissive[2]);
 
 		if (emissive_surfaces_count == MAX_SURFACE_LIGHTS) {
-			gEngine.Con_Printf(S_ERROR "Too many emissive surfaces for model %s: max=%d\n", mod->name, MAX_SURFACE_LIGHTS);
+			ERR("Too many emissive surfaces for model %s: max=%d", mod->name, MAX_SURFACE_LIGHTS);
 			break;
 		}
 
@@ -971,8 +1201,17 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 		}
 
 		// Assign the emissive value to the right geometry
-		VectorCopy(polylight.emissive, bmodel->render_model.geometries[bmodel->surface_to_geometry_index[s->model_surface_index]].emissive);
+		const int geom_index = bmodel->surface_to_geometry_index[s->model_surface_index];
+		geom_indices[i] = geom_index;
+		VectorCopy(polylight.emissive, bmodel->render_model.geometries[geom_index].emissive);
 	}
 
-	gEngine.Con_Reportf("Loaded %d polylights for %s model %s\n", emissive_surfaces_count, is_static ? "static" : "movable", mod->name);
+	if (emissive_surfaces_count > 0) {
+		// Update emissive values in kusochki. This is required because initial VK_BrushModelLoad happens before we've read
+		// RAD data in vk_light.c, so the emissive values are empty. This is the place and time where we actually get to
+		// know them, so let's fixup things.
+		// TODO minor optimization: sort geom_indices to have a better chance for them to be sequential
+		R_RenderModelUpdateMaterials(&bmodel->render_model, geom_indices, emissive_surfaces_count);
+		INFO("Loaded %d polylights for %s model %s", emissive_surfaces_count, is_static ? "static" : "movable", mod->name);
+	}
 }
