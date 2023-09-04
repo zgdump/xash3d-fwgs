@@ -807,16 +807,10 @@ static qboolean shouldSmoothLinkSurfaces(const model_t* mod, int surf1, int surf
 	getSurfaceNormal(mod->surfaces + surf2, n2);
 
 	// TODO patch filtering
-	const float threshold = .7f;
-	return DotProduct(n1, n2) > threshold;
+	const float dot = DotProduct(n1, n2);
+	DEBUG("Smoothing: dot(%d, %d) = %f (t=%f)", surf1, surf2, dot, g_map_entities.smoothing_threshold);
 
-	/*
-	if (
-	((cedge->surfs[0] == 743 || cedge->surfs[1] == 743) &&
-	 (cedge->surfs[0] == 741 || cedge->surfs[1] == 741)) ||
-	((cedge->surfs[0] == 367 || cedge->surfs[1] == 367) &&
-	 (cedge->surfs[0] == 404 || cedge->surfs[1] == 404))) {
-	*/
+	return dot >= g_map_entities.smoothing_threshold;
 }
 
 static int lvFindValue(const linked_value_t *li, int count, int needle) {

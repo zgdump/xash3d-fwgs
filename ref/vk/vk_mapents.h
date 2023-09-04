@@ -26,6 +26,7 @@
 	X(19, vec2_t, _xvk_tex_offset, Vec2) \
 	X(20, vec2_t, _xvk_tex_scale, Vec2) \
 	X(21, string, model, String) \
+	X(22, float, _xvk_smoothing_threshold, Float) \
 
 /* NOTE: not used
 	X(22, int, rendermode, Int) \
@@ -128,6 +129,8 @@ typedef struct {
 	// TODO find out how to read this from the engine, or make its size dynamic
 //#define MAX_MAP_ENTITIES 2048
 	xvk_mapent_ref_t refs[MAX_MAP_ENTITIES];
+
+	float smoothing_threshold;
 } xvk_map_entities_t;
 
 extern xvk_map_entities_t g_map_entities;
