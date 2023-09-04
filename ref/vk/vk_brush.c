@@ -58,6 +58,21 @@ typedef struct {
 	int water_indices;
 } model_sizes_t;
 
+typedef struct conn_edge_s {
+	int first_surface;
+	int count;
+} conn_edge_t;
+
+typedef struct linked_value_s {
+		int value, link;
+} linked_value_t;
+
+#define MAX_VERTEX_SURFACES 16
+typedef struct conn_vertex_s {
+	int count;
+	linked_value_t surfs[MAX_VERTEX_SURFACES];
+} conn_vertex_t;
+
 static struct {
 	struct {
 		int total_vertices, total_indices;
@@ -76,6 +91,16 @@ static struct {
 
 #define MAX_ANIMATED_TEXTURES 256
 	int updated_textures[MAX_ANIMATED_TEXTURES];
+
+	// Smoothed normals comptutation
+	// Connectome for edges and vertices
+	struct {
+		int edges_capacity;
+		conn_edge_t *edges;
+
+		int vertices_capacity;
+		conn_vertex_t *vertices;
+	} conn;
 } g_brush;
 
 void VK_InitRandomTable( void )
@@ -107,8 +132,9 @@ qboolean VK_BrushInit( void )
 	return true;
 }
 
-void VK_BrushShutdown( void )
-{
+void VK_BrushShutdown( void ) {
+	if (g_brush.conn.edges)
+		Mem_Free(g_brush.conn.edges);
 }
 
 // speed up sin calculations
@@ -763,6 +789,185 @@ typedef struct {
 	uint16_t *out_indices;
 } fill_geometries_args_t;
 
+static void getSurfaceNormal( const msurface_t *surf, vec3_t out_normal) {
+	if( FBitSet( surf->flags, SURF_PLANEBACK ))
+		VectorNegate( surf->plane->normal, out_normal );
+	else
+		VectorCopy( surf->plane->normal, out_normal );
+
+	// TODO scale normal by area -- bigger surfaces should have bigger impact
+	//VectorScale(normal, surf->plane.
+}
+
+static qboolean shouldSmoothLinkSurfaces(const model_t* mod, int surf1, int surf2) {
+	//return Q_min(surf1, surf2) == 741 && Q_max(surf1, surf2) == 743;
+
+	vec3_t n1, n2;
+	getSurfaceNormal(mod->surfaces + surf1, n1);
+	getSurfaceNormal(mod->surfaces + surf2, n2);
+
+	// TODO patch filtering
+	const float threshold = .7f;
+	return DotProduct(n1, n2) > threshold;
+
+	/*
+	if (
+	((cedge->surfs[0] == 743 || cedge->surfs[1] == 743) &&
+	 (cedge->surfs[0] == 741 || cedge->surfs[1] == 741)) ||
+	((cedge->surfs[0] == 367 || cedge->surfs[1] == 367) &&
+	 (cedge->surfs[0] == 404 || cedge->surfs[1] == 404))) {
+	*/
+}
+
+static int lvFindValue(const linked_value_t *li, int count, int needle) {
+	for (int i = 0; i < count; ++i)
+		if (li[i].value == needle)
+			return i;
+	return -1;
+}
+static int lvFindOrAddValue(linked_value_t *li, int *count, int capacity, int needle) {
+	const int found = lvFindValue(li, *count, needle);
+	if (found >= 0)
+		return found;
+	if (*count == capacity)
+		return -1;
+	li[*count].value = needle;
+	li[*count].link = *count;
+	return (*count)++;
+}
+
+static int lvFindBaseIndex(const linked_value_t *li, int index) {
+	while (li[index].link != index)
+		index = li[index].link;
+	return index;
+}
+
+static void lvFlatten(linked_value_t *li, int count) {
+	for (int i = 0; i < count; ++i) {
+		for (int j = i; j < count; ++j) {
+			if (lvFindBaseIndex(li, j) == i) {
+				li[j].link = i;
+			}
+		}
+	}
+}
+
+static void linkSmoothSurfaces(const model_t* mod, int surf1, int surf2, int vertex_index) {
+	conn_vertex_t *v = g_brush.conn.vertices + vertex_index;
+
+	int i1 = lvFindOrAddValue(v->surfs, &v->count, COUNTOF(v->surfs), surf1);
+	int i2 = lvFindOrAddValue(v->surfs, &v->count, COUNTOF(v->surfs), surf2);
+
+	DEBUG("Link %d(%d)<->%d(%d) v=%d", surf1, i1, surf2, i2, vertex_index);
+
+	if (i1 < 0 || i2 < 0) {
+		ERR("Model %s cannot smooth link surf %d<->%d for vertex %d", mod->name, surf1, surf2, vertex_index);
+		return;
+	}
+
+	i1 = lvFindBaseIndex(v->surfs, i1);
+	i2 = lvFindBaseIndex(v->surfs, i2);
+
+	// Link them
+	v->surfs[Q_max(i1, i2)].link = Q_min(i1, i2);
+}
+
+static void connectVertices( const model_t *mod ) {
+	if (mod->numedges > g_brush.conn.edges_capacity) {
+		if (g_brush.conn.edges)
+			Mem_Free(g_brush.conn.edges);
+
+		g_brush.conn.edges_capacity = mod->numedges;
+		g_brush.conn.edges = Mem_Calloc(vk_core.pool, sizeof(*g_brush.conn.edges) * g_brush.conn.edges_capacity);
+	}
+
+	if (mod->numvertexes > g_brush.conn.vertices_capacity) {
+		if (g_brush.conn.vertices)
+			Mem_Free(g_brush.conn.vertices);
+
+		g_brush.conn.vertices_capacity = mod->numvertexes;
+		g_brush.conn.vertices = Mem_Calloc(vk_core.pool, sizeof(*g_brush.conn.vertices) * g_brush.conn.vertices_capacity);
+	}
+
+	// Find connection edges
+	for (int i = 0; i < mod->nummodelsurfaces; ++i) {
+		const int surface_index = mod->firstmodelsurface + i;
+		const msurface_t *surf = mod->surfaces + surface_index;
+
+		for(int k = 0; k < surf->numedges; k++) {
+			const int iedge_dir = mod->surfedges[surf->firstedge + k];
+			const int iedge = iedge_dir >= 0 ? iedge_dir : -iedge_dir;
+
+			ASSERT(iedge >= 0);
+			ASSERT(iedge < mod->numedges);
+
+			conn_edge_t *cedge = g_brush.conn.edges + iedge;
+			if (cedge->count == 0) {
+				cedge->first_surface = surface_index;
+			} else {
+				const medge_t *edge = mod->edges + iedge;
+				if (shouldSmoothLinkSurfaces(mod, cedge->first_surface, surface_index)) {
+					linkSmoothSurfaces(mod, cedge->first_surface, surface_index, edge->v[0]);
+					linkSmoothSurfaces(mod, cedge->first_surface, surface_index, edge->v[1]);
+				}
+
+				if (cedge->count > 1) {
+					WARN("Model %s edge %d has %d surfaces", mod->name, i, cedge->count);
+				}
+			}
+			cedge->count++;
+		} // for surf->numedges
+	} // for mod->nummodelsurfaces
+
+	int hist[17] = {0};
+	for (int i = 0; i < mod->numvertexes; ++i) {
+		conn_vertex_t *vtx = g_brush.conn.vertices + i;
+		if (vtx->count < 16) {
+			hist[vtx->count]++;
+		} else {
+			hist[16]++;
+		}
+
+		lvFlatten(vtx->surfs, vtx->count);
+
+// Too verbose
+#if 0
+		if (vtx->count) {
+			DEBUG("Vertex %d linked count %d", i, vtx->count);
+			for (int j = 0; j < vtx->count; ++j) {
+				DEBUG("  %d: l=%d v=%d", j, vtx->surfs[j].link, vtx->surfs[j].value);
+			}
+		}
+#endif
+	}
+
+	for (int i = 0; i < COUNTOF(hist); ++i) {
+		DEBUG("VTX hist[%d] = %d", i, hist[i]);
+	}
+}
+
+static qboolean getSmoothedNormalFor(const model_t* mod, int vertex_index, int surface_index, vec3_t out_normal) {
+	const conn_vertex_t *v = g_brush.conn.vertices + vertex_index;
+	const int index = lvFindValue(v->surfs, v->count, surface_index);
+	if (index < 0)
+		return false;
+	const int base = lvFindBaseIndex(v->surfs, index);
+
+	vec3_t normal = {0};
+	for (int i = 0; i < v->count; ++i) {
+		if (v->surfs[i].link == base) {
+			const int surface = v->surfs[i].value;
+			vec3_t surf_normal = {0};
+			getSurfaceNormal(mod->surfaces + surface, surf_normal);
+			VectorAdd(normal, surf_normal, normal);
+		}
+	}
+
+	VectorNormalize(normal);
+	VectorCopy(normal, out_normal);
+	return true;
+}
+
 static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 	int vertex_offset = 0;
 	int num_geometries = 0;
@@ -772,13 +977,15 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 	uint16_t *p_ind = args.out_indices;
 	int index_offset = args.base_index_offset;
 
+	connectVertices(args.mod);
+
 	// Load sorted by gl_texturenum
 	// TODO this does not make that much sense in vulkan (can sort later)
 	for (int t = 0; t <= args.sizes.max_texture_id; ++t) {
 		for( int i = 0; i < args.mod->nummodelsurfaces; ++i) {
 			const int surface_index = args.mod->firstmodelsurface + i;
 			msurface_t *surf = args.mod->surfaces + surface_index;
-			mextrasurf_t *info = surf->info;
+			const mextrasurf_t *info = surf->info;
 			vk_render_geometry_t *model_geometry = args.out_geometries + num_geometries;
 			const float sample_size = gEngine.Mod_SampleSizeForFace( surf );
 			int index_count = 0;
@@ -841,11 +1048,18 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 			VectorCopy(surf->texinfo->vecs[0], tangent);
 			VectorNormalize(tangent);
 
+			vec3_t surf_normal;
+			getSurfaceNormal(surf, surf_normal);
+
+			vk_vertex_t *const pvert_begin = p_vert;
 			for( int k = 0; k < surf->numedges; k++ )
 			{
-				const int iedge = args.mod->surfedges[surf->firstedge + k];
-				const medge_t *edge = args.mod->edges + (iedge >= 0 ? iedge : -iedge);
-				const mvertex_t *in_vertex = args.mod->vertexes + (iedge >= 0 ? edge->v[0] : edge->v[1]);
+				const int iedge_dir = args.mod->surfedges[surf->firstedge + k];
+				const int iedge = iedge_dir >= 0 ? iedge_dir : -iedge_dir;
+				const medge_t *edge = args.mod->edges + iedge;
+				const int vertex_index = iedge_dir >= 0 ? edge->v[0] : edge->v[1];
+				const mvertex_t *in_vertex = args.mod->vertexes + vertex_index;
+
 				vk_vertex_t vertex = {
 					{in_vertex->position[0], in_vertex->position[1], in_vertex->position[2]},
 				};
@@ -902,9 +1116,10 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 					vertex.lm_tc[1] = t;
 				}
 
-				if( FBitSet( surf->flags, SURF_PLANEBACK ))
-					VectorNegate( surf->plane->normal, vertex.normal );
-				else VectorCopy( surf->plane->normal, vertex.normal );
+				// Compute smoothed normal if needed
+				if (!getSmoothedNormalFor(args.mod, vertex_index, surface_index, vertex.normal)) {
+					VectorCopy(surf_normal, vertex.normal);
+				}
 
 				VectorCopy(tangent, vertex.tangent);
 
@@ -920,11 +1135,11 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 					index_count += 3;
 					index_offset += 3;
 				}
-			}
+			} // for surf->numedges
 
 			model_geometry->element_count = index_count;
 			vertex_offset += surf->numedges;
-		}
+		} // for mod->nummodelsurfaces
 	}
 
 	ASSERT(args.sizes.num_surfaces == num_geometries);
@@ -1081,6 +1296,10 @@ void VK_BrushModelDestroyAll( void ) {
 	g_brush.stat.total_vertices = 0;
 	g_brush.stat.total_indices = 0;
 	g_brush.models_count = 0;
+
+	memset(g_brush.conn.edges, 0, sizeof(*g_brush.conn.edges) * g_brush.conn.edges_capacity);
+
+	memset(g_brush.conn.vertices, 0, sizeof(*g_brush.conn.vertices) * g_brush.conn.vertices_capacity);
 }
 
 static rt_light_add_polygon_t loadPolyLight(const model_t *mod, const int surface_index, const msurface_t *surf, const vec3_t emissive) {
