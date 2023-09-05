@@ -536,6 +536,24 @@ static void appendExludedPairs(const entity_props_t *props) {
 	g_map_entities.smoothing.excluded_count += count;
 }
 
+static void addSmoothingGroup(const entity_props_t *props) {
+	if (g_map_entities.smoothing.groups_count == MAX_INCLUDED_SMOOTHING_GROUPS) {
+		ERR("vk_mapents: limit of %d smoothing groups reached", MAX_INCLUDED_SMOOTHING_GROUPS);
+		return;
+	}
+
+	xvk_smoothing_group_t *g = g_map_entities.smoothing.groups + (g_map_entities.smoothing.groups_count++);
+
+	int count = props->_xvk_smoothing_group.num;
+	if (count > MAX_INCLUDED_SMOOTHING_SURFACES_IN_A_GROUP) {
+		ERR("vk_mapents: too many surfaces in a smoothing group. Max %d, got %d. Culling", MAX_INCLUDED_SMOOTHING_SURFACES_IN_A_GROUP, props->_xvk_smoothing_group.num);
+		count = MAX_INCLUDED_SMOOTHING_SURFACES_IN_A_GROUP;
+	}
+
+	memcpy(g->surfaces, props->_xvk_smoothing_group.values, sizeof(int) * count);
+	g->count = count;
+}
+
 static void parseEntities( char *string, qboolean is_patch ) {
 	unsigned have_fields = 0;
 	int props_count = 0;
@@ -592,6 +610,10 @@ static void parseEntities( char *string, qboolean is_patch ) {
 
 							if (have_fields & Field__xvk_smoothing_excluded_pairs) {
 								appendExludedPairs(&values);
+							}
+
+							if (have_fields & Field__xvk_smoothing_group) {
+								addSmoothingGroup(&values);
 							}
 						}
 					}
