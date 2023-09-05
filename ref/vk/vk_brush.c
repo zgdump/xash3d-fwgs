@@ -809,13 +809,21 @@ static int getSurfaceTexture(const msurface_t *surf, int surface_index) {
 static qboolean shouldSmoothLinkSurfaces(const model_t* mod, int surf1, int surf2) {
 	//return Q_min(surf1, surf2) == 741 && Q_max(surf1, surf2) == 743;
 
-	// TODO patch filtering
-
 	// Do not join surfaces with different textures. Assume they belong to different objects.
 	const int t1 = getSurfaceTexture(mod->surfaces + surf1, surf1);
 	const int t2 = getSurfaceTexture(mod->surfaces + surf2, surf2);
 	if (t1 != t2)
 		return false;
+
+	// Filter explicit exclusion
+	for (int i = 0; i < g_map_entities.smoothing.excluded_count; i+=2) {
+		const int cand1 = g_map_entities.smoothing.excluded[i];
+		const int cand2 = g_map_entities.smoothing.excluded[i+1];
+
+		if ((cand1 == surf1 && cand2 == surf2)
+			|| (cand1 == surf2 && cand2 == surf1))
+			return false;
+	}
 
 	vec3_t n1, n2;
 	getSurfaceNormal(mod->surfaces + surf1, n1);

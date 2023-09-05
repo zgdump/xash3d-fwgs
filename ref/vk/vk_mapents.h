@@ -27,6 +27,7 @@
 	X(20, vec2_t, _xvk_tex_scale, Vec2) \
 	X(21, string, model, String) \
 	X(22, float, _xvk_smoothing_threshold, Float) \
+	X(23, int_array_t, _xvk_smoothing_excluded_pairs, IntArray) \
 
 /* NOTE: not used
 	X(22, int, rendermode, Int) \
@@ -132,6 +133,10 @@ typedef struct {
 
 	struct {
 		float threshold;
+
+#define MAX_EXCLUDED_SMOOTHING_SURFACES_PAIRS 32
+		int excluded[MAX_EXCLUDED_SMOOTHING_SURFACES_PAIRS * 2];
+		int excluded_count;
 	} smoothing;
 } xvk_map_entities_t;
 
