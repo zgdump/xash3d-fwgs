@@ -130,7 +130,9 @@ typedef struct {
 //#define MAX_MAP_ENTITIES 2048
 	xvk_mapent_ref_t refs[MAX_MAP_ENTITIES];
 
-	float smoothing_threshold;
+	struct {
+		float threshold;
+	} smoothing;
 } xvk_map_entities_t;
 
 extern xvk_map_entities_t g_map_entities;

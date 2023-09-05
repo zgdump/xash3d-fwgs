@@ -799,18 +799,32 @@ static void getSurfaceNormal( const msurface_t *surf, vec3_t out_normal) {
 	//VectorScale(normal, surf->plane.
 }
 
+static int getSurfaceTexture(const msurface_t *surf, int surface_index) {
+	const xvk_patch_surface_t *const psurf = R_VkPatchGetSurface(surface_index);
+	if (psurf && psurf->tex_id >= 0)
+		return psurf->tex_id;
+	return surf->texinfo->texture->gl_texturenum;
+}
+
 static qboolean shouldSmoothLinkSurfaces(const model_t* mod, int surf1, int surf2) {
 	//return Q_min(surf1, surf2) == 741 && Q_max(surf1, surf2) == 743;
+
+	// TODO patch filtering
+
+	// Do not join surfaces with different textures. Assume they belong to different objects.
+	const int t1 = getSurfaceTexture(mod->surfaces + surf1, surf1);
+	const int t2 = getSurfaceTexture(mod->surfaces + surf2, surf2);
+	if (t1 != t2)
+		return false;
 
 	vec3_t n1, n2;
 	getSurfaceNormal(mod->surfaces + surf1, n1);
 	getSurfaceNormal(mod->surfaces + surf2, n2);
 
-	// TODO patch filtering
 	const float dot = DotProduct(n1, n2);
-	DEBUG("Smoothing: dot(%d, %d) = %f (t=%f)", surf1, surf2, dot, g_map_entities.smoothing_threshold);
+	DEBUG("Smoothing: dot(%d, %d) = %f (t=%f)", surf1, surf2, dot, g_map_entities.smoothing.threshold);
 
-	return dot >= g_map_entities.smoothing_threshold;
+	return dot >= g_map_entities.smoothing.threshold;
 }
 
 static int lvFindValue(const linked_value_t *li, int count, int needle) {

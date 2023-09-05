@@ -571,7 +571,7 @@ static void parseEntities( char *string, qboolean is_patch ) {
 						} else if (have_fields & Field__xvk_ent_id) {
 							patchEntity( &values, have_fields );
 						} else if (have_fields & Field__xvk_smoothing_threshold) {
-							g_map_entities.smoothing_threshold = cosf(DEG2RAD(values._xvk_smoothing_threshold));
+							g_map_entities.smoothing.threshold = cosf(DEG2RAD(values._xvk_smoothing_threshold));
 						}
 					}
 					break;
@@ -678,7 +678,7 @@ void XVK_ParseMapEntities( void ) {
 	g_map_entities.single_environment_index = NoEnvironmentLights;
 	g_map_entities.entity_count = 0;
 	g_map_entities.func_walls_count = 0;
-	g_map_entities.smoothing_threshold = cosf(DEG2RAD(45.f));
+	g_map_entities.smoothing.threshold = cosf(DEG2RAD(45.f));
 
 	parseEntities( map->entities, false );
 	orientSpotlights();
