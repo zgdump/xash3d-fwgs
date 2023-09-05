@@ -723,6 +723,9 @@ void XVK_ParseMapEntities( void ) {
 	g_map_entities.func_walls_count = 0;
 	g_map_entities.smoothing.threshold = cosf(DEG2RAD(45.f));
 	g_map_entities.smoothing.excluded_count = 0;
+	for (int i = 0; i < g_map_entities.smoothing.groups_count; ++i)
+		g_map_entities.smoothing.groups[i].count = 0;
+	g_map_entities.smoothing.groups_count = 0;
 
 	parseEntities( map->entities, false );
 	orientSpotlights();
