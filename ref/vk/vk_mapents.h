@@ -26,6 +26,9 @@
 	X(19, vec2_t, _xvk_tex_offset, Vec2) \
 	X(20, vec2_t, _xvk_tex_scale, Vec2) \
 	X(21, string, model, String) \
+	X(22, float, _xvk_smoothing_threshold, Float) \
+	X(23, int_array_t, _xvk_smoothing_excluded_pairs, IntArray) \
+	X(24, int_array_t, _xvk_smoothing_group, IntArray) \
 
 /* NOTE: not used
 	X(22, int, rendermode, Int) \
@@ -109,6 +112,12 @@ typedef struct {
 	int index;
 } xvk_mapent_ref_t;
 
+#define MAX_INCLUDED_SMOOTHING_SURFACES_IN_A_GROUP 16
+typedef struct {
+	int count;
+	int surfaces[MAX_INCLUDED_SMOOTHING_SURFACES_IN_A_GROUP];
+} xvk_smoothing_group_t;
+
 typedef struct {
 	int num_lights;
 	vk_light_entity_t lights[256];
@@ -128,6 +137,18 @@ typedef struct {
 	// TODO find out how to read this from the engine, or make its size dynamic
 //#define MAX_MAP_ENTITIES 2048
 	xvk_mapent_ref_t refs[MAX_MAP_ENTITIES];
+
+	struct {
+		float threshold;
+
+#define MAX_EXCLUDED_SMOOTHING_SURFACES_PAIRS 32
+		int excluded[MAX_EXCLUDED_SMOOTHING_SURFACES_PAIRS * 2];
+		int excluded_count;
+
+#define MAX_INCLUDED_SMOOTHING_GROUPS 32
+		int groups_count;
+		xvk_smoothing_group_t groups[MAX_INCLUDED_SMOOTHING_GROUPS];
+	} smoothing;
 } xvk_map_entities_t;
 
 extern xvk_map_entities_t g_map_entities;
