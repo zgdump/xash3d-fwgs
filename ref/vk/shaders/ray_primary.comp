@@ -8,6 +8,7 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 #include "ray_primary_common.glsl"
 #include "ray_primary_hit.glsl"
+//#include "noise.glsl"
 
 #define RAY_PRIMARY_OUTPUTS(X) \
 	X(10, base_color_a, rgba8) \
@@ -97,8 +98,10 @@ void main() {
 	}
 
 	float L = ray.dist;
-
+	//uint debug_geometry_index = 0;
 	if (rayQueryGetIntersectionTypeEXT(rq, true) == gl_RayQueryCommittedIntersectionTriangleEXT) {
+		//debug_geometry_index = rayQueryGetIntersectionGeometryIndexEXT(rq, true);
+		//debug_geometry_index = rayQueryGetIntersectionPrimitiveIndexEXT(rq, true);
 		primaryRayHit(rq, payload);
 		L = rayQueryGetIntersectionTEXT(rq, true);
 	}
@@ -108,6 +111,7 @@ void main() {
 	imageStore(out_position_t, pix, payload.hit_t);
 	imageStore(out_base_color_a, pix, payload.base_color_a);
 	imageStore(out_normals_gs, pix, payload.normals_gs);
+	//imageStore(out_material_rmxx, pix, vec4(payload.material_rmxx.rg, 0, uintToFloat01(xxhash32(debug_geometry_index))));
 	imageStore(out_material_rmxx, pix, payload.material_rmxx);
 	imageStore(out_emissive, pix, payload.emissive);
 	imageStore(out_geometry_prev_position, pix, payload.prev_pos_t);

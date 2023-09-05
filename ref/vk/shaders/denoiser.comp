@@ -36,12 +36,14 @@ layout(set = 0, binding = 15, rgba16f) uniform image2D prev_temporal_diffuse;
 layout(set = 0, binding = 16, rgba16f) uniform image2D out_temporal_specular;
 layout(set = 0, binding = 17, rgba16f) uniform image2D prev_temporal_specular;
 
+
 const int INDIRECT_SCALE = 2;
 
 //#define DEBUG_TEXTURE normals_gs
 //#define DEBUG_TEXTURE emissive
 //#define DEBUG_TEXTURE light_point_diffuse
 //#define DEBUG_NORMAL
+//layout(set = 0, binding = 18, rgba8) uniform readonly image2D material_rmxx;
 
 // Blatantly copypasted from https://www.shadertoy.com/view/XsGfWV
 vec3 aces_tonemap(vec3 color){
@@ -202,7 +204,11 @@ void main() {
 	vec3 geometry_normal, shading_normal;
 	readNormals(pix, geometry_normal, shading_normal);
 	//imageStore(out_dest, pix, vec4(.5 + geometry_normal * .5, 0.)); return;
-	imageStore(out_dest, pix, vec4(.5 + shading_normal * .5, 0.)); return;
+	//const vec4 mat_rmxx = imageLoad(material_rmxx, pix);
+	//imageStore(out_dest, pix, vec4((.5 + shading_normal * .5)*.8 + .2 * mat_rmxx.a , 0.)); return;
+
+	vec3 normal = pix.x < res.x / 2 ? shading_normal : geometry_normal;
+	imageStore(out_dest, pix, vec4(.5 + normal * .5, 0.)); return;
 #endif
 
 	/* const uint mi = uint(material_index); */
