@@ -172,7 +172,7 @@ static int studioModelGetSubmodels(const studiohdr_t *hdr, r_studio_submodel_inf
 	return count;
 }
 
-qboolean R_StudioModelPreload(model_t *mod) {
+const r_studio_model_info_t* R_StudioModelPreload(model_t *mod) {
 	const studiohdr_t *const hdr = (const studiohdr_t *)gEngine.Mod_Extradata(mod_studio, mod);
 
 	ASSERT(g_studio_cache.models_count < MAX_STUDIO_MODELS);
@@ -204,10 +204,10 @@ qboolean R_StudioModelPreload(model_t *mod) {
 	entry->info.submodels_count = submodels_count;
 	entry->info.submodels = submodels;
 
-	return true;
+	return &entry->info;
 }
 
-r_studio_model_info_t *getStudioModelInfo(model_t *model) {
+const r_studio_model_info_t *getStudioModelInfo(model_t *model) {
 	const studiohdr_t *const hdr = (studiohdr_t *)gEngine.Mod_Extradata( mod_studio, model );
 
 	for (int i = 0; i < g_studio_cache.models_count; ++i) {
@@ -217,7 +217,9 @@ r_studio_model_info_t *getStudioModelInfo(model_t *model) {
 		}
 	}
 
-	return NULL;
+	WARN("Studio model \"%s\" wasn't preloaded. How did that happen?", hdr->name);
+
+	return R_StudioModelPreload(model);
 }
 
 void VK_StudioModelInit(void) {
