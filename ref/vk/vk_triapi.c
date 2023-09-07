@@ -2,6 +2,7 @@
 #include "vk_geometry.h"
 #include "vk_render.h"
 #include "vk_sprite.h" // R_GetSpriteTexture
+#include "vk_logs.h"
 
 #include "vk_textures.h" // FIXME temp
 
@@ -190,7 +191,7 @@ void TriVertex3fv( const float *v ) {
 
 void TriVertex3f( float x, float y, float z ) {
 	if (g_triapi.num_vertices == MAX_TRIAPI_VERTICES - 1) {
-		gEngine.Con_Printf(S_ERROR "vk TriApi: trying to emit more than %d vertices in one batch\n", MAX_TRIAPI_VERTICES);
+		ERROR_THROTTLED(1, "vk TriApi: trying to emit more than %d vertices in one batch\n", MAX_TRIAPI_VERTICES);
 		return;
 	}
 

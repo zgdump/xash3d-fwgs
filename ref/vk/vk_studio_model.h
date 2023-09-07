@@ -48,7 +48,7 @@ typedef struct {
 	r_studio_submodel_info_t *submodels;
 } r_studio_model_info_t;
 
-r_studio_model_info_t *getStudioModelInfo(model_t *model);
+const r_studio_model_info_t *getStudioModelInfo(model_t *model);
 
 // Entity model cache/pool
 typedef struct {

@@ -1072,7 +1072,7 @@ int RT_LightAddPolygon(const rt_light_add_polygon_t *addpoly) {
 		return -1;
 
 	if (g_lights_.num_polygons == MAX_SURFACE_LIGHTS) {
-		ERR("Max number of polygon lights %d reached", MAX_SURFACE_LIGHTS);
+		ERROR_THROTTLED(10, "Max number of polygon lights %d reached", MAX_SURFACE_LIGHTS);
 		return -1;
 	}
 

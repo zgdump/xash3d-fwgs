@@ -8,6 +8,7 @@
 #include "vk_renderstate.h"
 #include "vk_pipeline.h"
 #include "vk_descriptor.h"
+#include "vk_logs.h"
 
 #include "com_strings.h"
 #include "eiface.h"
