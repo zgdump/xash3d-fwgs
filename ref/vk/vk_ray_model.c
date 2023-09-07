@@ -9,6 +9,7 @@
 #include "vk_light.h"
 #include "vk_math.h"
 #include "vk_combuf.h"
+#include "vk_logs.h"
 
 #include "eiface.h"
 #include "xash3d_mathlib.h"
@@ -435,7 +436,7 @@ void RT_FrameAddOnce( rt_frame_add_once_t args ) {
 
 	for (int i = 0; i < args.geometries_count; ++i) {
 		if (dyn->geometries_count == MAX_RT_DYNAMIC_GEOMETRIES) {
-			gEngine.Con_Printf(S_ERROR "Too many dynamic geometries for mode %s\n", group_names[material_mode]);
+			ERROR_THROTTLED(1, "Too many dynamic geometries for mode %s\n", group_names[material_mode]);
 			break;
 		}
 

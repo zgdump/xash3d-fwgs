@@ -1341,7 +1341,7 @@ static rt_light_add_polygon_t loadPolyLight(const model_t *mod, const int surfac
 
 	// TODO split, don't clip
 	if (surf->numedges > 7)
-		WARN("emissive surface %d has %d vertices; clipping to 7", surface_index, surf->numedges);
+		WARN_THROTTLED(10, "emissive surface %d has %d vertices; clipping to 7", surface_index, surf->numedges);
 
 	VectorCopy(emissive, lpoly.emissive);
 

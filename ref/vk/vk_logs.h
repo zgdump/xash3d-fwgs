@@ -20,6 +20,7 @@ extern uint32_t g_log_debug_bits;
 // - load bits early at startup somehow. cvar is empty at init for some reason
 // - module name in message
 // - file:line in message
+// - consistent prefixes (see THROTTLED variant)
 
 #define DEBUG(msg, ...) \
 	do { \
@@ -41,6 +42,37 @@ extern uint32_t g_log_debug_bits;
 #define INFO(msg, ...) \
 	do { \
 		gEngine.Con_Printf("vk: " msg "\n", ##__VA_ARGS__); \
+	} while(0)
+
+#define PRINT_THROTTLED(delay, prefix, msg, ...) \
+	do { \
+		static int called = 0; \
+		static double next_message_time = 0.; \
+		if (gpGlobals->realtime > next_message_time) { \
+			gEngine.Con_Printf( prefix "(x%d) " msg "\n", called, ##__VA_ARGS__ ); \
+			next_message_time = gpGlobals->realtime + delay; \
+		} \
+		++called; \
+	} while(0)
+
+#define ERROR_THROTTLED(delay, msg, ...) PRINT_THROTTLED(delay, S_ERROR "vk: ", msg, ##__VA_ARGS__)
+
+#define WARN_THROTTLED(delay, msg, ...) PRINT_THROTTLED(delay, S_WARN "vk: ", msg, ##__VA_ARGS__)
+
+#define PRINT_NOT_IMPLEMENTED_ARGS(msg, ...) do { \
+		static int called = 0; \
+		if ((called&1023) == 0) { \
+			gEngine.Con_Printf( S_ERROR "VK NOT_IMPLEMENTED(x%d): %s " msg "\n", called, __FUNCTION__, ##__VA_ARGS__ ); \
+		} \
+		++called; \
+	} while(0)
+
+#define PRINT_NOT_IMPLEMENTED() do { \
+		static int called = 0; \
+		if ((called&1023) == 0) { \
+			gEngine.Con_Printf( S_ERROR "VK NOT_IMPLEMENTED(x%d): %s\n", called, __FUNCTION__ ); \
+		} \
+		++called; \
 	} while(0)
 
 // Read debug-enabled modules from cvar
