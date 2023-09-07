@@ -14,6 +14,7 @@
 #include "vk_light.h"
 #include "vk_mapents.h"
 #include "r_speeds.h"
+#include "vk_staging.h"
 #include "vk_logs.h"
 
 #include "ref_params.h"
@@ -1463,6 +1464,16 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 		// RAD data in vk_light.c, so the emissive values are empty. This is the place and time where we actually get to
 		// know them, so let's fixup things.
 		// TODO minor optimization: sort geom_indices to have a better chance for them to be sequential
+
+		{
+			// Make sure that staging has been flushed.
+			// Updating materials leads to staging an upload to the same memory that we've just staged an upload to.
+			// This doesn't please the validator.
+			// Ensure that these uploads are not mixed into the same unsynchronized stream.
+			// TODO this might be not great for performance (extra waiting for GPU), so a better solution should be considered. E.g. tracking and barrier-syncing regions to-be-reuploaded.
+			R_VkStagingFlushSync();
+		}
+
 		R_RenderModelUpdateMaterials(&bmodel->render_model, geom_indices, emissive_surfaces_count);
 		INFO("Loaded %d polylights for %s model %s", emissive_surfaces_count, is_static ? "static" : "movable", mod->name);
 	}
