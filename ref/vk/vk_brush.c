@@ -417,7 +417,16 @@ static qboolean isSurfaceAnimated( const msurface_t *s, const struct texture_s *
 	if( base->name[0] == '-' )
 		return false;
 
-	return true;
+	// It is not an animation if all textures are the same
+	const texture_t *prev = base;
+	base = base->anim_next;
+	while (base && base != prev) {
+		if (prev->gl_texturenum != base->gl_texturenum)
+			return true;
+		base = base->anim_next;
+	}
+
+	return false;
 }
 
 typedef enum {
