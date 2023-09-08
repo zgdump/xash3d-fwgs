@@ -1081,6 +1081,7 @@ int RT_LightAddPolygon(const rt_light_add_polygon_t *addpoly) {
 	ASSERT(g_lights_.num_polygon_vertices + addpoly->num_vertices <= COUNTOF(g_lights_.polygon_vertices));
 
 	{
+		APROF_SCOPE_DECLARE_BEGIN(add_polygon, __FUNCTION__);
 		rt_light_polygon_t *const poly = g_lights_.polygons + g_lights_.num_polygons;
 		vec3_t *vertices = g_lights_.polygon_vertices + g_lights_.num_polygon_vertices;
 		vec3_t normal;
@@ -1143,6 +1144,7 @@ int RT_LightAddPolygon(const rt_light_add_polygon_t *addpoly) {
 		}
 
 		g_lights_.num_polygon_vertices += addpoly->num_vertices;
+		APROF_SCOPE_END(add_polygon);
 		return g_lights_.num_polygons++;
 	}
 }

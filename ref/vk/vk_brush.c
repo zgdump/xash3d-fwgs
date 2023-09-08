@@ -16,6 +16,7 @@
 #include "r_speeds.h"
 #include "vk_staging.h"
 #include "vk_logs.h"
+#include "profiler.h"
 
 #include "ref_params.h"
 #include "eiface.h"
@@ -416,7 +417,16 @@ static qboolean isSurfaceAnimated( const msurface_t *s, const struct texture_s *
 	if( base->name[0] == '-' )
 		return false;
 
-	return true;
+	// It is not an animation if all textures are the same
+	const texture_t *prev = base;
+	base = base->anim_next;
+	while (base && base != prev) {
+		if (prev->gl_texturenum != base->gl_texturenum)
+			return true;
+		base = base->anim_next;
+	}
+
+	return false;
 }
 
 typedef enum {
@@ -522,6 +532,7 @@ static qboolean brushCreateWaterModel(const model_t *mod, vk_brush_model_t *bmod
 }
 
 static void brushDrawWater(vk_brush_model_t *bmodel, const cl_entity_t *ent, int render_type, const vec4_t color, const matrix4x4 transform) {
+	APROF_SCOPE_DECLARE_BEGIN(brush_draw_water, __FUNCTION__);
 	ASSERT(bmodel->water.surfaces_count > 0);
 
 	fillWaterSurfaces(NULL, bmodel, bmodel->water.render_model.geometries);
@@ -535,6 +546,8 @@ static void brushDrawWater(vk_brush_model_t *bmodel, const cl_entity_t *ent, int
 		.transform = (const matrix4x4*)transform,
 		.prev_transform = &bmodel->prev_transform,
 	});
+
+	APROF_SCOPE_END(brush_draw_water);
 }
 
 // FIXME use this
@@ -694,6 +707,7 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 			geom->texture = tglob.whiteTexture;
 		}
 	} else {
+		APROF_SCOPE_DECLARE_BEGIN(brush_update_textures, "brush: update animated textures");
 		// Update animated textures
 		int updated_textures_count = 0;
 		for (int i = 0; i < bmodel->animated_indexes_count; ++i) {
@@ -729,6 +743,7 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 		if (updated_textures_count > 0) {
 			R_RenderModelUpdateMaterials(&bmodel->render_model, g_brush.updated_textures, updated_textures_count);
 		}
+		APROF_SCOPE_END(brush_update_textures);
 	}
 
 	R_RenderModelDraw(&bmodel->render_model, (r_model_draw_t){
