@@ -70,5 +70,16 @@
 "_xvk_ent_id" "122 128 121 129 135 126 124 123 130 125 127"
 }
 
-
-
+// smoothing
+{
+"_xvk_smoothing_excluded_pairs" "918 924 922"
+}
+{
+"_xvk_smoothing_excluded_pairs" "2550 2551 2549"
+}
+{
+"_xvk_smoothing_excluded_pairs" "2634 2635 2562"
+}
+{
+"_xvk_smoothing_excluded_pairs" "2647 2648 2646"
+}
