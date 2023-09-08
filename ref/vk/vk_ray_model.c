@@ -10,6 +10,7 @@
 #include "vk_math.h"
 #include "vk_combuf.h"
 #include "vk_logs.h"
+#include "profiler.h"
 
 #include "eiface.h"
 #include "xash3d_mathlib.h"
@@ -262,6 +263,8 @@ qboolean RT_ModelUpdateMaterials(struct rt_model_s *model, const struct vk_rende
 	if (!geom_indices_count)
 		return true;
 
+	APROF_SCOPE_DECLARE_BEGIN(update_materials, __FUNCTION__);
+
 	int begin = 0;
 	for (int i = 1; i < geom_indices_count; ++i) {
 		const int geom_index = geom_indices[i];
@@ -272,8 +275,10 @@ qboolean RT_ModelUpdateMaterials(struct rt_model_s *model, const struct vk_rende
 			const int offset = geom_indices[begin];
 			const int count = i - begin;
 			ASSERT(offset + count <= geometries_count);
-			if (!RT_KusochkiUpload(model->kusochki.offset + offset, geometries + offset, count, -1, NULL))
+			if (!RT_KusochkiUpload(model->kusochki.offset + offset, geometries + offset, count, -1, NULL)) {
+				APROF_SCOPE_END(update_materials);
 				return false;
+			}
 
 			begin = i;
 		}
@@ -283,10 +288,14 @@ qboolean RT_ModelUpdateMaterials(struct rt_model_s *model, const struct vk_rende
 		const int offset = geom_indices[begin];
 		const int count = geom_indices_count - begin;
 		ASSERT(offset + count <= geometries_count);
-		if (!RT_KusochkiUpload(model->kusochki.offset + offset, geometries + offset, count, -1, NULL))
+		if (!RT_KusochkiUpload(model->kusochki.offset + offset, geometries + offset, count, -1, NULL)) {
+
+			APROF_SCOPE_END(update_materials);
 			return false;
+		}
 	}
 
+	APROF_SCOPE_END(update_materials);
 	return true;
 }
 
