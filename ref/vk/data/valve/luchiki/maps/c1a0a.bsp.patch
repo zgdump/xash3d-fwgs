@@ -47,3 +47,21 @@
 "_xvk_ent_id" "166 163"
 "renderamt" "128"
 }
+
+
+// smoothing
+{
+"_xvk_smoothing_threshold" "50" // TODO: more manual smoothing
+}
+{
+"_xvk_smoothing_group" "2159 2162 2156 2161 2169 2168 2160 2155 2158 2166 2165 2164"
+}
+{
+"_xvk_smoothing_group" "2232 2231 2228 2229 2230 2227"
+}
+{
+"_xvk_smoothing_group" "2286 2290 2291 2292 2284 2281 2285 2288 2294 2295 2287 2283"
+}
+{
+"_xvk_smoothing_group" "2394 2392 2390 2388 2389 2391 2393 2395" //  2383 2384 2387
+}
