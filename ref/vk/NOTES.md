@@ -398,3 +398,16 @@ TODO: can we not have a BLAS/model for each submodel? Can it be per-model instea
 # 2023-07-30
 - ~~R_DrawStudioModel is the main func for drawing studio model. Called from scene code for each studio entity, with everything current (RI and stuff) set up~~
 - `R_StudioDrawModelInternal()` is the main one. It is where it splits into renderer-vs-game rendering functions.
+
+# 2023-09-11 E293
+- light shaders include structure
+- ray_light_direct_{poly,point}.comp
+	- ray_light_direct.glsl
+		- utils.glsl
+		- noise.glsl
+		- ray_interop.h
+		- ray_kusochki.glsl
+		- light.glsl
+			- brdf.h
+			- light_common.glsl
+			- LIGHT_POLYGON: light_polygon.glsl
