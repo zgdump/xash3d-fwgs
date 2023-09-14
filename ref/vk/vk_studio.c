@@ -2207,8 +2207,8 @@ static r_studio_entity_model_t *studioEntityModelGet(const cl_entity_t* entity) 
 		return NULL;
 	}
 
-	DEBUG("Created studio entity %p model %s: %p (bodyparts=%d)",
-		entity, entity->model->name, entmodel, entmodel->bodyparts_count);
+	DEBUG("Created studio entity %p(%d) model %s: %p (bodyparts=%d)",
+		entity, entity->index, entity->model->name, entmodel, entmodel->bodyparts_count);
 
 	VK_EntityDataSet(entity, entmodel, &studioEntityModelDestroy);
 	return entmodel;

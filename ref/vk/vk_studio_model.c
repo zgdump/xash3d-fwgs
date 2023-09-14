@@ -259,6 +259,8 @@ void VK_StudioModelInit(void) {
 }
 
 r_studio_submodel_render_t *studioSubmodelRenderModelAcquire(r_studio_submodel_info_t *subinfo) {
+	const char *mode = "";
+
 	r_studio_submodel_render_t *render = NULL;
 	if (subinfo->cached_head) {
 		render = subinfo->cached_head;
@@ -266,21 +268,24 @@ r_studio_submodel_render_t *studioSubmodelRenderModelAcquire(r_studio_submodel_i
 			subinfo->cached_head = render->_.next;
 			render->_.next = NULL;
 		}
-		subinfo->render_refcount++;
-		return render;
-	}
 
-	render = Mem_Calloc(vk_core.pool, sizeof(*render));
-	render->_.info = subinfo;
-
-	if (!subinfo->is_dynamic) {
-		subinfo->cached_head = render;
-		++g_studio_cache.submodels_cached_static;
+		mode = "new";
 	} else {
-		++g_studio_cache.submodels_cached_dynamic;
+		render = Mem_Calloc(vk_core.pool, sizeof(*render));
+		render->_.info = subinfo;
+
+		if (!subinfo->is_dynamic) {
+			subinfo->cached_head = render;
+			++g_studio_cache.submodels_cached_static;
+		} else {
+			++g_studio_cache.submodels_cached_dynamic;
+		}
+
+		mode = "cached";
 	}
 
 	subinfo->render_refcount++;
+	DEBUG("%s: submodel=%p(%s) %s rendermodel=%p refcount=%d", __FUNCTION__, subinfo->submodel_key, mode, subinfo->submodel_key->name, render, subinfo->render_refcount);
 	return render;
 }
 
@@ -290,6 +295,9 @@ void studioSubmodelRenderModelRelease(r_studio_submodel_render_t *render_submode
 
 	ASSERT(render_submodel->_.info->render_refcount > 0);
 	render_submodel->_.info->render_refcount--;
+
+	const r_studio_submodel_info_t* const subinfo = render_submodel->_.info;
+	DEBUG("%s: submodel=%p(%s) rendermodel=%p refcount=%d", __FUNCTION__, subinfo->submodel_key, subinfo->submodel_key->name, render_submodel, subinfo->render_refcount);
 
 	if (!render_submodel->_.info->is_dynamic)
 		return;
