@@ -757,7 +757,7 @@ static qboolean spriteIsOccluded( const cl_entity_t *e, vec3_t origin, float *ps
 		if( v[1] < g_camera.viewport[1] || v[1] > g_camera.viewport[1] + g_camera.viewport[3] )
 			return true; // do scissor
 
-		*blend = R_SpriteGlowBlend( origin, e->curstate.rendermode, e->curstate.renderfx, pscale );
+		*blend *= R_SpriteGlowBlend( origin, e->curstate.rendermode, e->curstate.renderfx, pscale );
 
 		if( *blend <= 0.01f )
 			return true; // faded
