@@ -785,16 +785,17 @@ static vk_render_type_e spriteRenderModeToRenderType( int render_mode ) {
 	return kVkRenderTypeSolid;
 }
 
-static void R_DrawSpriteQuad( const char *debug_name, mspriteframe_t *frame, vec3_t org, vec3_t v_right, vec3_t v_up, float scale, int texture, int render_mode, const vec4_t color ) {
+static void R_DrawSpriteQuad( const char *debug_name, const mspriteframe_t *frame, const vec3_t org, const vec3_t v_right, const vec3_t v_up, float scale, int texture, int render_mode, const vec4_t color ) {
 	vec3_t v_normal;
 	CrossProduct(v_right, v_up, v_normal);
 
 	// TODO can frame->right/left and frame->up/down be asymmetric?
-	VectorScale(v_right, frame->right * scale, v_right);
-	VectorScale(v_up, frame->up * scale, v_up);
+	vec3_t right, up;
+	VectorScale(v_right, frame->right * scale, right);
+	VectorScale(v_up, frame->up * scale, up);
 
 	matrix4x4 transform;
-	Matrix4x4_CreateFromVectors(transform, v_right, v_up, v_normal, org);
+	Matrix4x4_CreateFromVectors(transform, right, up, v_normal, org);
 
 	const vk_render_type_e render_type = spriteRenderModeToRenderType(render_mode);
 
@@ -842,10 +843,6 @@ static qboolean R_SpriteAllowLerping( const cl_entity_t *e, msprite_t *psprite )
 	if( !r_sprite_lerping->value )
 		return false;
 	*/
-
-	// FIXME: lerping means drawing 2 coplanar quads blended on top of each other, which is not something ray tracing can do easily
-	if (vk_core.rtx)
-		return false;
 
 	if( psprite->numframes <= 1 )
 		return false;
