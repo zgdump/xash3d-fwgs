@@ -89,7 +89,6 @@ static void loadLights( const model_t *const map ) {
 
 // Clears all old map data
 static void mapLoadBegin( const model_t *const map ) {
-	VK_EntityDataClear();
 	R_StudioCacheClear();
 	R_GeometryBuffer_MapClear();
 
@@ -238,6 +237,11 @@ void R_NewMap( void ) {
 	const qboolean is_save_load = !!gEngine.pfnGetModelByIndex( 1 )->cache.data;
 
 	INFO( "R_NewMap, loading save: %d", is_save_load );
+
+	// New map causes entites to be reallocated regardless of whether it was save-load.
+	// This realloc invalidates all previous entity data and pointers.
+	// Make sure that EntityData doesn't accidentally reference old pointers.
+	VK_EntityDataClear();
 
 	// Skip clearing already loaded data if the map hasn't changed.
 	if (is_save_load)
