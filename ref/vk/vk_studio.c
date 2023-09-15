@@ -2179,18 +2179,18 @@ static void studioEntityModelDestroy(void *userdata) {
 		Mem_Free(entmodel->bodyparts);
 }
 
-static r_studio_entity_model_t *studioEntityModelCreate(const cl_entity_t *entity) {
+static r_studio_entity_model_t *studioEntityModelCreate(const studiohdr_t *hdr, model_t *model) {
 	r_studio_entity_model_t *const entmodel = Mem_Calloc(vk_core.pool, sizeof(r_studio_entity_model_t));
 
-	entmodel->studio_header = m_pStudioHeader;
-	entmodel->bodyparts_count = m_pStudioHeader->numbodyparts; // TODO is this correct number?
+	entmodel->studio_header = hdr;
+	entmodel->bodyparts_count = hdr->numbodyparts; // TODO is this correct number?
 	entmodel->bodyparts = Mem_Calloc(vk_core.pool, sizeof(*entmodel->bodyparts) * entmodel->bodyparts_count);
 
 	Matrix4x4_LoadIdentity(entmodel->transform);
 	Matrix4x4_LoadIdentity(entmodel->prev_transform);
 	Matrix3x4_Copy(entmodel->prev_transform, g_studio.rotationmatrix);
 
-	entmodel->model_info = getStudioModelInfo(entity->model);
+	entmodel->model_info = getStudioModelInfo(model);
 	ASSERT(entmodel->model_info);
 
 	return entmodel;
@@ -2201,14 +2201,18 @@ static r_studio_entity_model_t *studioEntityModelGet(const cl_entity_t* entity) 
 	if (entmodel && entmodel->studio_header == m_pStudioHeader)
 		return entmodel;
 
-	entmodel = studioEntityModelCreate(entity);
+	entmodel = studioEntityModelCreate(m_pStudioHeader, RI.currentmodel);
 	if (!entmodel) {
-		ERR("Cannot create studio entity model for %s", entity->model->name);
+		ERR("Cannot create studio entity model for model=%p(%s)", RI.currentmodel, RI.currentmodel->name);
 		return NULL;
 	}
 
-	DEBUG("Created studio entity %p(%d) model %s: %p (bodyparts=%d)",
-		entity, entity->index, entity->model->name, entmodel, entmodel->bodyparts_count);
+	DEBUG("Created studioEntityModel=%p entity=%p(%d) model=%p(%s) hdr=%p(%s), bodyparts=%d",
+		entmodel,
+		entity, entity->index,
+		RI.currentmodel, RI.currentmodel->name,
+		m_pStudioHeader, m_pStudioHeader->name,
+		entmodel->bodyparts_count);
 
 	VK_EntityDataSet(entity, entmodel, &studioEntityModelDestroy);
 	return entmodel;

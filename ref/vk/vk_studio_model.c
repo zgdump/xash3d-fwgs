@@ -210,7 +210,7 @@ const r_studio_model_info_t* R_StudioModelPreload(model_t *mod) {
 	r_studio_model_info_entry_t *entry = &g_studio_cache.models[g_studio_cache.models_count++];
 	entry->studio_header_key = hdr;
 
-	DEBUG("Studio model %s, sequences = %d:", hdr->name, hdr->numseq);
+	DEBUG("Studio model %p(%s) hdr=%p(%s), sequences=%d:", mod, mod->name, hdr, hdr->name, hdr->numseq);
 	for (int i = 0; i < hdr->numseq; ++i) {
 		const mstudioseqdesc_t *const pseqdesc = (mstudioseqdesc_t *)((byte *)hdr + hdr->seqindex) + i;
 		DEBUG("  %d: fps=%f numframes=%d", i, pseqdesc->fps, pseqdesc->numframes);
@@ -285,7 +285,7 @@ r_studio_submodel_render_t *studioSubmodelRenderModelAcquire(r_studio_submodel_i
 	}
 
 	subinfo->render_refcount++;
-	DEBUG("%s: submodel=%p(%s) %s rendermodel=%p refcount=%d", __FUNCTION__, subinfo->submodel_key, mode, subinfo->submodel_key->name, render, subinfo->render_refcount);
+	DEBUG("%s: submodel=%p(%s) \"%s\" rendermodel=%p refcount=%d", __FUNCTION__, subinfo->submodel_key, mode, subinfo->submodel_key->name, render, subinfo->render_refcount);
 	return render;
 }
 
