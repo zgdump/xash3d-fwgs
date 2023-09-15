@@ -36,6 +36,7 @@
 // TODO get rid of this
 #define ENGINE_GET_PARM_ (*gEngine.EngineGetParm)
 #define ENGINE_GET_PARM( parm ) ENGINE_GET_PARM_( ( parm ), 0 )
+#define CL_IsViewEntityLocalPlayer() ( ENGINE_GET_PARM( PARM_VIEWENT_INDEX ) == ENGINE_GET_PARM( PARM_PLAYER_INDEX ) )
 
 // FIXME VK should not be declared here
 colorVec		R_LightVec( const float *start, const float *end, float *lightspot, float *lightvec );
@@ -3001,7 +3002,6 @@ static int R_StudioDrawModel( int flags )
 		if( !R_StudioCheckBBox( ))
 			return 0;
 
-		// FIXME VK r_stats.c_studio_models_drawn++;
 		g_studio.framecount++; // render data cache cookie
 
 		if( m_pStudioHeader->numbodyparts == 0 )
@@ -3089,6 +3089,7 @@ static void R_StudioDrawModelInternal( cl_entity_t *e, int flags )
 static void R_DrawStudioModel( cl_entity_t *e )
 {
 	/* FIXME VK
+	 * RP_ENVVIEW is never set even in gl/soft renderers
 	if( FBitSet( RI.params, RP_ENVVIEW ))
 		return;
 	*/
@@ -3131,10 +3132,14 @@ void R_RunViewmodelEvents( void )
 		return;
 
 	/* FIXME VK
+	 * RP_NORMALPASS is noop?
 	// ignore in thirdperson, camera view or client is died
 	if( !RP_NORMALPASS() || ENGINE_GET_PARM( PARM_LOCAL_HEALTH ) <= 0 || !CL_IsViewEntityLocalPlayer())
 		return;
 	*/
+
+	if( ENGINE_GET_PARM( PARM_LOCAL_HEALTH ) <= 0 || !CL_IsViewEntityLocalPlayer())
+		return;
 
 	RI.currententity = gEngine.GetViewModel();
 
@@ -3177,6 +3182,7 @@ void R_DrawViewModel( void )
 		return;
 
 	/* FIXME VK
+	 * RP_NORMALPASS is noop?
 	// ignore in thirdperson, camera view or client is died
 	if( !RP_NORMALPASS() || ENGINE_GET_PARM( PARM_LOCAL_HEALTH ) <= 0 || !CL_IsViewEntityLocalPlayer())
 		return;
@@ -3185,6 +3191,9 @@ void R_DrawViewModel( void )
 	if( !R_ModelOpaque( view->curstate.rendermode ) && g_studio.blend <= 0.0f )
 		return; // invisible ?
 	*/
+
+	if( ENGINE_GET_PARM( PARM_LOCAL_HEALTH ) <= 0 || !CL_IsViewEntityLocalPlayer())
+		return;
 
 	RI.currententity = view;
 
@@ -3403,9 +3412,9 @@ static cl_entity_t *pfnGetViewEntity( void )
 
 static void pfnGetEngineTimes( int *framecount, double *current, double *old )
 {
-	/* FIXME VK NOT IMPLEMENTED */
+	// TODO is framecount enough? Should it be "REAL" framecount?
 	/* if( framecount ) *framecount = tr.realframecount; */
-	if( framecount ) *framecount = 0;
+	if( framecount ) *framecount = g_studio.framecount;
 	if( current ) *current = gpGlobals->time;
 	if( old ) *old =   gpGlobals->oldtime;
 }
@@ -3463,15 +3472,10 @@ static void R_StudioDrawBones( void )
 	PRINT_NOT_IMPLEMENTED();
 }
 
-static int fixme_studio_models_drawn;
-
 static void pfnGetModelCounters( int **s, int **a )
 {
 	*s = &g_studio.framecount;
-
-	/* FIXME VK NOT IMPLEMENTED */
-	/* *a = &r_stats.c_studio_models_drawn; */
-	*a = &fixme_studio_models_drawn;
+	*a = &g_studio_stats.models_count;
 }
 
 static void pfnGetAliasScale( float *x, float *y )
