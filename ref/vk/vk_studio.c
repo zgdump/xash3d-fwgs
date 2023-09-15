@@ -36,6 +36,7 @@
 // TODO get rid of this
 #define ENGINE_GET_PARM_ (*gEngine.EngineGetParm)
 #define ENGINE_GET_PARM( parm ) ENGINE_GET_PARM_( ( parm ), 0 )
+#define CL_IsViewEntityLocalPlayer() ( ENGINE_GET_PARM( PARM_VIEWENT_INDEX ) == ENGINE_GET_PARM( PARM_PLAYER_INDEX ) )
 
 // FIXME VK should not be declared here
 colorVec		R_LightVec( const float *start, const float *end, float *lightspot, float *lightvec );
@@ -2179,18 +2180,18 @@ static void studioEntityModelDestroy(void *userdata) {
 		Mem_Free(entmodel->bodyparts);
 }
 
-static r_studio_entity_model_t *studioEntityModelCreate(const cl_entity_t *entity) {
+static r_studio_entity_model_t *studioEntityModelCreate(const studiohdr_t *hdr, model_t *model) {
 	r_studio_entity_model_t *const entmodel = Mem_Calloc(vk_core.pool, sizeof(r_studio_entity_model_t));
 
-	entmodel->studio_header = m_pStudioHeader;
-	entmodel->bodyparts_count = m_pStudioHeader->numbodyparts; // TODO is this correct number?
+	entmodel->studio_header = hdr;
+	entmodel->bodyparts_count = hdr->numbodyparts; // TODO is this correct number?
 	entmodel->bodyparts = Mem_Calloc(vk_core.pool, sizeof(*entmodel->bodyparts) * entmodel->bodyparts_count);
 
 	Matrix4x4_LoadIdentity(entmodel->transform);
 	Matrix4x4_LoadIdentity(entmodel->prev_transform);
 	Matrix3x4_Copy(entmodel->prev_transform, g_studio.rotationmatrix);
 
-	entmodel->model_info = getStudioModelInfo(entity->model);
+	entmodel->model_info = getStudioModelInfo(model);
 	ASSERT(entmodel->model_info);
 
 	return entmodel;
@@ -2201,14 +2202,18 @@ static r_studio_entity_model_t *studioEntityModelGet(const cl_entity_t* entity) 
 	if (entmodel && entmodel->studio_header == m_pStudioHeader)
 		return entmodel;
 
-	entmodel = studioEntityModelCreate(entity);
+	entmodel = studioEntityModelCreate(m_pStudioHeader, RI.currentmodel);
 	if (!entmodel) {
-		ERR("Cannot create studio entity model for %s", entity->model->name);
+		ERR("Cannot create studio entity model for model=%p(%s)", RI.currentmodel, RI.currentmodel->name);
 		return NULL;
 	}
 
-	DEBUG("Created studio entity %p(%d) model %s: %p (bodyparts=%d)",
-		entity, entity->index, entity->model->name, entmodel, entmodel->bodyparts_count);
+	DEBUG("Created studioEntityModel=%p entity=%p(%d) model=%p(%s) hdr=%p(%s), bodyparts=%d",
+		entmodel,
+		entity, entity->index,
+		RI.currentmodel, RI.currentmodel->name,
+		m_pStudioHeader, m_pStudioHeader->name,
+		entmodel->bodyparts_count);
 
 	VK_EntityDataSet(entity, entmodel, &studioEntityModelDestroy);
 	return entmodel;
@@ -2997,7 +3002,6 @@ static int R_StudioDrawModel( int flags )
 		if( !R_StudioCheckBBox( ))
 			return 0;
 
-		// FIXME VK r_stats.c_studio_models_drawn++;
 		g_studio.framecount++; // render data cache cookie
 
 		if( m_pStudioHeader->numbodyparts == 0 )
@@ -3085,6 +3089,7 @@ static void R_StudioDrawModelInternal( cl_entity_t *e, int flags )
 static void R_DrawStudioModel( cl_entity_t *e )
 {
 	/* FIXME VK
+	 * RP_ENVVIEW is never set even in gl/soft renderers
 	if( FBitSet( RI.params, RP_ENVVIEW ))
 		return;
 	*/
@@ -3127,10 +3132,14 @@ void R_RunViewmodelEvents( void )
 		return;
 
 	/* FIXME VK
+	 * RP_NORMALPASS is noop?
 	// ignore in thirdperson, camera view or client is died
 	if( !RP_NORMALPASS() || ENGINE_GET_PARM( PARM_LOCAL_HEALTH ) <= 0 || !CL_IsViewEntityLocalPlayer())
 		return;
 	*/
+
+	if( ENGINE_GET_PARM( PARM_LOCAL_HEALTH ) <= 0 || !CL_IsViewEntityLocalPlayer())
+		return;
 
 	RI.currententity = gEngine.GetViewModel();
 
@@ -3173,6 +3182,7 @@ void R_DrawViewModel( void )
 		return;
 
 	/* FIXME VK
+	 * RP_NORMALPASS is noop?
 	// ignore in thirdperson, camera view or client is died
 	if( !RP_NORMALPASS() || ENGINE_GET_PARM( PARM_LOCAL_HEALTH ) <= 0 || !CL_IsViewEntityLocalPlayer())
 		return;
@@ -3181,6 +3191,9 @@ void R_DrawViewModel( void )
 	if( !R_ModelOpaque( view->curstate.rendermode ) && g_studio.blend <= 0.0f )
 		return; // invisible ?
 	*/
+
+	if( ENGINE_GET_PARM( PARM_LOCAL_HEALTH ) <= 0 || !CL_IsViewEntityLocalPlayer())
+		return;
 
 	RI.currententity = view;
 
@@ -3399,9 +3412,9 @@ static cl_entity_t *pfnGetViewEntity( void )
 
 static void pfnGetEngineTimes( int *framecount, double *current, double *old )
 {
-	/* FIXME VK NOT IMPLEMENTED */
+	// TODO is framecount enough? Should it be "REAL" framecount?
 	/* if( framecount ) *framecount = tr.realframecount; */
-	if( framecount ) *framecount = 0;
+	if( framecount ) *framecount = g_studio.framecount;
 	if( current ) *current = gpGlobals->time;
 	if( old ) *old =   gpGlobals->oldtime;
 }
@@ -3459,15 +3472,10 @@ static void R_StudioDrawBones( void )
 	PRINT_NOT_IMPLEMENTED();
 }
 
-static int fixme_studio_models_drawn;
-
 static void pfnGetModelCounters( int **s, int **a )
 {
 	*s = &g_studio.framecount;
-
-	/* FIXME VK NOT IMPLEMENTED */
-	/* *a = &r_stats.c_studio_models_drawn; */
-	*a = &fixme_studio_models_drawn;
+	*a = &g_studio_stats.models_count;
 }
 
 static void pfnGetAliasScale( float *x, float *y )
