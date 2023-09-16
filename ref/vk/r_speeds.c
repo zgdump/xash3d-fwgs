@@ -214,7 +214,7 @@ static void drawCPUProfilerScopes(int draw, const aprof_event_t *events, uint64_
 					const uint64_t delta_ns = timestamp_ns - stack[depth].begin_ns;
 
 					if (!g_speeds.frame.scopes[scope_id].initialized) {
-						R_SpeedsRegisterMetric(&g_speeds.frame.scopes[scope_id].time_us, "scope", scope->name, kSpeedsMetricMicroseconds, /*reset*/ true, scope->name, __FILE__, __LINE__);
+						R_SpeedsRegisterMetric(&g_speeds.frame.scopes[scope_id].time_us, "scope", scope->name, kSpeedsMetricMicroseconds, /*reset*/ true, scope->name, scope->source_file, scope->source_line);
 
 						g_speeds.frame.scopes[scope_id].initialized = 1;
 					}
