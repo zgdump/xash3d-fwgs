@@ -55,6 +55,7 @@ typedef struct {
 static struct {
 	cvar_t *r_speeds_graphs;
 	cvar_t *r_speeds_graphs_width;
+	cvar_t *r_speeds_metrics_as_table;
 
 	aprof_event_t *paused_events;
 	int paused_events_count;
@@ -719,22 +720,45 @@ static void listMetrics( void ) {
 }
 
 static void doListMetrics( void ) {
-	if (!g_speeds.frame.list_metrics)
+	if ( !g_speeds.frame.list_metrics )
 		return;
 
 	g_speeds.frame.list_metrics = false;
 	const char *const filter = g_speeds.frame.list_metrics_filter;
 
-	for (int i = 0; i < g_speeds.metrics_count; ++i) {
+	const char *header_format = NULL;
+	const char *line_format = NULL;
+	const char *row_format = NULL;
+	char line[64];
+	if ( g_speeds.r_speeds_metrics_as_table->value ) {
+		// Note:
+		// This table alignment method relies on monospace font
+		// and will have its alignment completly broken without one.
+		// That is why there is now cvar called `r_speeds_metrics_as_table`,
+		// which can toggle this printing method on/off.
+		header_format = "  | %-38s | %-10s | %-40s | %21s\n";
+		line_format   = "  | %.38s | %.10s | %.40s | %.21s\n";
+		row_format    = "  | ^2%-38s^7 | ^3%-10s^7 | ^5%-40s^7 | ^6%s:%d^7\n";
+		memset( line, '-', sizeof( line ) );
+	} else {
+		header_format = "  %s = %s  -->  (%s, %s)\n";
+		line_format   = "";
+		row_format    = "  ^2%s^7 = ^3%s^7  -->  (^5%s^7, ^6%s:%d^7)\n";
+	}
+
+	gEngine.Con_Printf( header_format, "module.metric_name", "value", "variable", "registration_location" );
+	gEngine.Con_Printf( line_format, line, line, line, line );
+	for ( int i = 0; i < g_speeds.metrics_count; ++i ) {
 		const r_speeds_metric_t *metric = g_speeds.metrics + i;
 
-		if (filter[0] && !Q_strstr(metric->name, filter))
+		if ( filter[0] && !Q_strstr( metric->name, filter ) )
 			continue;
 
-		char buf[16];
-		metricTypeSnprintf(buf, sizeof(buf), *metric->p_value, metric->type);
-		gEngine.Con_Printf("  ^2%s^7 %s, value = ^3%s^7 (^5%s^7, ^6%s:%d^7)\n", metric->name, getMetricTypeName(metric->type), buf, metric->var_name, metric->src_file, metric->src_line);
+		char value_with_unit[16];
+		metricTypeSnprintf( value_with_unit, sizeof( value_with_unit ), *metric->p_value, metric->type );
+		gEngine.Con_Printf( row_format, metric->name, value_with_unit, metric->var_name, metric->src_file, metric->src_line );
 	}
+	gEngine.Con_Printf( line_format, line, line, line, line );
 }
 
 static void graphCmd( void ) {
@@ -810,6 +834,7 @@ static void graphCmd( void ) {
 void R_SpeedsInit( void ) {
 	g_speeds.r_speeds_graphs = gEngine.Cvar_Get("r_speeds_graphs", "", FCVAR_GLCONFIG, "List of metrics to plot as graphs, separated by commas");
 	g_speeds.r_speeds_graphs_width = gEngine.Cvar_Get("r_speeds_graphs_width", "", FCVAR_GLCONFIG, "Graphs width in pixels");
+	g_speeds.r_speeds_metrics_as_table = gEngine.Cvar_Get("r_speeds_metrics_as_table", "", FCVAR_GLCONFIG, "Print metrics list as table");
 
 	gEngine.Cmd_AddCommand("r_speeds_toggle_pause", togglePause, "Toggle frame profiler pause");
 	gEngine.Cmd_AddCommand("r_speeds_list_metrics", listMetrics, "List all registered metrics");
