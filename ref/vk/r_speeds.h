@@ -1,6 +1,5 @@
 #pragma once
 #include "xash3d_types.h"
-#include "profiler.h" // APROF_FILENAME
 #include <stdint.h>
 
 void R_SpeedsInit( void );
@@ -23,9 +22,9 @@ void R_SpeedsRegisterMetric(int* p_value, const char *module, const char *name, 
 // A counter is a value accumulated during a single frame, and reset to zero between frames.
 // Examples: drawn models count, scope times, etc.
 #define R_SPEEDS_COUNTER(var, name, type) \
-	R_SpeedsRegisterMetric(&(var), MODULE_NAME, name, type, /*reset*/ true, #var, APROF_FILENAME( __FILE__ ), __LINE__)
+	R_SpeedsRegisterMetric(&(var), MODULE_NAME, name, type, /*reset*/ true, #var, __FILE__, __LINE__)
 
 // A metric is computed and preserved across frame boundaries.
 // Examples: total allocated memory, cache sizes, etc.
 #define R_SPEEDS_METRIC(var, name, type) \
-	R_SpeedsRegisterMetric(&(var), MODULE_NAME, name, type, /*reset*/ false, #var, APROF_FILENAME( __FILE__ ), __LINE__)
+	R_SpeedsRegisterMetric(&(var), MODULE_NAME, name, type, /*reset*/ false, #var, __FILE__, __LINE__)

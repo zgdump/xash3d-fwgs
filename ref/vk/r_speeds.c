@@ -220,16 +220,7 @@ static void drawCPUProfilerScopes(int draw, const aprof_event_t *events, uint64_
 					const uint64_t delta_ns = timestamp_ns - stack[depth].begin_ns;
 
 					if (!g_speeds.frame.scopes[scope_id].initialized) {
-						R_SpeedsRegisterMetric(
-							/* p_value  */ &g_speeds.frame.scopes[scope_id].time_us, 
-							/* module   */ "scope", 
-							/* name     */ scope->name, 
-							/* type     */ kSpeedsMetricMicroseconds, 
-							/* reset    */ true, 
-							/* var_name */ scope->name, 
-							/* file     */ scope->source_filename, 
-							/* line     */ scope->source_line);
-
+						R_SpeedsRegisterMetric(&g_speeds.frame.scopes[scope_id].time_us, "scope", scope->name, kSpeedsMetricMicroseconds, /* reset */ true, scope->name, scope->source_file, scope->source_line);
 						g_speeds.frame.scopes[scope_id].initialized = 1;
 					}
 
@@ -442,16 +433,7 @@ static void drawGPUProfilerScopes(qboolean draw, int y, uint64_t frame_begin_tim
 			const char *name = gpurofl->scopes[scope_index].name;
 
 			if (!g_speeds.frame.gpu_scopes[scope_index].initialized) {
-				R_SpeedsRegisterMetric(
-					/* p_value  */ &g_speeds.frame.gpu_scopes[scope_index].time_us, 
-					/* module   */ "gpuscope", 
-					/* name     */ name, 
-					/* type     */ kSpeedsMetricMicroseconds, 
-					/* reset    */ true, 
-					/* var_name */ name, 
-					/* file     */ APROF_FILENAME( __FILE__ ), 
-					/* line     */ __LINE__);
-
+				R_SpeedsRegisterMetric(&g_speeds.frame.gpu_scopes[scope_index].time_us,"gpuscope", name, kSpeedsMetricMicroseconds, /* reset */ true, name, __FILE__, __LINE__);
 				g_speeds.frame.gpu_scopes[scope_index].initialized = 1;
 			}
 
@@ -729,6 +711,30 @@ static const char *getMetricTypeName(r_speeds_metric_type_t type) {
 	return "UNKNOWN";
 }
 
+// Returns pointer to filename in filepath string.
+// Maybe function like this should be inside filesystem?
+// Examples:
+// on Windows: C:\Users\User\xash3d-fwgs\ref\vk\vk_rtx.c  ->  vk_rtx.c
+// on Linux:   /home/user/xash3d-fwgs/ref/vk/vk_rtx.c     ->  vk.rtx.c (imaginary example, not tested)
+static const char *get_filename_from_filepath( const char *filepath ) {
+	size_t length = Q_strlen( filepath );
+	int cursor = length - 1;
+	while ( cursor > 0 ) {
+		char c = filepath[cursor];
+		if ( c == '/' || c == '\\' ) {
+			// Advance by 1 char to skip the folder delimiter symbol itself, but
+			// make sure that we are not exceeding the length.
+			if ( cursor < length )
+				cursor += 1;
+
+			return &filepath[cursor];
+		}
+		cursor -= 1;
+	}
+
+	return NULL;
+}
+
 // Actually does the job of `r_speeds_mlist` and `r_speeds_mtable` commands.
 // We can't just directly call this function from little command handler ones, because
 // all the metrics calculations happen inside `R_SpeedsDisplayMore` function.
@@ -770,7 +776,7 @@ static void doPrintMetrics( r_speeds_mprint_mode_t *print_mode, const char *prin
 
 		char value_with_unit[16];
 		metricTypeSnprintf( value_with_unit, sizeof( value_with_unit ), *metric->p_value, metric->type );
-		gEngine.Con_Printf( row_format, metric->name, value_with_unit, metric->var_name, metric->src_file, metric->src_line );
+		gEngine.Con_Printf( row_format, metric->name, value_with_unit, metric->var_name, get_filename_from_filepath( metric->src_file ), metric->src_line );
 	}
 	gEngine.Con_Printf( line_format, line, line, line, line );
 	gEngine.Con_Printf( header_format, "module.metric_name", "value", "variable", "registration_location" );
