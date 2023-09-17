@@ -758,7 +758,7 @@ static void doPrintMetrics( void ) {
 		memset( line, '-', sizeof( line ) );
 	} else {
 		header_format = "  %s = %s  -->  (%s, %s)\n";
-		line_format   = "";
+		line_format   = NULL;
 		row_format    = "  ^2%s^7 = ^3%s^7  -->  (^5%s^7, ^6%s:%d^7)\n";
 	}
 
@@ -766,7 +766,7 @@ static void doPrintMetrics( void ) {
 	g_speeds.frame.metrics_print_mode = kSpeedsMprintNone;
 
 	gEngine.Con_Printf( header_format, "module.metric_name", "value", "variable", "registration_location" );
-	gEngine.Con_Printf( line_format, line, line, line, line );
+	if ( line_format )  gEngine.Con_Printf( line_format, line, line, line, line );
 	for ( int i = 0; i < g_speeds.metrics_count; ++i ) {
 		const r_speeds_metric_t *metric = g_speeds.metrics + i;
 
@@ -777,7 +777,7 @@ static void doPrintMetrics( void ) {
 		metricTypeSnprintf( value_with_unit, sizeof( value_with_unit ), *metric->p_value, metric->type );
 		gEngine.Con_Printf( row_format, metric->name, value_with_unit, metric->var_name, get_filename_from_filepath( metric->src_file ), metric->src_line );
 	}
-	gEngine.Con_Printf( line_format, line, line, line, line );
+	if ( line_format )  gEngine.Con_Printf( line_format, line, line, line, line );
 	gEngine.Con_Printf( header_format, "module.metric_name", "value", "variable", "registration_location" );
 }
 
