@@ -4,16 +4,20 @@
 #include <assert.h>
 #include <string.h>
 
+#include "crtlib.h" // Q_strlen
+
 // Note: this module initializes itself on the first scope initialization.
 // I.e. it is invalid to call any of the functions before the first of aprof_scope_init/APROF_SCOPE_INIT/APROF_SCOPE_DECLARE_BEGIN is called.
 // TODO: explicit initialization function
+
+#define APROF_FILENAME(filepath) aprof_get_filename_from_filepath( filepath, Q_strlen( filepath ) )
 
 #define APROF_SCOPE_DECLARE(scope) \
 	static aprof_scope_id_t _aprof_scope_id_##scope = -1
 
 // scope_name is expected to be static and alive for the entire duration of the program
 #define APROF_SCOPE_INIT_EX(scope, scope_name, flags) \
-	_aprof_scope_id_##scope = aprof_scope_init(scope_name, flags, __FILE__, __LINE__)
+	_aprof_scope_id_##scope = aprof_scope_init(scope_name, flags, APROF_FILENAME( __FILE__ ), __LINE__)
 
 #define APROF_SCOPE_INIT(scope, scope_name) APROF_SCOPE_INIT_EX(scope, scope_name, 0)
 
@@ -23,7 +27,7 @@
 #define APROF_SCOPE_DECLARE_BEGIN_EX(scope, scope_name, flags) \
 	static aprof_scope_id_t _aprof_scope_id_##scope = -1; \
 	if (_aprof_scope_id_##scope == -1) { \
-		_aprof_scope_id_##scope = aprof_scope_init(scope_name, flags, __FILE__, __LINE__); \
+		_aprof_scope_id_##scope = aprof_scope_init(scope_name, flags, APROF_FILENAME( __FILE__ ), __LINE__); \
 	} \
 	aprof_scope_event(_aprof_scope_id_##scope, 1)
 
@@ -41,8 +45,14 @@
 
 typedef int aprof_scope_id_t;
 
+// Returns pointer to filename in filepath string.
+// Ideally, this function should be static and visible only inside file scope,
+// but then the `APROF_FILENAME` macro would not work.
+// Also, maybe this function should be inside filesystem or something like that.
+const char *aprof_get_filename_from_filepath( const char *filepath, size_t filepath_length );
+
 // scope_name should be static const, and not on stack
-aprof_scope_id_t aprof_scope_init(const char *scope_name, uint32_t flags, const char *source_file, int source_line);
+aprof_scope_id_t aprof_scope_init(const char *scope_name, uint32_t flags, const char *source_filename, int source_line);
 void aprof_scope_event(aprof_scope_id_t, int begin);
 // Returns event index for previous frame
 uint32_t aprof_scope_frame( void );
@@ -67,7 +77,7 @@ enum {
 typedef struct {
 	const char *name;
 	uint32_t flags;
-	const char *source_file;
+	const char *source_filename;
 	int source_line;
 } aprof_scope_t;
 
@@ -147,7 +157,28 @@ uint64_t aprof_time_platform_to_ns( uint64_t platform_time ) {
 
 aprof_state_t g_aprof = {0};
 
-aprof_scope_id_t aprof_scope_init(const char *scope_name, uint32_t flags, const char *source_file, int source_line) {
+// Returns pointer to filename in filepath string.
+// Examples:
+// on Windows: C:/Users/User/xash3d-fwgs/ref/vk/vk_rtx.c  ->  vk_rtx.c
+// on Linux:   /home/user/xash3d-fwgs/ref/vk/vk_rtx.c     ->  vk.rtx.c (imaginary example, not tested)
+const char *aprof_get_filename_from_filepath( const char *filepath, size_t filepath_length ) {
+	if ( !filepath_length )
+		filepath_length = Q_strlen( filepath );
+
+	int cursor = filepath_length - 1;
+	while ( cursor > 0 ) {
+		char c = filepath[cursor];
+		if ( c == '/' || c == '\\' ) {
+			// Advance by 1 char to skip the folder delimiter symbol itself.
+			return &filepath[cursor + 1];
+		}
+		cursor -= 1;
+	}
+
+	return NULL;
+}
+
+aprof_scope_id_t aprof_scope_init(const char *scope_name, uint32_t flags, const char *source_filename, int source_line) {
 #if defined(_WIN32)
 	if (_aprof_frequency.QuadPart == 0)
 		QueryPerformanceFrequency(&_aprof_frequency);
@@ -161,7 +192,7 @@ aprof_scope_id_t aprof_scope_init(const char *scope_name, uint32_t flags, const 
 
 	g_aprof.scopes[g_aprof.num_scopes].name = scope_name;
 	g_aprof.scopes[g_aprof.num_scopes].flags = flags;
-	g_aprof.scopes[g_aprof.num_scopes].source_file = source_file;
+	g_aprof.scopes[g_aprof.num_scopes].source_filename = source_filename;
 	g_aprof.scopes[g_aprof.num_scopes].source_line = source_line;
 	return g_aprof.num_scopes++;
 }

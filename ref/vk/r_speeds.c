@@ -215,7 +215,15 @@ static void drawCPUProfilerScopes(int draw, const aprof_event_t *events, uint64_
 					const uint64_t delta_ns = timestamp_ns - stack[depth].begin_ns;
 
 					if (!g_speeds.frame.scopes[scope_id].initialized) {
-						R_SpeedsRegisterMetric(&g_speeds.frame.scopes[scope_id].time_us, "scope", scope->name, kSpeedsMetricMicroseconds, /*reset*/ true, scope->name, scope->source_file, scope->source_line);
+						R_SpeedsRegisterMetric(
+							/* p_value  */ &g_speeds.frame.scopes[scope_id].time_us, 
+							/* module   */ "scope", 
+							/* name     */ scope->name, 
+							/* type     */ kSpeedsMetricMicroseconds, 
+							/* reset    */ true, 
+							/* var_name */ scope->name, 
+							/* file     */ scope->source_filename, 
+							/* line     */ scope->source_line);
 
 						g_speeds.frame.scopes[scope_id].initialized = 1;
 					}
@@ -429,7 +437,16 @@ static void drawGPUProfilerScopes(qboolean draw, int y, uint64_t frame_begin_tim
 			const char *name = gpurofl->scopes[scope_index].name;
 
 			if (!g_speeds.frame.gpu_scopes[scope_index].initialized) {
-				R_SpeedsRegisterMetric(&g_speeds.frame.gpu_scopes[scope_index].time_us, "gpuscope", name, kSpeedsMetricMicroseconds, /*reset*/ true, name, __FILE__, __LINE__);
+				R_SpeedsRegisterMetric(
+					/* p_value  */ &g_speeds.frame.gpu_scopes[scope_index].time_us, 
+					/* module   */ "gpuscope", 
+					/* name     */ name, 
+					/* type     */ kSpeedsMetricMicroseconds, 
+					/* reset    */ true, 
+					/* var_name */ name, 
+					/* file     */ APROF_FILENAME( __FILE__ ), 
+					/* line     */ __LINE__);
+
 				g_speeds.frame.gpu_scopes[scope_index].initialized = 1;
 			}
 
