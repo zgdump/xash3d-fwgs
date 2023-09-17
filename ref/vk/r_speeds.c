@@ -52,10 +52,15 @@ typedef struct {
 	rgba_t color;
 } r_speeds_graph_t;
 
+typedef enum {
+	kSpeedsMprintNone,
+	kSpeedsMprintList,
+	kSpeedsMprintTable
+} r_speeds_mprint_mode_t;
+
 static struct {
 	cvar_t *r_speeds_graphs;
 	cvar_t *r_speeds_graphs_width;
-	cvar_t *r_speeds_metrics_as_table;
 
 	aprof_event_t *paused_events;
 	int paused_events_count;
@@ -84,8 +89,8 @@ static struct {
 		} gpu_scopes[MAX_GPU_SCOPES];
 		char message[MAX_SPEEDS_MESSAGE];
 
-		qboolean list_metrics;
-		string list_metrics_filter;
+		r_speeds_mprint_mode_t metrics_print_mode;
+		string metrics_print_filter;
 	} frame;
 
 	// Mask g_speeds_graphs cvar writes
@@ -724,30 +729,19 @@ static const char *getMetricTypeName(r_speeds_metric_type_t type) {
 	return "UNKNOWN";
 }
 
-// Ideally, we'd just autocomplete the r_speeds_graphs cvar/cmd.
-// However, autocompletion is not exposed to the renderer. It is completely internal to the engine, see con_utils.c, var cmd_list.
-static void listMetrics( void ) {
-	if (gEngine.Cmd_Argc() > 1) {
-		Q_strncpy(g_speeds.frame.list_metrics_filter, gEngine.Cmd_Argv(1), sizeof(g_speeds.frame.list_metrics_filter));
-	} else {
-		g_speeds.frame.list_metrics_filter[0] = '\0';
-	}
-
-	g_speeds.frame.list_metrics = true;
-}
-
-static void doListMetrics( void ) {
-	if ( !g_speeds.frame.list_metrics )
+// Actually does the job of `r_speeds_mlist` and `r_speeds_mtable` commands.
+// We can't just directly call this function from little command handler ones, because
+// all the metrics calculations happen inside `R_SpeedsDisplayMore` function.
+static void doPrintMetrics( r_speeds_mprint_mode_t *print_mode, const char *print_filter ) {
+	r_speeds_mprint_mode_t mode = *print_mode;
+	if ( mode == kSpeedsMprintNone )
 		return;
-
-	g_speeds.frame.list_metrics = false;
-	const char *const filter = g_speeds.frame.list_metrics_filter;
 
 	const char *header_format = NULL;
 	const char *line_format = NULL;
 	const char *row_format = NULL;
 	char line[64];
-	if ( g_speeds.r_speeds_metrics_as_table->value ) {
+	if ( mode == kSpeedsMprintTable ) {
 		// Note:
 		// This table alignment method relies on monospace font
 		// and will have its alignment completly broken without one.
@@ -763,12 +757,15 @@ static void doListMetrics( void ) {
 		row_format    = "  ^2%s^7 = ^3%s^7  -->  (^5%s^7, ^6%s:%d^7)\n";
 	}
 
+	// Reset mode to print only this frame.
+	*print_mode = kSpeedsMprintNone;
+
 	gEngine.Con_Printf( header_format, "module.metric_name", "value", "variable", "registration_location" );
 	gEngine.Con_Printf( line_format, line, line, line, line );
 	for ( int i = 0; i < g_speeds.metrics_count; ++i ) {
 		const r_speeds_metric_t *metric = g_speeds.metrics + i;
 
-		if ( filter[0] && !Q_strstr( metric->name, filter ) )
+		if ( print_filter[0] && !Q_strstr( metric->name, print_filter ) )
 			continue;
 
 		char value_with_unit[16];
@@ -777,6 +774,30 @@ static void doListMetrics( void ) {
 	}
 	gEngine.Con_Printf( line_format, line, line, line, line );
 	gEngine.Con_Printf( header_format, "module.metric_name", "value", "variable", "registration_location" );
+}
+
+// Handles optional filter argument for `r_speeds_mlist` and `r_speeds_mtable` commands.
+static void handlePrintFilterArg() {
+	if ( gEngine.Cmd_Argc() > 1 ) {
+		Q_strncpy( g_speeds.frame.metrics_print_filter, gEngine.Cmd_Argv( 1 ), sizeof( g_speeds.frame.metrics_print_filter ) );
+	} else {
+		g_speeds.frame.metrics_print_filter[0] = '\0';
+	}
+}
+
+// Ideally, we'd just autocomplete the r_speeds_graphs cvar/cmd.
+// However, autocompletion is not exposed to the renderer. It is completely internal to the engine, see con_utils.c, var cmd_list.
+// -------
+// Handles `r_speeds_mlist` command.
+static void printMetricsList( void ) {
+	handlePrintFilterArg();
+	g_speeds.frame.metrics_print_mode = kSpeedsMprintList;
+}
+
+// Handles `r_speeds_mtable` command.
+static void printMetricsTable( void ) {
+	handlePrintFilterArg();
+	g_speeds.frame.metrics_print_mode = kSpeedsMprintTable;
 }
 
 static void graphCmd( void ) {
@@ -852,10 +873,10 @@ static void graphCmd( void ) {
 void R_SpeedsInit( void ) {
 	g_speeds.r_speeds_graphs = gEngine.Cvar_Get("r_speeds_graphs", "", FCVAR_GLCONFIG, "List of metrics to plot as graphs, separated by commas");
 	g_speeds.r_speeds_graphs_width = gEngine.Cvar_Get("r_speeds_graphs_width", "", FCVAR_GLCONFIG, "Graphs width in pixels");
-	g_speeds.r_speeds_metrics_as_table = gEngine.Cvar_Get("r_speeds_metrics_as_table", "", FCVAR_GLCONFIG, "Print metrics list as table");
 
 	gEngine.Cmd_AddCommand("r_speeds_toggle_pause", togglePause, "Toggle frame profiler pause");
-	gEngine.Cmd_AddCommand("r_speeds_list_metrics", listMetrics, "List all registered metrics");
+	gEngine.Cmd_AddCommand("r_speeds_mlist", printMetricsList, "Print all registered metrics as a list");
+	gEngine.Cmd_AddCommand("r_speeds_mtable", printMetricsTable, "Print all registered metrics as a table");
 	gEngine.Cmd_AddCommand("r_speeds_graph", graphCmd, "Manipulate add/remove metrics graphs");
 
 	R_SPEEDS_COUNTER(g_speeds.frame.frame_time_us, "frame", kSpeedsMetricMicroseconds);
@@ -967,7 +988,7 @@ void R_SpeedsDisplayMore(uint32_t prev_frame_index, const struct vk_combuf_scope
 
 	processGraphCvar();
 
-	doListMetrics();
+	doPrintMetrics( &g_speeds.frame.metrics_print_mode, g_speeds.frame.metrics_print_filter );
 
 	resetMetrics();
 
