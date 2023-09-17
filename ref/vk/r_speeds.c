@@ -759,6 +759,7 @@ static void doListMetrics( void ) {
 		gEngine.Con_Printf( row_format, metric->name, value_with_unit, metric->var_name, metric->src_file, metric->src_line );
 	}
 	gEngine.Con_Printf( line_format, line, line, line, line );
+	gEngine.Con_Printf( header_format, "module.metric_name", "value", "variable", "registration_location" );
 }
 
 static void graphCmd( void ) {
