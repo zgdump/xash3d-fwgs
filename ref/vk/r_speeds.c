@@ -738,16 +738,15 @@ static const char *get_filename_from_filepath( const char *filepath ) {
 // Actually does the job of `r_speeds_mlist` and `r_speeds_mtable` commands.
 // We can't just directly call this function from little command handler ones, because
 // all the metrics calculations happen inside `R_SpeedsDisplayMore` function.
-static void doPrintMetrics( r_speeds_mprint_mode_t *print_mode, const char *print_filter ) {
-	r_speeds_mprint_mode_t mode = *print_mode;
-	if ( mode == kSpeedsMprintNone )
+static void doPrintMetrics( void ) {
+	if ( g_speeds.frame.metrics_print_mode == kSpeedsMprintNone )
 		return;
 
 	const char *header_format = NULL;
 	const char *line_format = NULL;
 	const char *row_format = NULL;
 	char line[64];
-	if ( mode == kSpeedsMprintTable ) {
+	if ( g_speeds.frame.metrics_print_mode == kSpeedsMprintTable ) {
 		// Note:
 		// This table alignment method relies on monospace font
 		// and will have its alignment completly broken without one.
@@ -764,14 +763,14 @@ static void doPrintMetrics( r_speeds_mprint_mode_t *print_mode, const char *prin
 	}
 
 	// Reset mode to print only this frame.
-	*print_mode = kSpeedsMprintNone;
+	g_speeds.frame.metrics_print_mode = kSpeedsMprintNone;
 
 	gEngine.Con_Printf( header_format, "module.metric_name", "value", "variable", "registration_location" );
 	gEngine.Con_Printf( line_format, line, line, line, line );
 	for ( int i = 0; i < g_speeds.metrics_count; ++i ) {
 		const r_speeds_metric_t *metric = g_speeds.metrics + i;
 
-		if ( print_filter[0] && !Q_strstr( metric->name, print_filter ) )
+		if ( g_speeds.frame.metrics_print_filter[0] && !Q_strstr( metric->name, g_speeds.frame.metrics_print_filter ) )
 			continue;
 
 		char value_with_unit[16];
@@ -783,7 +782,7 @@ static void doPrintMetrics( r_speeds_mprint_mode_t *print_mode, const char *prin
 }
 
 // Handles optional filter argument for `r_speeds_mlist` and `r_speeds_mtable` commands.
-static void handlePrintFilterArg() {
+static void handlePrintFilterArg( void ) {
 	if ( gEngine.Cmd_Argc() > 1 ) {
 		Q_strncpy( g_speeds.frame.metrics_print_filter, gEngine.Cmd_Argv( 1 ), sizeof( g_speeds.frame.metrics_print_filter ) );
 	} else {
@@ -994,7 +993,7 @@ void R_SpeedsDisplayMore(uint32_t prev_frame_index, const struct vk_combuf_scope
 
 	processGraphCvar();
 
-	doPrintMetrics( &g_speeds.frame.metrics_print_mode, g_speeds.frame.metrics_print_filter );
+	doPrintMetrics();
 
 	resetMetrics();
 
