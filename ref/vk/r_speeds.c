@@ -717,22 +717,17 @@ static const char *getMetricTypeName(r_speeds_metric_type_t type) {
 // on Windows: C:\Users\User\xash3d-fwgs\ref\vk\vk_rtx.c  ->  vk_rtx.c
 // on Linux:   /home/user/xash3d-fwgs/ref/vk/vk_rtx.c     ->  vk.rtx.c (imaginary example, not tested)
 static const char *get_filename_from_filepath( const char *filepath ) {
-	size_t length = Q_strlen( filepath );
-	int cursor = length - 1;
+	int cursor = Q_strlen( filepath ) - 1;
 	while ( cursor > 0 ) {
 		char c = filepath[cursor];
 		if ( c == '/' || c == '\\' ) {
-			// Advance by 1 char to skip the folder delimiter symbol itself, but
-			// make sure that we are not exceeding the length.
-			if ( cursor < length )
-				cursor += 1;
-
-			return &filepath[cursor];
+			// Advance by 1 char to skip the folder delimiter symbol itself.
+			return &filepath[cursor + 1];
 		}
 		cursor -= 1;
 	}
 
-	return NULL;
+	return filepath;
 }
 
 // Actually does the job of `r_speeds_mlist` and `r_speeds_mtable` commands.
@@ -755,11 +750,16 @@ static void doPrintMetrics( void ) {
 		header_format = "  | %-38s | %-10s | %-40s | %21s\n";
 		line_format   = "  | %.38s | %.10s | %.40s | %.21s\n";
 		row_format    = "  | ^2%-38s^7 | ^3%-10s^7 | ^5%-40s^7 | ^6%s:%d^7\n";
-		memset( line, '-', sizeof( line ) );
+
+		size_t line_size = sizeof ( line );
+		memset( line, '-', line_size - 1 );
+		line[line_size - 1] = '\0';
 	} else {
 		header_format = "  %s = %s  -->  (%s, %s)\n";
 		line_format   = NULL;
 		row_format    = "  ^2%s^7 = ^3%s^7  -->  (^5%s^7, ^6%s:%d^7)\n";
+
+		line[0] = '\0';
 	}
 
 	// Reset mode to print only this frame.

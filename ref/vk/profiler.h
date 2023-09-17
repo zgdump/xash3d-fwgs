@@ -4,8 +4,6 @@
 #include <assert.h>
 #include <string.h>
 
-#include "crtlib.h" // Q_strlen
-
 // Note: this module initializes itself on the first scope initialization.
 // I.e. it is invalid to call any of the functions before the first of aprof_scope_init/APROF_SCOPE_INIT/APROF_SCOPE_DECLARE_BEGIN is called.
 // TODO: explicit initialization function
