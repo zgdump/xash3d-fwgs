@@ -745,8 +745,6 @@ static void doPrintMetrics( void ) {
 		// Note:
 		// This table alignment method relies on monospace font
 		// and will have its alignment completly broken without one.
-		// That is why there is now cvar called `r_speeds_metrics_as_table`,
-		// which can toggle this printing method on/off.
 		header_format = "  | %-38s | %-10s | %-40s | %21s\n";
 		line_format   = "  | %.38s | %.10s | %.40s | %.21s\n";
 		row_format    = "  | ^2%-38s^7 | ^3%-10s^7 | ^5%-40s^7 | ^6%s:%d^7\n";
