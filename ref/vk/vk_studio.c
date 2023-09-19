@@ -1771,6 +1771,7 @@ static void buildSubmodelMeshGeometry( build_submodel_mesh_t args ) {
 
 	*args.out_geometry = (vk_render_geometry_t){
 		.material = R_VkMaterialGetForTexture(args.texture),
+		.ye_olde_texture = args.texture,
 		.material_type_deprecated = FBitSet( args.face_flags, STUDIO_NF_CHROME ) ? kXVkMaterialChrome : kXVkMaterialRegular,
 
 		.vertex_offset = args.vertices_offset,

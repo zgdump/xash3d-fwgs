@@ -279,6 +279,9 @@ static void brushComputeWaterPolys( compute_water_polys_t args ) {
 	*args.dst_geometry = (vk_render_geometry_t){
 		.material = material_ref,
 		.material_type_deprecated = kXVkMaterialRegular,
+
+		.ye_olde_texture = tex_id,
+
 		.surf_deprecate = args.warp,
 
 		.max_vertex = vertices,
@@ -706,6 +709,7 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 		for (int i = 0; i < bmodel->render_model.num_geometries; ++i) {
 			vk_render_geometry_t *geom = bmodel->render_model.geometries + i;
 			geom->material = R_VkMaterialGetForTexture(tglob.whiteTexture);
+			geom->ye_olde_texture = tglob.whiteTexture;
 		}
 	} else {
 		APROF_SCOPE_DECLARE_BEGIN(brush_update_textures, "brush: update animated textures");
@@ -720,11 +724,11 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 			// Optionally patch by texture_s pointer and run animations
 			const struct texture_s *texture_override = patch_surface ? patch_surface->tex : NULL;
 			const texture_t *t = R_TextureAnimation(ent, geom->surf_deprecate, texture_override);
-			const int tex_id = t->gl_texturenum;
+			const int new_tex_id = t->gl_texturenum;
 
-			const r_vk_material_ref_t new_material = R_VkMaterialGetForTexture(tex_id);
-			if (new_material.index >= 0 && new_material.index != geom->material.index) {
-				geom->material = new_material;
+			if (new_tex_id >= 0 && new_tex_id != geom->ye_olde_texture) {
+				geom->ye_olde_texture = new_tex_id;
+				geom->material = R_VkMaterialGetForTexture(new_tex_id);
 				if (updated_textures_count < MAX_ANIMATED_TEXTURES) {
 					g_brush.updated_textures[updated_textures_count++] = bmodel->animated_indexes[i];
 				}
@@ -734,7 +738,7 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 			// Add them as dynamic lights for now. It would probably be better if they were static lights (for worldmodel),
 			// but there's no easy way to do it for now.
 			vec3_t *emissive = &bmodel->render_model.geometries[geom_index].emissive;
-			if (RT_GetEmissiveForTexture(*emissive, tex_id)) {
+			if (RT_GetEmissiveForTexture(*emissive, new_tex_id)) {
 				rt_light_add_polygon_t polylight = loadPolyLight(mod, surface_index, geom->surf_deprecate, *emissive);
 				polylight.dynamic = true;
 				polylight.transform_row = (const matrix3x4*)&transform;
@@ -1041,6 +1045,7 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 			const float sample_size = gEngine.Mod_SampleSizeForFace( surf );
 			int index_count = 0;
 			vec3_t tangent;
+			const int orig_tex_id = surf->texinfo->texture->gl_texturenum;
 			int tex_id = surf->texinfo->texture->gl_texturenum;
 			const xvk_patch_surface_t *const psurf = R_VkPatchGetSurface(surface_index);
 
@@ -1078,6 +1083,7 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 
 			model_geometry->surf_deprecate = surf;
 			model_geometry->material = R_VkMaterialGetForTexture(tex_id);
+			model_geometry->ye_olde_texture = orig_tex_id;
 
 			model_geometry->vertex_offset = args.base_vertex_offset;
 			model_geometry->max_vertex = vertex_offset + surf->numedges;

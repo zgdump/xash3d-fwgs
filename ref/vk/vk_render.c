@@ -723,8 +723,7 @@ static void submitToTraditionalRender( trad_submit_t args ) {
 
 	for (int i = 0; i < args.geometries_count; ++i) {
 		const vk_render_geometry_t *geom = args.geometries + i;
-		const r_vk_material_t *material = R_VkMaterialGet(geom->material);
-		const int tex = args.textures_override > 0 ? args.textures_override : material->tex_base_color;
+		const int tex = args.textures_override > 0 ? args.textures_override : geom->ye_olde_texture;
 		const qboolean split = current_texture != tex
 			|| vertex_offset != geom->vertex_offset
 			|| (index_offset + element_count) != geom->index_offset;
@@ -821,7 +820,9 @@ void R_RenderDrawOnce(r_draw_once_t args) {
 	R_GeometryBufferUnlock( &buffer );
 
 	const vk_render_geometry_t geometry = {
-		.material = args.material, .material_type_deprecated = kXVkMaterialRegular,
+		.material = args.material,
+		.material_type_deprecated = kXVkMaterialRegular,
+		.ye_olde_texture = args.ye_olde_texture,
 
 		.max_vertex = args.vertices_count,
 		.vertex_offset = buffer.vertices.unit_offset,

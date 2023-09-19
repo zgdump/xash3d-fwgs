@@ -105,6 +105,7 @@ static qboolean createQuadModel(void) {
 
 		.material_type_deprecated = kXVkMaterialRegular,
 		.material = R_VkMaterialGetForTexture(tglob.defaultTexture),
+		.ye_olde_texture = tglob.defaultTexture,
 		.emissive = {1,1,1},
 	};
 

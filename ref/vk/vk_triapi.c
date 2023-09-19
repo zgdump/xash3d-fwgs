@@ -171,6 +171,7 @@ void TriEndEx( const vec4_t color, const char* name ) {
 			.indices_count = num_indices,
 			.render_type = g_triapi.render_type,
 			.material = R_VkMaterialGetForTexture(g_triapi.texture_index),
+			.ye_olde_texture = g_triapi.texture_index,
 			.emissive = (const vec4_t*)color,
 			.color = (const vec4_t*)color,
 		});

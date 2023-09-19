@@ -47,6 +47,9 @@ typedef struct vk_render_geometry_s {
 	XVkMaterialType_Deprecated material_type_deprecated;
 	r_vk_material_ref_t material;
 
+	// Olde unpatched texture used for traditional renderer
+	int ye_olde_texture;
+
 	// for kXVkMaterialEmissive{,Glow} and others
 	vec3_t emissive;
 } vk_render_geometry_t;
@@ -157,6 +160,7 @@ typedef struct {
 
 	int render_type;
 	r_vk_material_ref_t material;
+	int ye_olde_texture;
 	const vec4_t *emissive;
 	const vec4_t *color;
 } r_draw_once_t;
