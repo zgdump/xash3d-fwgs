@@ -148,7 +148,7 @@ static void loadMap(const model_t* const map) {
 	XVK_ParseMapEntities();
 
 	// Load PBR materials (depends on wadlist from parsed map entities)
-	XVK_ReloadMaterials();
+	R_VkMaterialsReload();
 
 	// Parse patch data
 	// Depends on loaded materials. Must preceed loading brush models.

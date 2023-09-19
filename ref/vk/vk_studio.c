@@ -1770,8 +1770,8 @@ static void buildSubmodelMeshGeometry( build_submodel_mesh_t args ) {
 	ASSERT(vertex_offset == num_vertices);
 
 	*args.out_geometry = (vk_render_geometry_t){
-		.texture = args.texture,
-		.material = FBitSet( args.face_flags, STUDIO_NF_CHROME ) ? kXVkMaterialChrome : kXVkMaterialRegular,
+		.material = R_VkMaterialGetForTexture(args.texture),
+		.material_type_deprecated = FBitSet( args.face_flags, STUDIO_NF_CHROME ) ? kXVkMaterialChrome : kXVkMaterialRegular,
 
 		.vertex_offset = args.vertices_offset,
 		.max_vertex = num_vertices,
@@ -2304,7 +2304,7 @@ static void R_StudioDrawPoints( void ) {
 		.color = &color,
 		.transform = &g_studio_current.entmodel->transform,
 		.prev_transform = &g_studio_current.entmodel->prev_transform,
-		.textures_override = -1,
+		.material_override = NULL,
 	});
 
 	++g_studio_stats.submodels_total;

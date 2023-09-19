@@ -2,7 +2,7 @@
 
 #include "xash3d_types.h"
 
-typedef struct {
+typedef struct r_vk_material_s {
 	int tex_base_color;
 	int tex_roughness;
 	int tex_metalness;
@@ -14,8 +14,14 @@ typedef struct {
 	float normal_scale;
 
 	qboolean set;
-} xvk_material_t;
+} r_vk_material_t;
 
-void XVK_ReloadMaterials( void );
+typedef struct { int index; } r_vk_material_ref_t;
 
-xvk_material_t* XVK_GetMaterialForTextureIndex( int tex_index );
+// Note: invalidates all previously issued material refs
+// TODO: track "version" in high bits?
+void R_VkMaterialsReload( void );
+
+r_vk_material_ref_t R_VkMaterialGetForTexture( int tex_id );
+
+const r_vk_material_t* R_VkMaterialGet( r_vk_material_ref_t ref );

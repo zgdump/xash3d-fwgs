@@ -1,4 +1,5 @@
 #pragma once
+#include "vk_materials.h"
 #include "vk_common.h"
 #include "vk_const.h"
 #include "vk_core.h"
@@ -27,7 +28,7 @@ typedef enum {
 	// Used: ray tracing sets gray roughness texture to get smooth surface look.
 	// Remove: Have an explicit material for chrome surfaces.
 	kXVkMaterialChrome,
-} XVkMaterialType;
+} XVkMaterialType_Deprecated;
 
 typedef struct vk_render_geometry_s {
 	int index_offset, vertex_offset;
@@ -42,11 +43,9 @@ typedef struct vk_render_geometry_s {
 	// Remove: have an explicit list of surfaces with animated textures
 	const struct msurface_s *surf_deprecate;
 
-	// Animated textures will be dynamic and change between frames
-	int texture;
-
 	// If this geometry is special, it will have a material type override
-	XVkMaterialType material;
+	XVkMaterialType_Deprecated material_type_deprecated;
+	r_vk_material_ref_t material;
 
 	// for kXVkMaterialEmissive{,Glow} and others
 	vec3_t emissive;
@@ -145,9 +144,7 @@ typedef struct {
 	const vec4_t *color;
 	const matrix4x4 *transform, *prev_transform;
 
-	// Global texture override if > 0
-	// Used by sprite+quad instancing
-	int textures_override;
+	const r_vk_material_t* material_override;
 } r_model_draw_t;
 
 void R_RenderModelDraw(const vk_render_model_t *model, r_model_draw_t args);
@@ -159,7 +156,7 @@ typedef struct {
 	int vertices_count, indices_count;
 
 	int render_type;
-	int texture;
+	r_vk_material_ref_t material;
 	const vec4_t *emissive;
 	const vec4_t *color;
 } r_draw_once_t;

@@ -11,7 +11,7 @@
 
 #define MAX_INCLUDE_DEPTH 4
 
-static xvk_material_t k_default_material = {
+static r_vk_material_t k_default_material = {
 		.tex_base_color = -1,
 		.tex_metalness = 0,
 		.tex_roughness = 0,
@@ -26,7 +26,7 @@ static xvk_material_t k_default_material = {
 };
 
 static struct {
-	xvk_material_t materials[MAX_TEXTURES];
+	r_vk_material_t materials[MAX_TEXTURES];
 } g_materials;
 
 static struct {
@@ -70,7 +70,7 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 	g_stats.material_file_read_duration_ns +=  aprof_time_now_ns() - load_file_begin_ns;
 
 	char *pos = (char*)data;
-	xvk_material_t current_material = k_default_material;
+	r_vk_material_t current_material = k_default_material;
 	int current_material_index = -1;
 	qboolean force_reload = false;
 	qboolean create = false;
@@ -215,7 +215,7 @@ static void loadMaterialsFromFileF( const char *fmt, ... ) {
 	loadMaterialsFromFile( buffer, MAX_INCLUDE_DEPTH );
 }
 
-void XVK_ReloadMaterials( void ) {
+void R_VkMaterialsReload( void ) {
 	memset(&g_stats, 0, sizeof(g_stats));
 	const uint64_t begin_time_ns = aprof_time_now_ns();
 
@@ -223,7 +223,7 @@ void XVK_ReloadMaterials( void ) {
 	k_default_material.tex_roughness = tglob.whiteTexture;
 
 	for (int i = 0; i < MAX_TEXTURES; ++i) {
-		xvk_material_t *const mat = g_materials.materials + i;
+		r_vk_material_t *const mat = g_materials.materials + i;
 		const vk_texture_t *const tex = findTexture( i );
 		*mat = k_default_material;
 
@@ -264,14 +264,18 @@ void XVK_ReloadMaterials( void ) {
 	}
 }
 
-xvk_material_t* XVK_GetMaterialForTextureIndex( int tex_index ) {
-	xvk_material_t *mat = NULL;
+r_vk_material_ref_t R_VkMaterialGetForTexture( int tex_index ) {
 	ASSERT(tex_index >= 0);
 	ASSERT(tex_index < MAX_TEXTURES);
 
-	mat = g_materials.materials + tex_index;
-	if (mat->base_color >= 0)
-		return mat;
+	// TODO add versioning to detect reloads?
+	return (r_vk_material_ref_t){ .index = tex_index, };
+}
 
-	return NULL;
+const r_vk_material_t* R_VkMaterialGet( r_vk_material_ref_t ref ) {
+	ASSERT(ref.index >= 0);
+	ASSERT(ref.index < MAX_TEXTURES);
+
+	// TODO verify version ?
+	return g_materials.materials + ref.index;
 }

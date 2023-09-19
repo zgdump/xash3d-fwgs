@@ -398,3 +398,17 @@ TODO: can we not have a BLAS/model for each submodel? Can it be per-model instea
 # 2023-07-30
 - ~~R_DrawStudioModel is the main func for drawing studio model. Called from scene code for each studio entity, with everything current (RI and stuff) set up~~
 - `R_StudioDrawModelInternal()` is the main one. It is where it splits into renderer-vs-game rendering functions.
+
+# 2023-09-19 E298
+## SURF_DRAWSKY
+- (context: want to remove kXVkMaterialSky, #474)
+- qrad:
+    - uses textue name "sky" or "SKY" to check `IsSky()`. `IsSky()` surfaces do not get patches and do not participate in radiosity.
+    - uses CONTENTS_SKY node flag to detect whether a ray has hit skybox and can contribute sky light.
+- xash/gl:
+    - CONTENTS_SKY is not used in any meaningful way
+    - sets SURF_DRAWSKY for surfaces with "sky" texture.
+    - uses SURF_DRAWSKY:
+        - to build skychain, and then draw it in Quake mode (the other branch does a bunch of math, which seemingly isn't used for anything at all).
+        - for dynamic lighting: if sky ray has hit sky surface then sky is contributing light
+

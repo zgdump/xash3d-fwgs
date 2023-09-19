@@ -723,7 +723,8 @@ static void submitToTraditionalRender( trad_submit_t args ) {
 
 	for (int i = 0; i < args.geometries_count; ++i) {
 		const vk_render_geometry_t *geom = args.geometries + i;
-		const int tex = args.textures_override > 0 ? args.textures_override : geom->texture;
+		const r_vk_material_t *material = R_VkMaterialGet(geom->material);
+		const int tex = args.textures_override > 0 ? args.textures_override : material->tex_base_color;
 		const qboolean split = current_texture != tex
 			|| vertex_offset != geom->vertex_offset
 			|| (index_offset + element_count) != geom->index_offset;
@@ -788,7 +789,7 @@ void R_RenderModelDraw(const vk_render_model_t *model, r_model_draw_t args) {
 			.dynamic_polylights = model->dynamic_polylights,
 			.dynamic_polylights_count = model->dynamic_polylights_count,
 			.override = {
-				.textures = args.textures_override,
+				.material = args.material_override,
 				.geoms = model->geometries,
 				.geoms_count = model->num_geometries,
 			},
@@ -802,7 +803,7 @@ void R_RenderModelDraw(const vk_render_model_t *model, r_model_draw_t args) {
 			.transform = args.transform,
 			.color = args.color,
 			.render_type = args.render_type,
-			.textures_override = args.textures_override
+			.textures_override = args.material_override ? args.material_override->tex_base_color : -1,
 		});
 	}
 }
@@ -820,8 +821,7 @@ void R_RenderDrawOnce(r_draw_once_t args) {
 	R_GeometryBufferUnlock( &buffer );
 
 	const vk_render_geometry_t geometry = {
-		.texture = args.texture,
-		.material = kXVkMaterialRegular,
+		.material = args.material, .material_type_deprecated = kXVkMaterialRegular,
 
 		.max_vertex = args.vertices_count,
 		.vertex_offset = buffer.vertices.unit_offset,

@@ -25,9 +25,8 @@ typedef struct rt_model_s {
 	rt_kusochki_t kusochki;
 } rt_model_t;
 
-static void applyMaterialToKusok(vk_kusok_data_t* kusok, const vk_render_geometry_t *geom, int override_texture_id, const vec4_t override_color) {
-	const int tex_id = override_texture_id > 0 ? override_texture_id : geom->texture;
-	const xvk_material_t *const mat = XVK_GetMaterialForTextureIndex( tex_id );
+static void applyMaterialToKusok(vk_kusok_data_t* kusok, const vk_render_geometry_t *geom, const r_vk_material_t *override_material, const vec4_t override_color) {
+	const r_vk_material_t *const mat = override_material ? override_material : R_VkMaterialGet(geom->material);
 	ASSERT(mat);
 
 	// TODO split kusochki into static geometry data and potentially dynamic material data
@@ -59,12 +58,12 @@ static void applyMaterialToKusok(vk_kusok_data_t* kusok, const vk_render_geometr
 	}
 
 	// TODO should be patched by the Chrome material source itself to generate a static chrome material
-	const qboolean HACK_chrome = geom->material == kXVkMaterialChrome;
+	const qboolean HACK_chrome = geom->material_type_deprecated == kXVkMaterialChrome;
 	if (!mat->set && HACK_chrome)
 		kusok->material.tex_roughness = tglob.grayTexture;
 
 	// Purely static. Once a sky forever a sky.
-	if (geom->material == kXVkMaterialSky)
+	if (geom->material_type_deprecated == kXVkMaterialSky)
 		kusok->material.tex_base_color = TEX_BASE_SKYBOX;
 }
 
@@ -180,7 +179,7 @@ void RT_KusochkiFree(const rt_kusochki_t *kusochki) {
 }
 
 // TODO this function can't really fail. It'd mean that staging is completely broken.
-qboolean RT_KusochkiUpload(uint32_t kusochki_offset, const struct vk_render_geometry_s *geoms, int geoms_count, int override_texture_id, const vec4_t *override_colors) {
+qboolean RT_KusochkiUpload(uint32_t kusochki_offset, const struct vk_render_geometry_s *geoms, int geoms_count, const r_vk_material_t *override_material, const vec4_t *override_colors) {
 	const vk_staging_buffer_args_t staging_args = {
 		.buffer = g_ray_model_state.kusochki_buffer.buffer,
 		.offset = kusochki_offset * sizeof(vk_kusok_data_t),
@@ -197,7 +196,7 @@ qboolean RT_KusochkiUpload(uint32_t kusochki_offset, const struct vk_render_geom
 	vk_kusok_data_t *const p = kusok_staging.ptr;
 	for (int i = 0; i < geoms_count; ++i) {
 		const vk_render_geometry_t *geom = geoms + i;
-		applyMaterialToKusok(p + i, geom, override_texture_id, override_colors ? override_colors[i] : NULL);
+		applyMaterialToKusok(p + i, geom, override_material, override_colors ? override_colors[i] : NULL);
 	}
 
 	R_VkStagingUnlock(kusok_staging.handle);
@@ -222,7 +221,7 @@ struct rt_model_s *RT_ModelCreate(rt_model_create_t args) {
 		goto fail;
 	}
 
-	RT_KusochkiUpload(kusochki.offset, args.geometries, args.geometries_count, -1, NULL);
+	RT_KusochkiUpload(kusochki.offset, args.geometries, args.geometries_count, NULL, NULL);
 
 	{
 		rt_model_t *const ret = Mem_Malloc(vk_core.pool, sizeof(*ret));
@@ -275,7 +274,7 @@ qboolean RT_ModelUpdateMaterials(struct rt_model_s *model, const struct vk_rende
 			const int offset = geom_indices[begin];
 			const int count = i - begin;
 			ASSERT(offset + count <= geometries_count);
-			if (!RT_KusochkiUpload(model->kusochki.offset + offset, geometries + offset, count, -1, NULL)) {
+			if (!RT_KusochkiUpload(model->kusochki.offset + offset, geometries + offset, count, NULL, NULL)) {
 				APROF_SCOPE_END(update_materials);
 				return false;
 			}
@@ -288,7 +287,7 @@ qboolean RT_ModelUpdateMaterials(struct rt_model_s *model, const struct vk_rende
 		const int offset = geom_indices[begin];
 		const int count = geom_indices_count - begin;
 		ASSERT(offset + count <= geometries_count);
-		if (!RT_KusochkiUpload(model->kusochki.offset + offset, geometries + offset, count, -1, NULL)) {
+		if (!RT_KusochkiUpload(model->kusochki.offset + offset, geometries + offset, count, NULL, NULL)) {
 
 			APROF_SCOPE_END(update_materials);
 			return false;
@@ -314,12 +313,12 @@ void RT_FrameAddModel( struct rt_model_s *model, rt_frame_add_model_t args ) {
 
 	uint32_t kusochki_offset = model->kusochki.offset;
 
-	if (args.override.textures > 0) {
+	if (args.override.material != NULL) {
 		kusochki_offset = RT_KusochkiAllocOnce(args.override.geoms_count);
 		if (kusochki_offset == ALO_ALLOC_FAILED)
 			return;
 
-		if (!RT_KusochkiUpload(kusochki_offset, args.override.geoms, args.override.geoms_count, args.override.textures, NULL)) {
+		if (!RT_KusochkiUpload(kusochki_offset, args.override.geoms, args.override.geoms_count, args.override.material, NULL)) {
 			gEngine.Con_Printf(S_ERROR "Couldn't upload kusochki for instanced model\n");
 			return;
 		}
@@ -413,7 +412,7 @@ void RT_DynamicModelProcessFrame(void) {
 		}
 
 		// FIXME override color
-		if (!RT_KusochkiUpload(kusochki_offset, dyn->geometries, dyn->geometries_count, -1, dyn->colors)) {
+		if (!RT_KusochkiUpload(kusochki_offset, dyn->geometries, dyn->geometries_count, NULL, dyn->colors)) {
 			gEngine.Con_Printf(S_ERROR "Couldn't build blas for %d geoms of %s, skipping\n", dyn->geometries_count, group_names[i]);
 			goto tail;
 		}

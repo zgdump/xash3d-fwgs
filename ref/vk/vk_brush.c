@@ -275,9 +275,10 @@ static void brushComputeWaterPolys( compute_water_polys_t args ) {
 
 	// Render
 	const int tex_id = args.warp->texinfo->texture->gl_texturenum;
+	const r_vk_material_ref_t material_ref = R_VkMaterialGetForTexture(tex_id);
 	*args.dst_geometry = (vk_render_geometry_t){
-		.texture = tex_id, // FIXME assert >= 0
-		.material = kXVkMaterialRegular,
+		.material = material_ref,
+		.material_type_deprecated = kXVkMaterialRegular,
 		.surf_deprecate = args.warp,
 
 		.max_vertex = vertices,
@@ -704,7 +705,7 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 		// TODO also it will break switching render type from TransColor to anyting else -- textures will be stuck at white
 		for (int i = 0; i < bmodel->render_model.num_geometries; ++i) {
 			vk_render_geometry_t *geom = bmodel->render_model.geometries + i;
-			geom->texture = tglob.whiteTexture;
+			geom->material = R_VkMaterialGetForTexture(tglob.whiteTexture);
 		}
 	} else {
 		APROF_SCOPE_DECLARE_BEGIN(brush_update_textures, "brush: update animated textures");
@@ -719,10 +720,11 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 			// Optionally patch by texture_s pointer and run animations
 			const struct texture_s *texture_override = patch_surface ? patch_surface->tex : NULL;
 			const texture_t *t = R_TextureAnimation(ent, geom->surf_deprecate, texture_override);
-			const int new_texture = t->gl_texturenum;
+			const int tex_id = t->gl_texturenum;
 
-			if (new_texture >= 0 && new_texture != geom->texture) {
-				geom->texture = t->gl_texturenum;
+			const r_vk_material_ref_t new_material = R_VkMaterialGetForTexture(tex_id);
+			if (new_material.index >= 0 && new_material.index != geom->material.index) {
+				geom->material = new_material;
 				if (updated_textures_count < MAX_ANIMATED_TEXTURES) {
 					g_brush.updated_textures[updated_textures_count++] = bmodel->animated_indexes[i];
 				}
@@ -732,7 +734,7 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 			// Add them as dynamic lights for now. It would probably be better if they were static lights (for worldmodel),
 			// but there's no easy way to do it for now.
 			vec3_t *emissive = &bmodel->render_model.geometries[geom_index].emissive;
-			if (RT_GetEmissiveForTexture(*emissive, geom->texture)) {
+			if (RT_GetEmissiveForTexture(*emissive, tex_id)) {
 				rt_light_add_polygon_t polylight = loadPolyLight(mod, surface_index, geom->surf_deprecate, *emissive);
 				polylight.dynamic = true;
 				polylight.transform_row = (const matrix3x4*)&transform;
@@ -1075,7 +1077,7 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 			VectorClear(model_geometry->emissive);
 
 			model_geometry->surf_deprecate = surf;
-			model_geometry->texture = tex_id;
+			model_geometry->material = R_VkMaterialGetForTexture(tex_id);
 
 			model_geometry->vertex_offset = args.base_vertex_offset;
 			model_geometry->max_vertex = vertex_offset + surf->numedges;
@@ -1083,9 +1085,9 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 			model_geometry->index_offset = index_offset;
 
 			if(type == BrushSurface_Sky) {
-				model_geometry->material = kXVkMaterialSky;
+				model_geometry->material_type_deprecated = kXVkMaterialSky;
 			} else {
-				model_geometry->material = kXVkMaterialRegular;
+				model_geometry->material_type_deprecated = kXVkMaterialRegular;
 				ASSERT(!FBitSet( surf->flags, SURF_DRAWTILED ));
 				VK_CreateSurfaceLightmap( surf, args.mod );
 			}
