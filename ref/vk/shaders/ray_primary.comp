@@ -24,6 +24,8 @@ RAY_PRIMARY_OUTPUTS(X)
 
 layout(set = 0, binding = 1) uniform accelerationStructureEXT tlas;
 
+layout(set = 0, binding = 7) uniform samplerCube skybox;
+
 #include "trace_simple_blending.glsl"
 
 struct Ray {
@@ -88,7 +90,6 @@ void main() {
 		// 2. Same as the above, but also with a completely independent TLAS. Why: no need to mask-check geometry for opaque-vs-alpha
 		const MiniGeometry geom = readCandidateMiniGeometry(rq);
 		const uint tex_base_color = getKusok(geom.kusok_index).material.tex_base_color;
-		// Should never happen: skybox is opaque if (tex_base_color == TEX_BASE_SKYBOX)
 		const vec4 texture_color = texture(textures[nonuniformEXT(tex_base_color)], geom.uv);
 
 		const float alpha_mask_threshold = .1f;
@@ -104,6 +105,9 @@ void main() {
 		//debug_geometry_index = rayQueryGetIntersectionPrimitiveIndexEXT(rq, true);
 		primaryRayHit(rq, payload);
 		L = rayQueryGetIntersectionTEXT(rq, true);
+	} else {
+		payload.hit_t = payload.prev_pos_t = vec4(ray.origin + ray.direction * ray.dist, ray.dist);
+		payload.emissive.rgb = SRGBtoLINEAR(texture(skybox, ray.direction).rgb);
 	}
 
 	traceSimpleBlending(ray.origin, ray.direction, L, payload.emissive.rgb, payload.base_color_a.rgb);

@@ -61,10 +61,6 @@ static void applyMaterialToKusok(vk_kusok_data_t* kusok, const vk_render_geometr
 	const qboolean HACK_chrome = geom->material_type_deprecated == kXVkMaterialChrome;
 	if (!mat->set && HACK_chrome)
 		kusok->material.tex_roughness = tglob.grayTexture;
-
-	// Purely static. Once a sky forever a sky.
-	if (geom->material_type_deprecated == kXVkMaterialSky)
-		kusok->material.tex_base_color = TEX_BASE_SKYBOX;
 }
 
 // TODO utilize uploadKusochki([1]) to avoid 2 copies of staging code

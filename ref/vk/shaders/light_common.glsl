@@ -117,7 +117,7 @@ bool shadowedSky(vec3 pos, vec3 dir) {
 		| gl_RayFlagsSkipClosestHitShaderEXT
 		;
 	const uint hit_type = traceShadowRay(pos, dir, dist, flags);
-	return payload_shadow.hit_type != SHADOW_SKY;
+	return payload_shadow.hit_type != SHADOW_MISS;
 #elif defined(RAY_QUERY)
 
 	rayQueryEXT rq;
@@ -125,28 +125,22 @@ bool shadowedSky(vec3 pos, vec3 dir) {
 		// Culling for shadows breaks more things (e.g. de_cbble slightly off the ground boxes) than it probably fixes. Keep it turned off.
 		//| gl_RayFlagsCullFrontFacingTrianglesEXT
 		| gl_RayFlagsOpaqueEXT
-		//| gl_RayFlagsTerminateOnFirstHitEXT
+		| gl_RayFlagsTerminateOnFirstHitEXT
 		//| gl_RayFlagsSkipClosestHitShaderEXT
 		;
 	const float L = 10000.; // TODO Why 10k?
 	rayQueryInitializeEXT(rq, tlas, flags, GEOMETRY_BIT_OPAQUE, pos, 0., dir, L);
 
-	// Find closest intersection, and then check whether that was a skybox
+	// Any intersection results in a shadow
 	while (rayQueryProceedEXT(rq)) {}
 
 	if (rayQueryGetIntersectionTypeEXT(rq, true) == gl_RayQueryCommittedIntersectionTriangleEXT) {
-		const uint instance_kusochki_offset = rayQueryGetIntersectionInstanceCustomIndexEXT(rq, true);
-		const uint geometry_index = rayQueryGetIntersectionGeometryIndexEXT(rq, true);
-		const uint kusok_index = instance_kusochki_offset + geometry_index;
-		const Kusok kusok = getKusok(kusok_index);
-
-		if (kusok.material.tex_base_color != TEX_BASE_SKYBOX)
-			return true;
+		return true;
 	}
 
 	// check for alpha-masked surfaces separately
-	const float hit_t = rayQueryGetIntersectionTEXT(rq, true);
-	return shadowTestAlphaMask(pos, dir, hit_t);
+	// TODO compare with doing it in the same loop as above
+	return shadowTestAlphaMask(pos, dir, L);
 
 #else
 #error RAY_TRACE or RAY_QUERY

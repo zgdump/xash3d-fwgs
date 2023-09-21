@@ -19,11 +19,6 @@ void VK_RenderSetupCamera( const struct ref_viewpass_s *rvp );
 typedef enum {
 	kXVkMaterialRegular = 0,
 
-	// Set for SURF_DRAWSKY surfaces in vk_brush.c.
-	// Used: for setting TEX_BASE_SKYBOX for skybox texture sampling and environment shadows.
-	// Remove: pass it as a special texture/material index (e.g. -2).
-	kXVkMaterialSky,
-
 	// Set for chrome studio submodels.
 	// Used: ray tracing sets gray roughness texture to get smooth surface look.
 	// Remove: Have an explicit material for chrome surfaces.
