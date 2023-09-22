@@ -821,7 +821,6 @@ void R_RenderDrawOnce(r_draw_once_t args) {
 
 	const vk_render_geometry_t geometry = {
 		.material = args.material,
-		.material_type_deprecated = kXVkMaterialRegular,
 		.ye_olde_texture = args.ye_olde_texture,
 
 		.max_vertex = args.vertices_count,

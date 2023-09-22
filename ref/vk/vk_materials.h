@@ -13,6 +13,7 @@ typedef struct r_vk_material_s {
 	float metalness;
 	float normal_scale;
 
+	// TODO this should be internal
 	qboolean set;
 } r_vk_material_t;
 
@@ -22,6 +23,4 @@ typedef struct { int index; } r_vk_material_ref_t;
 // TODO: track "version" in high bits?
 void R_VkMaterialsReload( void );
 
-r_vk_material_ref_t R_VkMaterialGetForTexture( int tex_id );
-
-const r_vk_material_t* R_VkMaterialGet( r_vk_material_ref_t ref );
+r_vk_material_t R_VkMaterialGetForTexture( int tex_id );

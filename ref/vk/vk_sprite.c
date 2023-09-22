@@ -103,7 +103,6 @@ static qboolean createQuadModel(void) {
 		.element_count = 6,
 		.index_offset = g_sprite.quad.geom.indices.unit_offset,
 
-		.material_type_deprecated = kXVkMaterialRegular,
 		.material = R_VkMaterialGetForTexture(tglob.defaultTexture),
 		.ye_olde_texture = tglob.defaultTexture,
 		.emissive = {1,1,1},
@@ -799,13 +798,14 @@ static void R_DrawSpriteQuad( const char *debug_name, const mspriteframe_t *fram
 	Matrix4x4_CreateFromVectors(transform, right, up, v_normal, org);
 
 	const vk_render_type_e render_type = spriteRenderModeToRenderType(render_mode);
+	const r_vk_material_t material_override = R_VkMaterialGetForTexture(texture);
 
 	R_RenderModelDraw(&g_sprite.quad.model, (r_model_draw_t){
 		.render_type = render_type,
 		.color = (const vec4_t*)color,
 		.transform = &transform,
 		.prev_transform = &transform,
-		.material_override = R_VkMaterialGet(R_VkMaterialGetForTexture(texture)),
+		.material_override = &material_override,
 	});
 }
 

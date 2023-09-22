@@ -264,18 +264,9 @@ void R_VkMaterialsReload( void ) {
 	}
 }
 
-r_vk_material_ref_t R_VkMaterialGetForTexture( int tex_index ) {
+r_vk_material_t R_VkMaterialGetForTexture( int tex_index ) {
 	ASSERT(tex_index >= 0);
 	ASSERT(tex_index < MAX_TEXTURES);
 
-	// TODO add versioning to detect reloads?
-	return (r_vk_material_ref_t){ .index = tex_index, };
-}
-
-const r_vk_material_t* R_VkMaterialGet( r_vk_material_ref_t ref ) {
-	ASSERT(ref.index >= 0);
-	ASSERT(ref.index < MAX_TEXTURES);
-
-	// TODO verify version ?
-	return g_materials.materials + ref.index;
+	return g_materials.materials[tex_index];
 }

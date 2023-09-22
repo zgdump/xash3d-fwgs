@@ -275,10 +275,9 @@ static void brushComputeWaterPolys( compute_water_polys_t args ) {
 
 	// Render
 	const int tex_id = args.warp->texinfo->texture->gl_texturenum;
-	const r_vk_material_ref_t material_ref = R_VkMaterialGetForTexture(tex_id);
+	const r_vk_material_t material = R_VkMaterialGetForTexture(tex_id);
 	*args.dst_geometry = (vk_render_geometry_t){
-		.material = material_ref,
-		.material_type_deprecated = kXVkMaterialRegular,
+		.material = material,
 
 		.ye_olde_texture = tex_id,
 
@@ -1091,7 +1090,6 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 			model_geometry->index_offset = index_offset;
 
 			{
-				model_geometry->material_type_deprecated = kXVkMaterialRegular;
 				ASSERT(!FBitSet( surf->flags, SURF_DRAWTILED ));
 				VK_CreateSurfaceLightmap( surf, args.mod );
 			}

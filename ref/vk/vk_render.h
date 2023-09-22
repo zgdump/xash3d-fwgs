@@ -10,21 +10,6 @@ void VK_RenderShutdown( void );
 struct ref_viewpass_s;
 void VK_RenderSetupCamera( const struct ref_viewpass_s *rvp );
 
-// Quirk for passing surface type to the renderer
-// xash3d does not really have a notion of materials. Instead there are custom code paths
-// for different things. There's also render_mode for entities which determine blending mode
-// and stuff.
-// For ray tracing we do need to assing a material to each rendered surface, so we need to
-// figure out what it is given heuristics like render_mode, texture name, surface flags, source entity type, etc.
-typedef enum {
-	kXVkMaterialRegular = 0,
-
-	// Set for chrome studio submodels.
-	// Used: ray tracing sets gray roughness texture to get smooth surface look.
-	// Remove: Have an explicit material for chrome surfaces.
-	kXVkMaterialChrome,
-} XVkMaterialType_Deprecated;
-
 typedef struct vk_render_geometry_s {
 	int index_offset, vertex_offset;
 
@@ -39,8 +24,7 @@ typedef struct vk_render_geometry_s {
 	const struct msurface_s *surf_deprecate;
 
 	// If this geometry is special, it will have a material type override
-	XVkMaterialType_Deprecated material_type_deprecated;
-	r_vk_material_ref_t material;
+	r_vk_material_t material;
 
 	// Olde unpatched texture used for traditional renderer
 	int ye_olde_texture;
@@ -154,7 +138,7 @@ typedef struct {
 	int vertices_count, indices_count;
 
 	int render_type;
-	r_vk_material_ref_t material;
+	r_vk_material_t material;
 	int ye_olde_texture;
 	const vec4_t *emissive;
 	const vec4_t *color;

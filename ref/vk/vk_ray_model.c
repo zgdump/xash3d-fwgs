@@ -26,7 +26,7 @@ typedef struct rt_model_s {
 } rt_model_t;
 
 static void applyMaterialToKusok(vk_kusok_data_t* kusok, const vk_render_geometry_t *geom, const r_vk_material_t *override_material, const vec4_t override_color) {
-	const r_vk_material_t *const mat = override_material ? override_material : R_VkMaterialGet(geom->material);
+	const r_vk_material_t *const mat = override_material ? override_material : &geom->material;
 	ASSERT(mat);
 
 	// TODO split kusochki into static geometry data and potentially dynamic material data
@@ -56,11 +56,6 @@ static void applyMaterialToKusok(vk_kusok_data_t* kusok, const vk_render_geometr
 		kusok->material.base_color[2] *= override_color[2];
 		kusok->material.base_color[3] *= override_color[3];
 	}
-
-	// TODO should be patched by the Chrome material source itself to generate a static chrome material
-	const qboolean HACK_chrome = geom->material_type_deprecated == kXVkMaterialChrome;
-	if (!mat->set && HACK_chrome)
-		kusok->material.tex_roughness = tglob.grayTexture;
 }
 
 // TODO utilize uploadKusochki([1]) to avoid 2 copies of staging code
