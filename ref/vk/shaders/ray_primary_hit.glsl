@@ -10,6 +10,7 @@
 
 layout(set = 0, binding = 6) uniform sampler2D textures[MAX_TEXTURES];
 layout(set = 0, binding = 2) uniform UBO { UniformBuffer ubo; } ubo;
+layout(set = 0, binding = 7) uniform samplerCube skybox;
 
 vec4 sampleTexture(uint tex_index, vec2 uv, vec4 uv_lods) {
 #ifndef RAY_BOUNCE
@@ -29,7 +30,10 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 	const Kusok kusok = getKusok(geom.kusok_index);
 	const Material material = kusok.material;
 
-	{
+	if (kusok.material.tex_base_color == TEX_BASE_SKYBOX) {
+		payload.emissive.rgb = SRGBtoLINEAR(texture(skybox, rayDirection).rgb);
+		return;
+	} else {
 		payload.base_color_a = sampleTexture(material.tex_base_color, geom.uv, geom.uv_lods);
 		payload.material_rmxx.r = sampleTexture(material.tex_roughness, geom.uv, geom.uv_lods).r * material.roughness;
 		payload.material_rmxx.g = sampleTexture(material.tex_metalness, geom.uv, geom.uv_lods).r * material.metalness;

@@ -29,7 +29,10 @@ void main() {
 
 	const Kusok kusok = getKusok(geom.kusok_index);
 
-	{
+	if (kusok.material.tex_base_color == TEX_BASE_SKYBOX) {
+		payload.emissive.rgb = SRGBtoLINEAR(texture(skybox, gl_WorldRayDirectionEXT).rgb);
+		return;
+	} else {
 		const vec4 color = getModelHeader(gl_InstanceID).color * kusok.material.base_color;
 		payload.base_color_a = sampleTexture(kusok.material.tex_base_color, geom.uv, geom.uv_lods) * color;
 		payload.material_rmxx.r = sampleTexture(kusok.material.tex_roughness, geom.uv, geom.uv_lods).r * kusok.material.roughness;

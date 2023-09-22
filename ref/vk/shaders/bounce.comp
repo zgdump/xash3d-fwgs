@@ -20,7 +20,6 @@ RAY_LIGHT_DIRECT_INPUTS(X)
 
 layout(set=0, binding=20, rgba16f) uniform writeonly image2D out_indirect_diffuse;
 layout(set=0, binding=21, rgba16f) uniform writeonly image2D out_indirect_specular;
-layout(set=0, binding=27) uniform samplerCube skybox;
 
 #include "ray_primary_common.glsl"
 #include "ray_primary_hit.glsl"
@@ -73,6 +72,7 @@ bool getHit(vec3 origin, vec3 direction, inout RayPayloadPrimary payload) {
 		// 2. Same as the above, but also with a completely independent TLAS. Why: no need to mask-check geometry for opaque-vs-alpha
 		const MiniGeometry geom = readCandidateMiniGeometry(rq);
 		const uint tex_base_color = getKusok(geom.kusok_index).material.tex_base_color;
+		// Should never happen: skybox is opaque if (tex_base_color == TEX_BASE_SKYBOX)
 		const vec4 texture_color = texture(textures[nonuniformEXT(tex_base_color)], geom.uv);
 
 		const float alpha_mask_threshold = .1f;
@@ -149,14 +149,8 @@ void computeBounce(ivec2 pix, vec3 direction, out vec3 diffuse, out vec3 specula
 	payload.base_color_a = vec4(0.);
 	payload.emissive = vec4(0.);
 	const vec3 pos = imageLoad(position_t, pix).xyz + geometry_normal * ray_normal_fudge;
-	if (!getHit(pos, bounce_direction, payload)) {
-		const vec3 skycolor = SRGBtoLINEAR(texture(skybox, bounce_direction).rgb);
-		if (brdf_type == DIFFUSE_TYPE) {
-			diffuse += skycolor;
-		} else
-			specular += skycolor;
+	if (!getHit(pos, bounce_direction, payload))
 		return;
-	}
 
 	throughput *= payload.base_color_a.rgb;
 

@@ -778,13 +778,13 @@ static model_sizes_t computeSizes( const model_t *mod ) {
 		case BrushSurface_Water:
 			sizes.water_surfaces++;
 			addWarpVertIndCounts(surf, &sizes.water_vertices, &sizes.water_indices);
-		case BrushSurface_Sky:
 		case BrushSurface_Hidden:
 			continue;
 
 		case BrushSurface_Animated:
 			sizes.animated_count++;
 		case BrushSurface_Regular:
+		case BrushSurface_Sky:
 			break;
 		}
 
@@ -1058,11 +1058,11 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 			switch (type) {
 			case BrushSurface_Water:
 			case BrushSurface_Hidden:
-			case BrushSurface_Sky:
 				continue;
 			case BrushSurface_Animated:
 				args.bmodel->animated_indexes[animated_count++] = num_geometries;
 			case BrushSurface_Regular:
+			case BrushSurface_Sky:
 				break;
 			}
 
@@ -1089,7 +1089,10 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 
 			model_geometry->index_offset = index_offset;
 
-			{
+			if ( type == BrushSurface_Sky ) {
+#define TEX_BASE_SKYBOX 0xffffffffu // FIXME ray_interop.h
+				model_geometry->material.tex_base_color = TEX_BASE_SKYBOX;
+			} else {
 				ASSERT(!FBitSet( surf->flags, SURF_DRAWTILED ));
 				VK_CreateSurfaceLightmap( surf, args.mod );
 			}
