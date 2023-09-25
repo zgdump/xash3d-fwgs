@@ -699,7 +699,22 @@ static void parsePatches( const model_t *const map ) {
 		g_patch.surfaces_count = 0;
 	}
 
-	Q_snprintf(filename, sizeof(filename), "luchiki/%s.patch", map->name);
+	{
+		const char *ext = NULL;
+
+		// Find extension (if any)
+		{
+			const char *p = map->name;
+			for(; *p; ++p)
+				if (*p == '.')
+					ext = p;
+			if (!ext)
+				ext = p;
+		}
+
+		Q_snprintf(filename, sizeof(filename), "luchiki/%.*s.patch", (int)(ext - map->name), map->name);
+	}
+
 	DEBUG("Loading patches from file \"%s\"", filename);
 	data = gEngine.fsapi->LoadFile( filename, 0, false );
 	if (!data) {
