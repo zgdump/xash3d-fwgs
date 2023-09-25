@@ -412,3 +412,96 @@ TODO: can we not have a BLAS/model for each submodel? Can it be per-model instea
         - to build skychain, and then draw it in Quake mode (the other branch does a bunch of math, which seemingly isn't used for anything at all).
         - for dynamic lighting: if sky ray has hit sky surface then sky is contributing light
 
+# 2023-09-25 #301
+## Materials format
+Define new material, independently of any existing textures, etc
+This can be .vmat compatible, primext compatbile, etc.
+The important parts:
+- It has a unique name that we can reference it with
+- It has all the fields that we use for our PBR shading model
+- (? Material mode can be specified)
+```
+{
+	"material" "MAT_NAME"
+	"map_base_color" "base.png"
+	"map_normal" "irregular.ktx2"
+	"base_color" "1 .5 0"
+	// ...
+}
+
+{
+	"material" "mirror"
+    "map_base_color" "white"
+    "base_color" "1 1 1"
+    "roughness" "0"
+    "metalness" "1"
+    // ...
+}
+```
+
+Then, we can map existing textures to new materials:
+```
+{
+	"for_texture" "+EXIT"
+    "use" "MAT_NAME"
+}
+```
+
+Or, with more context:
+```
+{
+    "for_model_type" "brush"
+    "for_rendermode" "kRenderTransAlpha"
+    "for_texture" "wood"
+    "use" "mat_glass"
+    "mode" "translucent"
+    "map_base_color" "glass2.ktx"
+}
+
+// ??? meh, see the better _xvk_ example below
+{
+    "for_model_type" "brush"
+    "for_surface_id" "584"
+    "use" "mirror"
+}
+
+// This example: use previously specified material (e.g. via _xvk stuff below)
+// (Depends on applying multiple matching rules, see questions below)
+{
+    "for_model_type" "brush"
+    "for_rendermode" "kRenderTransAlpha"
+    "mode" "translucent"
+    "map_normal" "glass2.ktx"
+}
+
+// We also want this (for maps, not globally ofc), see https://github.com/w23/xash3d-fwgs/issues/526
+{
+    "for_entity_id" "39"
+    "for_texture" "generic028"
+    "use" "generic_metal1"
+}
+
+{
+    "for_entity_id" "39"
+    "for_texture" "generic029"
+    "use" "generic_metal2"
+}
+```
+
+What it does is:
+1. If all `"for_"` fields match, apply values from `"use"` material (in this case `"wood"`)
+2. Additionally, override any extra fields/values with ones specified in this block
+
+As we already have surface-patching ability, can just use that for patching materials directly for brush surfaces:
+```
+// mirror in toilet
+{
+    "_xvk_surface_id" "2057"
+    "_xvk_material" "mirror"
+}
+```
+
+Questions:
+- Should it apply the first found rule that matches a given geometry and stop?
+  Or should it apply updates to the material using all the rules that matched in their specified order? Doing the first rule and stopping is more readable and perofrmant, but also might be verbose in some cases.
+- Should we do "automatic" materials? I.e. if there's no manually specified material for a texture named `"<TEX>"`, then we try to load `"<TEX>_basecolor.ktx"`, `"<TEX>_normalmap.ktx"`, etc automatically.
