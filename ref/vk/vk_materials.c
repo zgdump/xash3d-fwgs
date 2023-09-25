@@ -236,17 +236,41 @@ void R_VkMaterialsReload( void ) {
 	loadMaterialsFromFile( "pbr/sprites/sprites.mat", MAX_INCLUDE_DEPTH );
 
 	{
-		const char *wad = g_map_entities.wadlist;
-		for (; *wad;) {
-			const char *const wad_end = Q_strchr(wad, ';');
-			loadMaterialsFromFileF("pbr/%.*s/%.*s.mat", wad_end - wad, wad, wad_end - wad, wad);
+		for(const char *wad = g_map_entities.wadlist; *wad;) {
+			const char *wad_end = wad;
+			const char *ext = NULL;
+			while (*wad_end && *wad_end != ';') {
+				if (*wad_end == '.')
+					ext = wad_end;
+				++wad_end;
+			}
+
+			const int full_length = wad_end - wad;
+
+			// Length without extension
+			const int short_length = ext ? ext - wad : full_length;
+
+			loadMaterialsFromFileF("pbr/%.*s/%.*s.mat", full_length, wad, short_length, wad);
 			wad = wad_end + 1;
 		}
 	}
 
 	{
 		const model_t *map = gEngine.pfnGetModelByIndex( 1 );
-		loadMaterialsFromFileF("pbr/%s/%s.mat", map->name, COM_FileWithoutPath(map->name));
+		const char *filename = COM_FileWithoutPath(map->name);
+		const char *ext = NULL;
+
+		// Find extension (if any)
+		{
+			const char *p = filename;
+			for(; *p; ++p)
+				if (*p == '.')
+					ext = p;
+			if (!ext)
+				ext = p;
+		}
+
+		loadMaterialsFromFileF("pbr/%s/%.*s.mat", map->name, ext - filename, filename);
 	}
 
 	// Print out statistics
