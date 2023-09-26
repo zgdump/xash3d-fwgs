@@ -78,7 +78,7 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 
 	string basecolor_map, normal_map, metal_map, roughness_map;
 
-	DEBUG("Loading materials from %s", filename);
+	DEBUG("Loading materials from %s (exists=%d)", filename, data != 0);
 
 	if ( !data )
 		return;

@@ -6,6 +6,7 @@
 #include "vk_scene.h"
 #include "r_speeds.h"
 #include "vk_math.h"
+#include "vk_logs.h"
 
 #include "sprite.h"
 #include "xash3d_mathlib.h"
@@ -16,6 +17,7 @@
 #include <memory.h>
 
 #define MODULE_NAME "sprite"
+#define LOG_MODULE LogModule_Sprite
 
 // it's a Valve default value for LoadMapSprite (probably must be power of two)
 #define MAPSPRITE_SIZE	128
@@ -404,6 +406,7 @@ Loading a bitmap image as sprite with multiple frames
 as pieces of input image
 ====================
 */
+// IS NOT CALLED BY ANYTHING?!
 void Mod_LoadMapSprite( model_t *mod, const void *buffer, size_t size, qboolean *loaded )
 {
 	byte		*src, *dst;
@@ -416,6 +419,8 @@ void Mod_LoadMapSprite( model_t *mod, const void *buffer, size_t size, qboolean 
 	mspriteframe_t	*pspriteframe;
 	msprite_t		*psprite;
 	SpriteLoadContext ctx = {0};
+
+	DEBUG("%s(%s, %p, %d, %d)", __FUNCTION__, mod->name, buffer, (int)size, (int)*loaded);
 
 	if( loaded ) *loaded = false;
 	Q_snprintf( texname, sizeof( texname ), "#%s", mod->name );

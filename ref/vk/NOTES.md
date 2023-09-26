@@ -505,3 +505,42 @@ Questions:
 - Should it apply the first found rule that matches a given geometry and stop?
   Or should it apply updates to the material using all the rules that matched in their specified order? Doing the first rule and stopping is more readable and perofrmant, but also might be verbose in some cases.
 - Should we do "automatic" materials? I.e. if there's no manually specified material for a texture named `"<TEX>"`, then we try to load `"<TEX>_basecolor.ktx"`, `"<TEX>_normalmap.ktx"`, etc automatically.
+
+# 2023-09-26 E302
+Map loading sequence
+```
+[2023:09:26|11:30:31] Couldn't open file overviews/c1a0d.txt. Using default values for overiew mode.
+[2023:09:26|11:30:31] CL_SignonReply: 2
+[2023:09:26|11:30:31] Signon network traffic:  10.380 Kb from server, 349 bytes to server
+[2023:09:26|11:30:31] client connected at 0.07 sec
+[2023:09:26|11:30:31] Error: SDL_GL_SetSwapInterval: No OpenGL context has been made current
+[2023:09:26|11:30:31] vk: Mod_ProcessRenderData(sprites/640_pain.spr, create=1)
+
+[2023:09:26|11:30:43] Loading game from save/autosave01.sav...
+[2023:09:26|11:30:43] Spawn Server: c2a5
+[2023:09:26|11:30:43] vk: Mod_ProcessRenderData(maps/c1a0d.bsp, create=0)
+
+[2023:09:26|11:30:43] Warning: VK FIXME Trying to unload brush model maps/c1a0d.bsp
+[2023:09:26|11:30:43] Error: VK NOT_IMPLEMENTED(x0): RT_KusochkiFree
+[2023:09:26|11:30:43] loading maps/c2a5.bsp
+[2023:09:26|11:30:43] Warning: FS_LoadImage: couldn't load "alpha_sky"
+[2023:09:26|11:30:43] Warning: FS_LoadImage: couldn't load "solid_sky"
+[2023:09:26|11:30:43] lighting: colored
+[2023:09:26|11:30:43] Wad files required to run the map: "halflife.wad; liquids.wad; xeno.wad"
+[2023:09:26|11:30:43] vk: Mod_ProcessRenderData(maps/c2a5.bsp, create=1)
+
+[2023:09:26|11:30:43] Loading game from save/c2a5.HL1...
+[2023:09:26|11:30:43]
+GAME SKILL LEVEL:1
+[2023:09:26|11:30:43] Loading CGraph in GRAPH_VERSION 16 compatibility mode
+[2023:09:26|11:30:43] Loading CLink array in GRAPH_VERSION 16 compatibility mode
+[2023:09:26|11:30:43]
+*Graph Loaded!
+[2023:09:26|11:30:43] **Graph Pointers Set!
+[2023:09:26|11:30:43] loading sprites/flare1.spr
+[2023:09:26|11:30:43] vk: Mod_ProcessRenderData(sprites/flare1.spr, create=1)
+.. more Mod_ProcessRenderData
+.. and only then R_NewMap
+```
+
+

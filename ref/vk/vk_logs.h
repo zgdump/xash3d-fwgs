@@ -12,6 +12,8 @@ enum {
 	LogModule_Material = (1<<6),
 	LogModule_Meatpipe = (1<<7),
 	LogModule_RT = (1<<8),
+	LogModule_RMain = (1<<9),
+	LogModule_Sprite = (1<<10),
 };
 
 extern uint32_t g_log_debug_bits;

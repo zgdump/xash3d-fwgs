@@ -21,6 +21,8 @@
 
 #include <memory.h>
 
+#define LOG_MODULE LogModule_RMain
+
 ref_api_t gEngine = {0};
 ref_globals_t *gpGlobals = NULL;
 
@@ -117,7 +119,7 @@ static qboolean Mod_ProcessRenderData( model_t *mod, qboolean create, const byte
 {
 	qboolean loaded = true;
 
-	//gEngine.Con_Reportf("%s(%s, create=%d)\n", __FUNCTION__, mod->name, create);
+	DEBUG("%s(%s, create=%d)", __FUNCTION__, mod->name, create);
 
 	// TODO does this ever happen?
 	if (!create && mod->type == mod_brush)

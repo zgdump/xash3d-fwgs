@@ -16,6 +16,8 @@ static const struct log_pair_t {
 	{"mat", LogModule_Material},
 	{"meat", LogModule_Meatpipe},
 	{"rt", LogModule_RT},
+	{"rmain", LogModule_RMain},
+	{"sprite", LogModule_Sprite},
 };
 
 void VK_LogsReadCvar(void) {
