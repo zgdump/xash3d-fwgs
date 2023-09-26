@@ -215,6 +215,18 @@ static void loadMaterialsFromFileF( const char *fmt, ... ) {
 	loadMaterialsFromFile( buffer, MAX_INCLUDE_DEPTH );
 }
 
+static int findFilenameExtension(const char *s, int len) {
+	if (len < 0)
+		len = Q_strlen(s);
+
+	for (int i = len - 1; i >= 0; --i) {
+		if (s[i] == '.')
+			return i;
+	}
+
+	return len;
+}
+
 void R_VkMaterialsReload( void ) {
 	memset(&g_stats, 0, sizeof(g_stats));
 	const uint64_t begin_time_ns = aprof_time_now_ns();
@@ -232,8 +244,6 @@ void R_VkMaterialsReload( void ) {
 	}
 
 	loadMaterialsFromFile( "pbr/materials.mat", MAX_INCLUDE_DEPTH );
-	loadMaterialsFromFile( "pbr/models/models.mat", MAX_INCLUDE_DEPTH );
-	loadMaterialsFromFile( "pbr/sprites/sprites.mat", MAX_INCLUDE_DEPTH );
 
 	{
 		for(const char *wad = g_map_entities.wadlist; *wad;) {
@@ -258,19 +268,8 @@ void R_VkMaterialsReload( void ) {
 	{
 		const model_t *map = gEngine.pfnGetModelByIndex( 1 );
 		const char *filename = COM_FileWithoutPath(map->name);
-		const char *ext = NULL;
-
-		// Find extension (if any)
-		{
-			const char *p = filename;
-			for(; *p; ++p)
-				if (*p == '.')
-					ext = p;
-			if (!ext)
-				ext = p;
-		}
-
-		loadMaterialsFromFileF("pbr/%s/%.*s.mat", map->name, ext - filename, filename);
+		const int no_ext_len = findFilenameExtension(map->name, -1);
+		loadMaterialsFromFileF("pbr/%s/%.*s.mat", map->name, no_ext_len, filename);
 	}
 
 	// Print out statistics
@@ -286,6 +285,16 @@ void R_VkMaterialsReload( void ) {
 			(int)(g_stats.texture_load_duration_ns / 1000000ull)
 			);
 	}
+}
+
+void R_VkMaterialsLoadForModel( const struct model_s* mod ) {
+	// Brush models are loaded separately
+	if (mod->type == mod_brush)
+		return;
+
+	const char *filename = COM_FileWithoutPath(mod->name);
+	const int no_ext_len = findFilenameExtension(filename, -1);
+	loadMaterialsFromFileF("pbr/%s/%.*s.mat", mod->name, no_ext_len, filename);
 }
 
 r_vk_material_t R_VkMaterialGetForTexture( int tex_index ) {

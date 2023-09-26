@@ -121,6 +121,8 @@ static void preloadModels( void ) {
 
 		DEBUG( "  %d: name=%s, type=%d, submodels=%d, nodes=%d, surfaces=%d, nummodelsurfaces=%d", i, m->name, m->type, m->numsubmodels, m->numnodes, m->numsurfaces, m->nummodelsurfaces);
 
+		R_VkMaterialsLoadForModel(m);
+
 		switch (m->type) {
 			case mod_brush:
 				if (!VK_BrushModelLoad(m))
