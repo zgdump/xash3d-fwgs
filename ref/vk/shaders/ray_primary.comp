@@ -105,6 +105,9 @@ void main() {
 		//debug_geometry_index = rayQueryGetIntersectionPrimitiveIndexEXT(rq, true);
 		primaryRayHit(rq, payload);
 		L = rayQueryGetIntersectionTEXT(rq, true);
+	} else {
+		// Draw skybox when nothing is hit
+		payload.emissive.rgb = SRGBtoLINEAR(texture(skybox, ray.direction).rgb);
 	}
 
 	traceSimpleBlending(ray.origin, ray.direction, L, payload.emissive.rgb, payload.base_color_a.rgb);
