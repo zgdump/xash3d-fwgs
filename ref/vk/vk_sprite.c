@@ -804,9 +804,11 @@ static void R_DrawSpriteQuad( const char *debug_name, const mspriteframe_t *fram
 
 	const vk_render_type_e render_type = spriteRenderModeToRenderType(render_mode);
 	const r_vk_material_t material_override = R_VkMaterialGetForTexture(texture);
+	const material_mode_e material_mode = R_VkMaterialModeFromRenderType(render_type);
 
 	R_RenderModelDraw(&g_sprite.quad.model, (r_model_draw_t){
 		.render_type = render_type,
+		.material_mode = material_mode,
 		.color = (const vec4_t*)color,
 		.transform = &transform,
 		.prev_transform = &transform,

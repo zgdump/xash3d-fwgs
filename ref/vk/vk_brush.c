@@ -534,6 +534,33 @@ static qboolean brushCreateWaterModel(const model_t *mod, vk_brush_model_t *bmod
 	return true;
 }
 
+material_mode_e brushMaterialModeForRenderType(vk_render_type_e render_type) {
+	switch (render_type) {
+		case kVkRenderTypeSolid:
+			return kMaterialMode_Opaque;
+			break;
+		case kVkRenderType_A_1mA_RW: // blend: scr*a + dst*(1-a), depth: RW
+		case kVkRenderType_A_1mA_R:  // blend: scr*a + dst*(1-a), depth test
+			return kMaterialMode_Translucent;
+			break;
+		case kVkRenderType_A_1:   // blend: scr*a + dst, no depth test or write; sprite:kRenderGlow only
+			return kMaterialMode_BlendGlow;
+			break;
+		case kVkRenderType_A_1_R: // blend: scr*a + dst, depth test
+		case kVkRenderType_1_1_R: // blend: scr + dst, depth test
+			return kMaterialMode_BlendAdd;
+			break;
+		case kVkRenderType_AT: // no blend, depth RW, alpha test
+			return kMaterialMode_AlphaTest;
+			break;
+
+		default:
+			gEngine.Host_Error("Unexpected render type %d\n", render_type);
+	}
+
+	return kMaterialMode_Opaque;
+}
+
 static void brushDrawWater(vk_brush_model_t *bmodel, const cl_entity_t *ent, int render_type, const vec4_t color, const matrix4x4 transform) {
 	APROF_SCOPE_DECLARE_BEGIN(brush_draw_water, __FUNCTION__);
 	ASSERT(bmodel->water.surfaces_count > 0);
@@ -543,8 +570,10 @@ static void brushDrawWater(vk_brush_model_t *bmodel, const cl_entity_t *ent, int
 		ERR("Failed to update brush model \"%s\" water", bmodel->render_model.debug_name);
 	}
 
+	const material_mode_e material_mode = brushMaterialModeForRenderType(render_type);
 	R_RenderModelDraw(&bmodel->water.render_model, (r_model_draw_t){
 		.render_type = render_type,
+		.material_mode = material_mode,
 		.color = (const vec4_t*)color,
 		.transform = (const matrix4x4*)transform,
 		.prev_transform = &bmodel->prev_transform,
@@ -751,8 +780,10 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 		APROF_SCOPE_END(brush_update_textures);
 	}
 
+	const material_mode_e material_mode = brushMaterialModeForRenderType(render_type);
 	R_RenderModelDraw(&bmodel->render_model, (r_model_draw_t){
 		.render_type = render_type,
+		.material_mode = material_mode,
 		.color = &color,
 		.transform = &transform,
 		.prev_transform = &bmodel->prev_transform,

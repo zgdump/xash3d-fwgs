@@ -781,7 +781,7 @@ void R_RenderModelDraw(const vk_render_model_t *model, r_model_draw_t args) {
 	if (g_render_state.current_frame_is_ray_traced) {
 		ASSERT(model->rt_model);
 		RT_FrameAddModel(model->rt_model, (rt_frame_add_model_t){
-			.render_type = args.render_type,
+			.material_mode = args.material_mode,
 			.transform = (const matrix3x4*)args.transform,
 			.prev_transform = (const matrix3x4*)args.prev_transform,
 			.color = args.color,

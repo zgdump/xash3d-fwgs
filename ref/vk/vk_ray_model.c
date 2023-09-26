@@ -99,7 +99,7 @@ static qboolean uploadKusochkiSubset(const vk_ray_model_t *const model, const vk
 
 // TODO this material mapping is context dependent. I.e. different entity types might need different ray tracing behaviours for
 // same render_mode/type and even texture.
-static uint32_t materialModeFromRenderType(vk_render_type_e render_type) {
+uint32_t R_VkMaterialModeFromRenderType(vk_render_type_e render_type) {
 	switch (render_type) {
 		case kVkRenderTypeSolid:
 			return MATERIAL_MODE_OPAQUE;
@@ -328,7 +328,7 @@ void RT_FrameAddModel( struct rt_model_s *model, rt_frame_add_model_t args ) {
 
 	draw_instance->blas_addr = model->blas_addr;
 	draw_instance->kusochki_offset = kusochki_offset;
-	draw_instance->material_mode = materialModeFromRenderType(args.render_type);
+	draw_instance->material_mode = args.material_mode;
 	Vector4Copy(*args.color, draw_instance->color);
 	Matrix3x4_Copy(draw_instance->transform_row, args.transform);
 	Matrix4x4_Copy(draw_instance->prev_transform_row, args.prev_transform);
@@ -430,7 +430,8 @@ tail:
 }
 
 void RT_FrameAddOnce( rt_frame_add_once_t args ) {
-	const int material_mode = materialModeFromRenderType(args.render_type);
+	// TODO pass material_mode explicitly
+	const int material_mode = R_VkMaterialModeFromRenderType(args.render_type);
 	rt_dynamic_t *const dyn = g_dyn.groups + material_mode;
 
 	for (int i = 0; i < args.geometries_count; ++i) {

@@ -77,6 +77,20 @@ typedef enum {
 	kVkRenderType_COUNT
 } vk_render_type_e;
 
+typedef enum {
+	// MUST be congruent to MATERIAL_MODE_* definitions in shaders/ray_interop.h
+	kMaterialMode_Opaque = 0,
+	kMaterialMode_AlphaTest = 1,
+	kMaterialMode_Translucent = 2,
+	kMaterialMode_BlendAdd = 3,
+	kMaterialMode_BlendMix = 4,
+	kMaterialMode_BlendGlow = 5,
+
+	kMaterialMode_COUNT = 6,
+} material_mode_e;
+
+uint32_t R_VkMaterialModeFromRenderType(vk_render_type_e render_type);
+
 struct rt_light_add_polygon_s;
 struct rt_model_s;
 
@@ -120,7 +134,8 @@ qboolean R_RenderModelUpdate( const vk_render_model_t *model );
 qboolean R_RenderModelUpdateMaterials( const vk_render_model_t *model, const int *geom_indices, int geom_indices_count);
 
 typedef struct {
-	vk_render_type_e render_type;
+	vk_render_type_e render_type; // TODO rename legacy
+	material_mode_e material_mode;
 
 	// These are "consumed": copied into internal storage and can be pointers to stack vars
 	const vec4_t *color;

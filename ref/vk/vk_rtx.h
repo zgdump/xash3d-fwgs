@@ -56,7 +56,7 @@ qboolean RT_ModelUpdate(struct rt_model_s *model, const struct vk_render_geometr
 qboolean RT_ModelUpdateMaterials(struct rt_model_s *model, const struct vk_render_geometry_s *geometries, int geometries_count, const int *geom_indices, int geom_indices_count);
 
 typedef struct {
-	int render_type; // TODO material_mode
+	int material_mode;
 	const matrix3x4 *transform, *prev_transform;
 	const vec4_t *color;
 
