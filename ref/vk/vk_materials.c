@@ -268,7 +268,7 @@ void R_VkMaterialsReload( void ) {
 	{
 		const model_t *map = gEngine.pfnGetModelByIndex( 1 );
 		const char *filename = COM_FileWithoutPath(map->name);
-		const int no_ext_len = findFilenameExtension(map->name, -1);
+		const int no_ext_len = findFilenameExtension(filename, -1);
 		loadMaterialsFromFileF("pbr/%s/%.*s.mat", map->name, no_ext_len, filename);
 	}
 
