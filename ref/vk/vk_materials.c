@@ -25,8 +25,19 @@ static r_vk_material_t k_default_material = {
 		.set = false,
 };
 
+#define MAX_RENDERMODE_MATERIALS 32
+typedef struct {
+		struct {
+			int tex_id;
+			r_vk_material_t mat;
+		} materials[MAX_RENDERMODE_MATERIALS];
+		int count;
+} r_vk_material_per_mode_t;
+
 static struct {
 	r_vk_material_t materials[MAX_TEXTURES];
+
+	r_vk_material_per_mode_t rendermode[kRenderTransAdd+1];
 } g_materials;
 
 static struct {
@@ -78,6 +89,8 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 
 	string basecolor_map, normal_map, metal_map, roughness_map;
 
+	int rendermode = 0;
+
 	DEBUG("Loading materials from %s (exists=%d)", filename, data != 0);
 
 	if ( !data )
@@ -105,6 +118,7 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 			create = false;
 			metalness_set = false;
 			basecolor_map[0] = normal_map[0] = metal_map[0] = roughness_map[0] = '\0';
+			rendermode = 0;
 			continue;
 		}
 
@@ -146,8 +160,28 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 			DEBUG("Creating%s material for texture %s(%d)", create?" new":"",
 				findTexture(current_material_index)->name, current_material_index);
 
-			g_materials.materials[current_material_index] = current_material;
-			g_materials.materials[current_material_index].set = true;
+			// Assign rendermode-specific materials
+			if (rendermode > 0) {
+				r_vk_material_per_mode_t* const rm = g_materials.rendermode + rendermode;
+				if (rm->count == COUNTOF(rm->materials)) {
+					ERR("Too many rendermode/tex_id mappings");
+					continue;
+				}
+
+				DEBUG("Adding material %d for rendermode %d", current_material_index, rendermode);
+
+				// TODO proper texid-vs-material-index
+				rm->materials[rm->count].tex_id = current_material_index;
+				rm->materials[rm->count].mat = current_material;
+				rm->materials[rm->count].mat.set = true;
+				rm->count++;
+			} else {
+				DEBUG("Creating%s material for texture %s(%d)", create?" new":"",
+					findTexture(current_material_index)->name, current_material_index);
+
+				g_materials.materials[current_material_index] = current_material;
+				g_materials.materials[current_material_index].set = true;
+			}
 			continue;
 		}
 
@@ -193,6 +227,11 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 				sscanf(value, "%f", &current_material.normal_scale);
 			} else if (Q_stricmp(key, "base_color") == 0) {
 				sscanf(value, "%f %f %f %f", &current_material.base_color[0], &current_material.base_color[1], &current_material.base_color[2], &current_material.base_color[3]);
+			} else if (Q_stricmp(key, "for_rendermode") == 0) {
+				rendermode = R_VkRenderModeFromString(value);
+				if (rendermode < 0)
+					ERR("Invalid rendermode \"%s\"", value);
+				ASSERT(rendermode < COUNTOF(g_materials.rendermode[0].materials));
 			} else {
 				ERR("Unknown material key \"%s\" on line `%.*s`", key, (int)(pos - line_begin), line_begin);
 				continue;
@@ -230,6 +269,9 @@ static int findFilenameExtension(const char *s, int len) {
 void R_VkMaterialsReload( void ) {
 	memset(&g_stats, 0, sizeof(g_stats));
 	const uint64_t begin_time_ns = aprof_time_now_ns();
+
+	for (int i = 0; i < COUNTOF(g_materials.rendermode); ++i)
+		g_materials.rendermode[i].count = 0;
 
 	k_default_material.tex_metalness = tglob.blackTexture;
 	k_default_material.tex_roughness = tglob.whiteTexture;
@@ -317,4 +359,20 @@ r_vk_material_t R_VkMaterialGetForRef( r_vk_material_ref_t ref ) {
 	ASSERT(ref.index < MAX_TEXTURES);
 
 	return g_materials.materials[ref.index];
+}
+
+r_vk_material_t R_VkMaterialGetEx( int tex_id, int rendermode ) {
+	DEBUG("Getting material for tex_id=%d rendermode=%d", tex_id, rendermode);
+
+	if (rendermode > 0) {
+		ASSERT(rendermode < COUNTOF(g_materials.rendermode));
+		const r_vk_material_per_mode_t* const mode = &g_materials.rendermode[rendermode];
+		for (int i = 0; i < mode->count; ++i) {
+			if (mode->materials[i].tex_id == tex_id)
+				return mode->materials[i].mat;
+		}
+	}
+
+	DEBUG("Fallback to regular tex_id=%d", tex_id);
+	return R_VkMaterialGetForTexture(tex_id);
 }

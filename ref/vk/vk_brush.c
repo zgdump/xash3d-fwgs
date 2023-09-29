@@ -1121,19 +1121,30 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 				return false;
 			}
 
+			qboolean material_assigned = false;
 			if (entity_patch) {
 				for (int i = 0; i < entity_patch->matmap_count; ++i) {
 					if (entity_patch->matmap[i].from_tex == tex_id) {
-						tex_id = entity_patch->matmap[i].to_mat.index;
+						model_geometry->material = R_VkMaterialGetForTexture(entity_patch->matmap[i].to_mat.index);
+						material_assigned = true;
 						break;
 					}
 				}
+
+				if (!material_assigned && entity_patch->rendermode > 0) {
+					model_geometry->material = R_VkMaterialGetEx(tex_id, entity_patch->rendermode);
+					material_assigned = true;
+				}
+			}
+
+			if (!material_assigned) {
+				model_geometry->material = R_VkMaterialGetForTexture(tex_id);
+				material_assigned = true;
 			}
 
 			VectorClear(model_geometry->emissive);
 
 			model_geometry->surf_deprecate = surf;
-			model_geometry->material = R_VkMaterialGetForTexture(tex_id);
 			model_geometry->ye_olde_texture = orig_tex_id;
 
 			model_geometry->vertex_offset = args.base_vertex_offset;

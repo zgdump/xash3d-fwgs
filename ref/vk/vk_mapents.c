@@ -339,6 +339,17 @@ static void readWorldspawn( const entity_props_t *props ) {
 	};
 }
 
+int R_VkRenderModeFromString( const char *s ) {
+#define CHECK_IF_MODE(mode) if (Q_strcmp(s, #mode) == 0) { return mode; }
+		CHECK_IF_MODE(kRenderNormal)
+		else CHECK_IF_MODE(kRenderTransColor)
+		else CHECK_IF_MODE(kRenderTransTexture)
+		else CHECK_IF_MODE(kRenderGlow)
+		else CHECK_IF_MODE(kRenderTransAlpha)
+		else CHECK_IF_MODE(kRenderTransAdd)
+		return -1;
+}
+
 static void readFuncAny( const entity_props_t *const props, uint32_t have_fields, int props_count ) {
 	DEBUG("func_any entity=%d model=\"%s\", props_count=%d", g_map_entities.entity_count, (have_fields & Field_model) ? props->model : "N/A", props_count);
 
@@ -350,8 +361,12 @@ static void readFuncAny( const entity_props_t *const props, uint32_t have_fields
 	xvk_mapent_func_any_t *const e = g_map_entities.func_any + g_map_entities.func_any_count;
 
 	*e = (xvk_mapent_func_any_t){0};
+	e->rendermode = -1;
 
 	Q_strncpy( e->model, props->model, sizeof( e->model ));
+
+	if (have_fields & Field_rendermode)
+		e->rendermode = props->rendermode;
 
 	/* NOTE: not used
 	e->rendercolor.r = 255;
@@ -363,9 +378,6 @@ static void readFuncAny( const entity_props_t *const props, uint32_t have_fields
 
 	if (have_fields & Field_renderfx)
 		e->renderfx = props->renderfx;
-
-	if (have_fields & Field_rendermode)
-		e->rendermode = props->rendermode;
 
 	if (have_fields & Field_rendercolor) {
 		e->rendercolor.r = props->rendercolor[0];

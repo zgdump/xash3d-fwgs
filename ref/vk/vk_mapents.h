@@ -35,9 +35,9 @@
 	X(23, int_array_t, _xvk_smoothing_excluded_pairs, IntArray) \
 	X(24, int_array_t, _xvk_smoothing_group, IntArray) \
 	X(25, string, _xvk_map_material, String) \
+	X(26, int, rendermode, Int) \
 
 /* NOTE: not used
-	X(22, int, rendermode, Int) \
 	X(23, int, renderamt, Int) \
 	X(24, vec3_t, rendercolor, Vec3) \
 	X(25, int, renderfx, Int) \
@@ -114,8 +114,10 @@ typedef struct {
 		r_vk_material_ref_t to_mat;
 	} matmap[MAX_MATERIAL_MAPPINGS];
 
+	int rendermode;
+
 	/* NOTE: not used. Might be needed for #118 in the future.
-	int rendermode, renderamt, renderfx;
+	int renderamt, renderfx;
 	color24 rendercolor;
 
 	struct cl_entity_s *ent;
@@ -203,3 +205,5 @@ typedef struct {
 
 const xvk_patch_surface_t* R_VkPatchGetSurface( int surface_index );
 
+// -1 if failed
+int R_VkRenderModeFromString( const char *s );
