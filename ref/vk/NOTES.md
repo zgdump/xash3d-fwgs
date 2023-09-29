@@ -543,4 +543,47 @@ GAME SKILL LEVEL:1
 .. and only then R_NewMap
 ```
 
+# 2023-09-28 E303
+## #526
+Replace textures for specific brush entities.
+For a single texture it might be as easy as:
+```
+{
+	"_xvk_ent_id" "39"
+	"_xvk_texture" "generic028"
+	"_xvk_material" "generic_metal1"
+}
+```
 
+For multiple replacements:
+0. Multiple entries
+```
+{
+	"_xvk_ent_id" "39"
+	"_xvk_texture" "generic028"
+	"_xvk_material" "generic_metal1"
+}
+
+{
+	"_xvk_ent_id" "39"
+	"_xvk_texture" "generic029"
+	"_xvk_material" "generic_metal2"
+}
+```
+
+1. Pairwise
+```
+{
+	"_xvk_ent_id" "39"
+	"_xvk_texture" "generic028 generic029 ..."
+	"_xvk_material" "generic_metal1 generic_metal2 ..."
+}
+```
+
+2. Pair list <-- preferred
+```
+{
+	"_xvk_ent_id" "39"
+	"_xvk_texture_material" "generic028 generic_metal1 generic029 generic_metal2 ... ..."
+}
+```

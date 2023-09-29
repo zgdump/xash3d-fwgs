@@ -1053,6 +1053,17 @@ static qboolean getSmoothedNormalFor(const model_t* mod, int vertex_index, int s
 	return true;
 }
 
+static const xvk_mapent_func_any_t *getModelFuncAnyPatch( const model_t *const mod ) {
+	for (int i = 0; i < g_map_entities.func_any_count; ++i) {
+		const xvk_mapent_func_any_t *const fw = g_map_entities.func_any + i;
+		if (Q_strcmp(mod->name, fw->model) == 0) {
+			return fw;
+		}
+	}
+
+	return NULL;
+}
+
 static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 	int vertex_offset = 0;
 	int num_geometries = 0;
@@ -1063,6 +1074,8 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 	int index_offset = args.base_index_offset;
 
 	connectVertices(args.mod);
+
+	const xvk_mapent_func_any_t *const entity_patch = getModelFuncAnyPatch(args.mod);
 
 	// Load sorted by gl_texturenum
 	// TODO this does not make that much sense in vulkan (can sort later)
@@ -1076,12 +1089,11 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 			int index_count = 0;
 			vec3_t tangent;
 			const int orig_tex_id = surf->texinfo->texture->gl_texturenum;
-			int tex_id = surf->texinfo->texture->gl_texturenum;
-			const xvk_patch_surface_t *const psurf = R_VkPatchGetSurface(surface_index);
-
-			if (t != tex_id)
+			if (t != orig_tex_id)
 				continue;
 
+			int tex_id = orig_tex_id;
+			const xvk_patch_surface_t *const psurf = R_VkPatchGetSurface(surface_index);
 			if (psurf && psurf->tex_id >= 0)
 				tex_id = psurf->tex_id;
 
@@ -1107,6 +1119,15 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 				// We might be able to handle it by adjusting base_vertex_offset, etc
 				ERR("Model %s indices don't fit into 16 bits", args.mod->name);
 				return false;
+			}
+
+			if (entity_patch) {
+				for (int i = 0; i < entity_patch->matmap_count; ++i) {
+					if (entity_patch->matmap[i].from_tex == tex_id) {
+						tex_id = entity_patch->matmap[i].to_mat.index;
+						break;
+					}
+				}
 			}
 
 			VectorClear(model_geometry->emissive);
@@ -1232,17 +1253,6 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 	ASSERT(args.sizes.num_surfaces == num_geometries);
 	ASSERT(args.sizes.animated_count == animated_count);
 	return true;
-}
-
-static const xvk_mapent_func_wall_t *getModelFuncWallPatch( const model_t *const mod ) {
-	for (int i = 0; i < g_map_entities.func_walls_count; ++i) {
-		const xvk_mapent_func_wall_t *const fw = g_map_entities.func_walls + i;
-		if (Q_strcmp(mod->name, fw->model) == 0) {
-			return fw;
-		}
-	}
-
-	return NULL;
 }
 
 static qboolean createRenderModel( const model_t *mod, vk_brush_model_t *bmodel, const model_sizes_t sizes ) {
@@ -1414,8 +1424,8 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 	vk_brush_model_t *const bmodel = mod->cache.data;
 	ASSERT(bmodel);
 
-	const xvk_mapent_func_wall_t *func_wall = getModelFuncWallPatch(mod);
-	const qboolean is_static = is_worldmodel || func_wall;
+	const xvk_mapent_func_any_t *func_any = getModelFuncAnyPatch(mod);
+	const qboolean is_static = is_worldmodel || (func_any && func_any->origin_patched);
 
 	typedef struct {
 		int model_surface_index;
@@ -1487,14 +1497,14 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 
 		rt_light_add_polygon_t polylight = loadPolyLight(mod, s->surface_index, s->surf, s->emissive);
 
-		// func_wall surfaces do not really belong to BSP+PVS system, so they can't be used
+		// func_any surfaces do not really belong to BSP+PVS system, so they can't be used
 		// for lights visibility calculation directly.
-		if (func_wall) {
+		if (func_any && func_any->origin_patched) {
 			// TODO this is not really dynamic, but this flag signals using MovingSurface visibility calc
 			polylight.dynamic = true;
 			matrix3x4 m;
 			Matrix3x4_LoadIdentity(m);
-			Matrix3x4_SetOrigin(m, func_wall->origin[0], func_wall->origin[1], func_wall->origin[2]);
+			Matrix3x4_SetOrigin(m, func_any->origin[0], func_any->origin[1], func_any->origin[2]);
 			polylight.transform_row = &m;
 		}
 

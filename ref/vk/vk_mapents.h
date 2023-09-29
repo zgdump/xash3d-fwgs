@@ -1,7 +1,12 @@
 #pragma once
+#include "vk_materials.h"
+
 #include "xash3d_types.h"
 #include "const.h" // typedef word, needed for bspfile.h
 #include "bspfile.h" // MAX_MAP_ENTITIES
+
+// TODO string_view instead of string. map entities string/buffer is supposed to be alive for the entire map duration
+// NOTE that the above is not true for string in patches. but we can change that in parsePatches
 
 #define ENT_PROP_LIST(X) \
 	X(0, vec3_t, origin, Vec3) \
@@ -29,6 +34,7 @@
 	X(22, float, _xvk_smoothing_threshold, Float) \
 	X(23, int_array_t, _xvk_smoothing_excluded_pairs, IntArray) \
 	X(24, int_array_t, _xvk_smoothing_group, IntArray) \
+	X(25, string, _xvk_map_material, String) \
 
 /* NOTE: not used
 	X(22, int, rendermode, Int) \
@@ -44,7 +50,7 @@ typedef enum {
 	LightSpot,
 	LightEnvironment,
 	Worldspawn,
-	FuncWall,
+	FuncAny,
 	Ignored,
 	Xvk_Target,
 } class_name_e;
@@ -99,13 +105,22 @@ typedef struct {
 	string model;
 	vec3_t origin;
 
+	qboolean origin_patched;
+
+#define MAX_MATERIAL_MAPPINGS 8
+	int matmap_count;
+	struct {
+		int from_tex;
+		r_vk_material_ref_t to_mat;
+	} matmap[MAX_MATERIAL_MAPPINGS];
+
 	/* NOTE: not used. Might be needed for #118 in the future.
 	int rendermode, renderamt, renderfx;
 	color24 rendercolor;
 
 	struct cl_entity_s *ent;
 	*/
-} xvk_mapent_func_wall_t;
+} xvk_mapent_func_any_t;
 
 typedef struct {
 	class_name_e class;
@@ -130,9 +145,9 @@ typedef struct {
 	int num_targets;
 	xvk_mapent_target_t targets[MAX_MAPENT_TARGETS];
 
-#define MAX_FUNC_WALL_ENTITIES 64
-	int func_walls_count;
-	xvk_mapent_func_wall_t func_walls[MAX_FUNC_WALL_ENTITIES];
+#define MAX_FUNC_ANY_ENTITIES 1024
+	int func_any_count;
+	xvk_mapent_func_any_t func_any[MAX_FUNC_ANY_ENTITIES];
 
 	// TODO find out how to read this from the engine, or make its size dynamic
 //#define MAX_MAP_ENTITIES 2048

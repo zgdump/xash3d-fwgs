@@ -303,3 +303,18 @@ r_vk_material_t R_VkMaterialGetForTexture( int tex_index ) {
 
 	return g_materials.materials[tex_index];
 }
+
+r_vk_material_ref_t R_VkMaterialGetForName( const char *name ) {
+	// TODO separate material table
+	// For now it depends on 1-to-1 mapping between materials and textures
+	 return (r_vk_material_ref_t){.index = VK_FindTexture(name)};
+}
+
+r_vk_material_t R_VkMaterialGetForRef( r_vk_material_ref_t ref ) {
+	// TODO separate material table
+	// For now it depends on 1-to-1 mapping between materials and textures
+	ASSERT(ref.index >= 0);
+	ASSERT(ref.index < MAX_TEXTURES);
+
+	return g_materials.materials[ref.index];
+}

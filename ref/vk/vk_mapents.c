@@ -138,8 +138,8 @@ static unsigned parseEntPropClassname(const char* value, class_name_e *out, unsi
 		*out = LightEnvironment;
 	} else if (Q_strcmp(value, "worldspawn") == 0) {
 		*out = Worldspawn;
-	} else if (Q_strcmp(value, "func_wall") == 0) {
-		*out = FuncWall;
+	} else if (Q_strncmp(value, "func_", 5) == 0) {
+		*out = FuncAny;
 	} else {
 		*out = Ignored;
 	}
@@ -339,17 +339,17 @@ static void readWorldspawn( const entity_props_t *props ) {
 	};
 }
 
-static void readFuncWall( const entity_props_t *const props, uint32_t have_fields, int props_count ) {
-	DEBUG("func_wall entity=%d model=\"%s\", props_count=%d", g_map_entities.entity_count, (have_fields & Field_model) ? props->model : "N/A", props_count);
+static void readFuncAny( const entity_props_t *const props, uint32_t have_fields, int props_count ) {
+	DEBUG("func_any entity=%d model=\"%s\", props_count=%d", g_map_entities.entity_count, (have_fields & Field_model) ? props->model : "N/A", props_count);
 
-	if (g_map_entities.func_walls_count >= MAX_FUNC_WALL_ENTITIES) {
-		ERR("Too many func_wall entities, max supported = %d", MAX_FUNC_WALL_ENTITIES);
+	if (g_map_entities.func_any_count >= MAX_FUNC_ANY_ENTITIES) {
+		ERR("Too many func_any entities, max supported = %d", MAX_FUNC_ANY_ENTITIES);
 		return;
 	}
 
-	xvk_mapent_func_wall_t *const e = g_map_entities.func_walls + g_map_entities.func_walls_count;
+	xvk_mapent_func_any_t *const e = g_map_entities.func_any + g_map_entities.func_any_count;
 
-	*e = (xvk_mapent_func_wall_t){0};
+	*e = (xvk_mapent_func_any_t){0};
 
 	Q_strncpy( e->model, props->model, sizeof( e->model ));
 
@@ -376,10 +376,10 @@ static void readFuncWall( const entity_props_t *const props, uint32_t have_field
 
 	e->entity_index = g_map_entities.entity_count;
 	g_map_entities.refs[g_map_entities.entity_count] = (xvk_mapent_ref_t){
-		.class = FuncWall,
-		.index = g_map_entities.func_walls_count,
+		.class = FuncAny,
+		.index = g_map_entities.func_any_count,
 	};
-	++g_map_entities.func_walls_count;
+	++g_map_entities.func_any_count;
 }
 
 static void addPatchSurface( const entity_props_t *props, uint32_t have_fields ) {
@@ -483,15 +483,67 @@ static void patchLightEntity( const entity_props_t *props, int ent_id, uint32_t 
 	fillLightFromProps(light, props, have_fields, true, ent_id);
 }
 
-static void patchFuncWallEntity( const entity_props_t *props, uint32_t have_fields, int index ) {
+static void patchFuncAnyEntity( const entity_props_t *props, uint32_t have_fields, int index ) {
 	ASSERT(index >= 0);
-	ASSERT(index < g_map_entities.func_walls_count);
-	xvk_mapent_func_wall_t *const fw = g_map_entities.func_walls + index;
+	ASSERT(index < g_map_entities.func_any_count);
+	xvk_mapent_func_any_t *const e = g_map_entities.func_any + index;
 
-	if (have_fields & Field_origin)
-		VectorCopy(props->origin, fw->origin);
+	if (have_fields & Field_origin) {
+		VectorCopy(props->origin, e->origin);
+		e->origin_patched = true;
 
-	DEBUG("Patching ent=%d func_wall=%d %f %f %f", fw->entity_index, index, fw->origin[0], fw->origin[1], fw->origin[2]);
+		DEBUG("Patching ent=%d func_any=%d %f %f %f", e->entity_index, index, e->origin[0], e->origin[1], e->origin[2]);
+	}
+
+	if (have_fields & Field__xvk_map_material) {
+		const char *s = props->_xvk_map_material;
+		while (*s) {
+			while (*s && isspace(*s)) ++s; // skip space
+			const char *from_begin = s;
+			while (*s && !isspace(*s)) ++s; // find first space or end
+			const int from_len = s - from_begin;
+			if (!from_len)
+				break;
+
+			while (*s && isspace(*s)) ++s; // skip space
+			const char *to_begin = s;
+			while (*s && !isspace(*s)) ++s; // find first space or end
+			const int to_len = s - to_begin;
+			if (!to_len)
+				break;
+
+			string from_tex, to_mat;
+			Q_strncpy(from_tex, from_begin, Q_min(sizeof from_tex, from_len + 1));
+			Q_strncpy(to_mat, to_begin, Q_min(sizeof to_mat, to_len + 1));
+
+			const int from_tex_index = XVK_FindTextureNamedLike(from_tex);
+			const r_vk_material_ref_t to_mat_ref = R_VkMaterialGetForName(to_mat);
+
+			DEBUG("Adding mapping from tex \"%s\"(%d) to mat \"%s\"(%d) for entity=%d",
+				from_tex, from_tex_index, to_mat, to_mat_ref.index, e->entity_index);
+
+			if (from_tex_index <= 0) {
+				ERR("When patching entity=%d couldn't find map-from texture \"%s\"", e->entity_index, from_tex);
+				continue;
+			}
+
+			if (to_mat_ref.index <= 0) {
+				ERR("When patching entity=%d couldn't find map-to material \"%s\"", e->entity_index, to_mat);
+				continue;
+			}
+
+			if (e->matmap_count == MAX_MATERIAL_MAPPINGS) {
+				ERR("Cannot map tex \"%s\"(%d) to mat \"%s\"(%d) for entity=%d: too many mappings, "
+						"consider increasing MAX_MATERIAL_MAPPINGS",
+					from_tex, from_tex_index, to_mat, to_mat_ref.index, e->entity_index);
+				continue;
+			}
+
+			e->matmap[e->matmap_count].from_tex = from_tex_index;
+			e->matmap[e->matmap_count].to_mat = to_mat_ref;
+			++e->matmap_count;
+		}
+	}
 }
 
 static void patchEntity( const entity_props_t *props, uint32_t have_fields ) {
@@ -511,8 +563,8 @@ static void patchEntity( const entity_props_t *props, uint32_t have_fields ) {
 			case LightEnvironment:
 				patchLightEntity(props, ei, have_fields, ref->index);
 				break;
-			case FuncWall:
-				patchFuncWallEntity(props, have_fields, ref->index);
+			case FuncAny:
+				patchFuncAnyEntity(props, have_fields, ref->index);
 				break;
 			default:
 				WARN("vk_mapents: trying to patch unsupported entity %d class %d", ei, ref->class);
@@ -593,8 +645,8 @@ static void parseEntities( char *string, qboolean is_patch ) {
 					readWorldspawn( &values );
 					break;
 
-				case FuncWall:
-					readFuncWall( &values, have_fields, props_count );
+				case FuncAny:
+					readFuncAny( &values, have_fields, props_count );
 					break;
 
 				case Unknown:
@@ -735,7 +787,7 @@ void XVK_ParseMapEntities( void ) {
 	g_map_entities.num_lights = 0;
 	g_map_entities.single_environment_index = NoEnvironmentLights;
 	g_map_entities.entity_count = 0;
-	g_map_entities.func_walls_count = 0;
+	g_map_entities.func_any_count = 0;
 	g_map_entities.smoothing.threshold = cosf(DEG2RAD(45.f));
 	g_map_entities.smoothing.excluded_count = 0;
 	for (int i = 0; i < g_map_entities.smoothing.groups_count; ++i)

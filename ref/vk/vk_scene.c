@@ -591,11 +591,11 @@ static void drawEntity( cl_entity_t *ent, int render_mode )
 		case mod_brush:
 			R_RotateForEntity( model, ent );
 
-			// If this is potentially a func_wall model
+			// If this is potentially a func_any model
 			if (ent->model->name[0] == '*') {
-				for (int i = 0; i < g_map_entities.func_walls_count; ++i) {
-					xvk_mapent_func_wall_t *const fw = g_map_entities.func_walls + i;
-					if (Q_strcmp(ent->model->name, fw->model) == 0) {
+				for (int i = 0; i < g_map_entities.func_any_count; ++i) {
+					xvk_mapent_func_any_t *const fw = g_map_entities.func_any + i;
+					if (Q_strcmp(ent->model->name, fw->model) == 0 && fw->origin_patched) {
 						/* DEBUG("ent->index=%d (%s) mapent:%d off=%f %f %f", */
 						/* 		ent->index, ent->model->name, fw->entity_index, */
 						/* 		fw->origin[0], fw->origin[1], fw->origin[2]); */

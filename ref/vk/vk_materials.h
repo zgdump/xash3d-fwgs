@@ -27,3 +27,6 @@ struct model_s;
 void R_VkMaterialsLoadForModel( const struct model_s* mod );
 
 r_vk_material_t R_VkMaterialGetForTexture( int tex_id );
+
+r_vk_material_ref_t R_VkMaterialGetForName( const char *name );
+r_vk_material_t R_VkMaterialGetForRef( r_vk_material_ref_t ref );
