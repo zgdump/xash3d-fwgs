@@ -507,6 +507,11 @@ static void patchFuncAnyEntity( const entity_props_t *props, uint32_t have_field
 		DEBUG("Patching ent=%d func_any=%d %f %f %f", e->entity_index, index, e->origin[0], e->origin[1], e->origin[2]);
 	}
 
+	if (have_fields & Field__xvk_smooth_entire_model) {
+		DEBUG("Patching ent=%d func_any=%d smooth_entire_model =%d", e->entity_index, index, props->_xvk_smooth_entire_model);
+		e->smooth_entire_model = props->_xvk_smooth_entire_model;
+	}
+
 	if (have_fields & Field__xvk_map_material) {
 		const char *s = props->_xvk_map_material;
 		while (*s) {
