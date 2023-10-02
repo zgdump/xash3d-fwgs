@@ -76,6 +76,7 @@ void main() {
 		;
 	rayQueryInitializeEXT(rq, tlas, flags, GEOMETRY_BIT_OPAQUE | GEOMETRY_BIT_ALPHA_TEST | GEOMETRY_BIT_REFRACTIVE, ray.origin, 0., ray.direction, ray.dist);
 	while (rayQueryProceedEXT(rq)) {
+		// FIXME this is a no-op. It doesn't do what I though it did. Should check for SBT index for alpha-test material instead.
 		if (0 != (rayQueryGetRayFlagsEXT(rq) & gl_RayFlagsOpaqueEXT))
 			continue;
 
@@ -104,6 +105,9 @@ void main() {
 		//debug_geometry_index = rayQueryGetIntersectionPrimitiveIndexEXT(rq, true);
 		primaryRayHit(rq, payload);
 		L = rayQueryGetIntersectionTEXT(rq, true);
+	} else {
+		// Draw skybox when nothing is hit
+		payload.emissive.rgb = SRGBtoLINEAR(texture(skybox, ray.direction).rgb);
 	}
 
 	traceSimpleBlending(ray.origin, ray.direction, L, payload.emissive.rgb, payload.base_color_a.rgb);
