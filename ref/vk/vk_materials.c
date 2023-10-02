@@ -361,18 +361,23 @@ r_vk_material_t R_VkMaterialGetForRef( r_vk_material_ref_t ref ) {
 	return g_materials.materials[ref.index];
 }
 
-r_vk_material_t R_VkMaterialGetEx( int tex_id, int rendermode ) {
+qboolean R_VkMaterialGetEx( int tex_id, int rendermode, r_vk_material_t *out_material ) {
 	DEBUG("Getting material for tex_id=%d rendermode=%d", tex_id, rendermode);
 
-	if (rendermode > 0) {
-		ASSERT(rendermode < COUNTOF(g_materials.rendermode));
-		const r_vk_material_per_mode_t* const mode = &g_materials.rendermode[rendermode];
-		for (int i = 0; i < mode->count; ++i) {
-			if (mode->materials[i].tex_id == tex_id)
-				return mode->materials[i].mat;
+	if (rendermode == 0) {
+		WARN("rendermode==0: fallback to regular tex_id=%d", tex_id);
+		*out_material = R_VkMaterialGetForTexture(tex_id);
+		return true;
+	}
+
+	ASSERT(rendermode < COUNTOF(g_materials.rendermode));
+	const r_vk_material_per_mode_t* const mode = &g_materials.rendermode[rendermode];
+	for (int i = 0; i < mode->count; ++i) {
+		if (mode->materials[i].tex_id == tex_id) {
+			*out_material = mode->materials[i].mat;
+			return true;
 		}
 	}
 
-	DEBUG("Fallback to regular tex_id=%d", tex_id);
-	return R_VkMaterialGetForTexture(tex_id);
+	return false;
 }

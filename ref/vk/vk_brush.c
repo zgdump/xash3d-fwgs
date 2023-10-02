@@ -730,16 +730,8 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 	if (bmodel->render_model.num_geometries == 0)
 		return;
 
-	// TransColor means ignore textures and draw just color
-	if (render_mode == kRenderTransColor) {
-		// TODO cache previous render_mode.
-		// TODO also it will break switching render type from TransColor to anyting else -- textures will be stuck at white
-		for (int i = 0; i < bmodel->render_model.num_geometries; ++i) {
-			vk_render_geometry_t *geom = bmodel->render_model.geometries + i;
-			geom->material = R_VkMaterialGetForTexture(tglob.whiteTexture);
-			geom->ye_olde_texture = tglob.whiteTexture;
-		}
-	} else {
+	// Animate textures
+	{
 		APROF_SCOPE_DECLARE_BEGIN(brush_update_textures, "brush: update animated textures");
 		// Update animated textures
 		int updated_textures_count = 0;
@@ -1121,6 +1113,8 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 				return false;
 			}
 
+			model_geometry->ye_olde_texture = orig_tex_id;
+
 			qboolean material_assigned = false;
 			if (entity_patch) {
 				for (int i = 0; i < entity_patch->matmap_count; ++i) {
@@ -1132,8 +1126,13 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 				}
 
 				if (!material_assigned && entity_patch->rendermode > 0) {
-					model_geometry->material = R_VkMaterialGetEx(tex_id, entity_patch->rendermode);
-					material_assigned = true;
+					material_assigned = R_VkMaterialGetEx(tex_id, entity_patch->rendermode, &model_geometry->material);
+					if (!material_assigned && entity_patch->rendermode == kRenderTransColor) {
+						// TransColor means ignore textures and draw just color
+						model_geometry->material = R_VkMaterialGetForTexture(tglob.whiteTexture);
+						model_geometry->ye_olde_texture = tglob.whiteTexture;
+						material_assigned = true;
+					}
 				}
 			}
 
@@ -1145,7 +1144,6 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 			VectorClear(model_geometry->emissive);
 
 			model_geometry->surf_deprecate = surf;
-			model_geometry->ye_olde_texture = orig_tex_id;
 
 			model_geometry->vertex_offset = args.base_vertex_offset;
 			model_geometry->max_vertex = vertex_offset + surf->numedges;
