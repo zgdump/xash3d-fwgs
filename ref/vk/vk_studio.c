@@ -1770,8 +1770,8 @@ static void buildSubmodelMeshGeometry( build_submodel_mesh_t args ) {
 	ASSERT(vertex_offset == num_vertices);
 
 	*args.out_geometry = (vk_render_geometry_t){
-		.texture = args.texture,
-		.material = FBitSet( args.face_flags, STUDIO_NF_CHROME ) ? kXVkMaterialChrome : kXVkMaterialRegular,
+		.material = R_VkMaterialGetForTexture(args.texture),
+		.ye_olde_texture = args.texture,
 
 		.vertex_offset = args.vertices_offset,
 		.max_vertex = num_vertices,
@@ -1781,6 +1781,11 @@ static void buildSubmodelMeshGeometry( build_submodel_mesh_t args ) {
 
 		.emissive = {0, 0, 0},
 	};
+
+	if (!args.out_geometry->material.set && FBitSet( args.face_flags, STUDIO_NF_CHROME )) {
+		// TODO configurable
+		args.out_geometry->material.roughness = tglob.grayTexture;
+	}
 
 	*args.out_vertices_count += num_vertices;
 	*args.out_indices_count += num_indices;
@@ -2299,12 +2304,15 @@ static void R_StudioDrawPoints( void ) {
 		Vector4Set(color, g_studio.blend, g_studio.blend, g_studio.blend, 1.f);
 
 	// TODO r_model_draw_t.transform should be matrix3x4
+	const vk_render_type_e render_type = studioRenderModeToRenderType(RI.currententity->curstate.rendermode);
+	const material_mode_e material_mode = R_VkMaterialModeFromRenderType(render_type);
 	R_RenderModelDraw(&render_submodel->model, (r_model_draw_t){
-		.render_type = studioRenderModeToRenderType(RI.currententity->curstate.rendermode),
+		.render_type = render_type,
+		.material_mode = material_mode,
 		.color = &color,
 		.transform = &g_studio_current.entmodel->transform,
 		.prev_transform = &g_studio_current.entmodel->prev_transform,
-		.textures_override = -1,
+		.material_override = NULL,
 	});
 
 	++g_studio_stats.submodels_total;

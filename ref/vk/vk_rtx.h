@@ -34,6 +34,7 @@ void VK_RayShutdown( void );
 
 struct vk_render_geometry_s;
 struct rt_model_s;
+struct r_vk_material_s;
 
 typedef enum {
 	kBlasBuildStatic, // builds slow for fast trace
@@ -55,7 +56,7 @@ qboolean RT_ModelUpdate(struct rt_model_s *model, const struct vk_render_geometr
 qboolean RT_ModelUpdateMaterials(struct rt_model_s *model, const struct vk_render_geometry_s *geometries, int geometries_count, const int *geom_indices, int geom_indices_count);
 
 typedef struct {
-	int render_type; // TODO material_mode
+	int material_mode;
 	const matrix3x4 *transform, *prev_transform;
 	const vec4_t *color;
 
@@ -63,7 +64,7 @@ typedef struct {
 	int dynamic_polylights_count;
 
 	struct {
-		int textures; // Override kusochki/material textures if > 0
+		const struct r_vk_material_s *material;
 
 		// These are needed in order to recreate kusochki geometry data
 		// TODO remove when material data is split from kusochki

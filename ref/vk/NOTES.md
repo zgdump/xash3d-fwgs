@@ -398,3 +398,192 @@ TODO: can we not have a BLAS/model for each submodel? Can it be per-model instea
 # 2023-07-30
 - ~~R_DrawStudioModel is the main func for drawing studio model. Called from scene code for each studio entity, with everything current (RI and stuff) set up~~
 - `R_StudioDrawModelInternal()` is the main one. It is where it splits into renderer-vs-game rendering functions.
+
+# 2023-09-19 E298
+## SURF_DRAWSKY
+- (context: want to remove kXVkMaterialSky, #474)
+- qrad:
+    - uses textue name "sky" or "SKY" to check `IsSky()`. `IsSky()` surfaces do not get patches and do not participate in radiosity.
+    - uses CONTENTS_SKY node flag to detect whether a ray has hit skybox and can contribute sky light.
+- xash/gl:
+    - CONTENTS_SKY is not used in any meaningful way
+    - sets SURF_DRAWSKY for surfaces with "sky" texture.
+    - uses SURF_DRAWSKY:
+        - to build skychain, and then draw it in Quake mode (the other branch does a bunch of math, which seemingly isn't used for anything at all).
+        - for dynamic lighting: if sky ray has hit sky surface then sky is contributing light
+
+# 2023-09-25 #301
+## Materials format
+Define new material, independently of any existing textures, etc
+This can be .vmat compatible, primext compatbile, etc.
+The important parts:
+- It has a unique name that we can reference it with
+- It has all the fields that we use for our PBR shading model
+- (? Material mode can be specified)
+```
+{
+	"material" "MAT_NAME"
+	"map_base_color" "base.png"
+	"map_normal" "irregular.ktx2"
+	"base_color" "1 .5 0"
+	// ...
+}
+
+{
+	"material" "mirror"
+    "map_base_color" "white"
+    "base_color" "1 1 1"
+    "roughness" "0"
+    "metalness" "1"
+    // ...
+}
+```
+
+Then, we can map existing textures to new materials:
+```
+{
+	"for_texture" "+EXIT"
+    "use" "MAT_NAME"
+}
+```
+
+Or, with more context:
+```
+{
+    "for_model_type" "brush"
+    "for_rendermode" "kRenderTransAlpha"
+    "for_texture" "wood"
+    "use" "mat_glass"
+    "mode" "translucent"
+    "map_base_color" "glass2.ktx"
+}
+
+// ??? meh, see the better _xvk_ example below
+{
+    "for_model_type" "brush"
+    "for_surface_id" "584"
+    "use" "mirror"
+}
+
+// This example: use previously specified material (e.g. via _xvk stuff below)
+// (Depends on applying multiple matching rules, see questions below)
+{
+    "for_model_type" "brush"
+    "for_rendermode" "kRenderTransAlpha"
+    "mode" "translucent"
+    "map_normal" "glass2.ktx"
+}
+
+// We also want this (for maps, not globally ofc), see https://github.com/w23/xash3d-fwgs/issues/526
+{
+    "for_entity_id" "39"
+    "for_texture" "generic028"
+    "use" "generic_metal1"
+}
+
+{
+    "for_entity_id" "39"
+    "for_texture" "generic029"
+    "use" "generic_metal2"
+}
+```
+
+What it does is:
+1. If all `"for_"` fields match, apply values from `"use"` material (in this case `"wood"`)
+2. Additionally, override any extra fields/values with ones specified in this block
+
+As we already have surface-patching ability, can just use that for patching materials directly for brush surfaces:
+```
+// mirror in toilet
+{
+    "_xvk_surface_id" "2057"
+    "_xvk_material" "mirror"
+}
+```
+
+Questions:
+- Should it apply the first found rule that matches a given geometry and stop?
+  Or should it apply updates to the material using all the rules that matched in their specified order? Doing the first rule and stopping is more readable and perofrmant, but also might be verbose in some cases.
+- Should we do "automatic" materials? I.e. if there's no manually specified material for a texture named `"<TEX>"`, then we try to load `"<TEX>_basecolor.ktx"`, `"<TEX>_normalmap.ktx"`, etc automatically.
+
+# 2023-09-26 E302
+Map loading sequence
+```
+[2023:09:26|11:30:31] Couldn't open file overviews/c1a0d.txt. Using default values for overiew mode.
+[2023:09:26|11:30:31] CL_SignonReply: 2
+[2023:09:26|11:30:31] Signon network traffic:  10.380 Kb from server, 349 bytes to server
+[2023:09:26|11:30:31] client connected at 0.07 sec
+[2023:09:26|11:30:31] Error: SDL_GL_SetSwapInterval: No OpenGL context has been made current
+[2023:09:26|11:30:31] vk: Mod_ProcessRenderData(sprites/640_pain.spr, create=1)
+
+[2023:09:26|11:30:43] Loading game from save/autosave01.sav...
+[2023:09:26|11:30:43] Spawn Server: c2a5
+[2023:09:26|11:30:43] vk: Mod_ProcessRenderData(maps/c1a0d.bsp, create=0)
+
+[2023:09:26|11:30:43] Warning: VK FIXME Trying to unload brush model maps/c1a0d.bsp
+[2023:09:26|11:30:43] Error: VK NOT_IMPLEMENTED(x0): RT_KusochkiFree
+[2023:09:26|11:30:43] loading maps/c2a5.bsp
+[2023:09:26|11:30:43] Warning: FS_LoadImage: couldn't load "alpha_sky"
+[2023:09:26|11:30:43] Warning: FS_LoadImage: couldn't load "solid_sky"
+[2023:09:26|11:30:43] lighting: colored
+[2023:09:26|11:30:43] Wad files required to run the map: "halflife.wad; liquids.wad; xeno.wad"
+[2023:09:26|11:30:43] vk: Mod_ProcessRenderData(maps/c2a5.bsp, create=1)
+
+[2023:09:26|11:30:43] Loading game from save/c2a5.HL1...
+[2023:09:26|11:30:43]
+GAME SKILL LEVEL:1
+[2023:09:26|11:30:43] Loading CGraph in GRAPH_VERSION 16 compatibility mode
+[2023:09:26|11:30:43] Loading CLink array in GRAPH_VERSION 16 compatibility mode
+[2023:09:26|11:30:43]
+*Graph Loaded!
+[2023:09:26|11:30:43] **Graph Pointers Set!
+[2023:09:26|11:30:43] loading sprites/flare1.spr
+[2023:09:26|11:30:43] vk: Mod_ProcessRenderData(sprites/flare1.spr, create=1)
+.. more Mod_ProcessRenderData
+.. and only then R_NewMap
+```
+
+# 2023-09-28 E303
+## #526
+Replace textures for specific brush entities.
+For a single texture it might be as easy as:
+```
+{
+	"_xvk_ent_id" "39"
+	"_xvk_texture" "generic028"
+	"_xvk_material" "generic_metal1"
+}
+```
+
+For multiple replacements:
+0. Multiple entries
+```
+{
+	"_xvk_ent_id" "39"
+	"_xvk_texture" "generic028"
+	"_xvk_material" "generic_metal1"
+}
+
+{
+	"_xvk_ent_id" "39"
+	"_xvk_texture" "generic029"
+	"_xvk_material" "generic_metal2"
+}
+```
+
+1. Pairwise
+```
+{
+	"_xvk_ent_id" "39"
+	"_xvk_texture" "generic028 generic029 ..."
+	"_xvk_material" "generic_metal1 generic_metal2 ..."
+}
+```
+
+2. Pair list <-- preferred
+```
+{
+	"_xvk_ent_id" "39"
+	"_xvk_texture_material" "generic028 generic_metal1 generic029 generic_metal2 ... ..."
+}
+```
