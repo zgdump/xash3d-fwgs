@@ -26,9 +26,10 @@ void R_VkMaterialsReload( void );
 struct model_s;
 void R_VkMaterialsLoadForModel( const struct model_s* mod );
 
-r_vk_material_t R_VkMaterialGetForTexture( int tex_id );
-
-qboolean R_VkMaterialGetEx( int tex_id, int rendermode, r_vk_material_t *out_material );
-
 r_vk_material_ref_t R_VkMaterialGetForName( const char *name );
 r_vk_material_t R_VkMaterialGetForRef( r_vk_material_ref_t ref );
+
+r_vk_material_t R_VkMaterialGetForTexture( int tex_id );
+r_vk_material_t R_VkMaterialGetForTextureChrome( int tex_id );
+
+qboolean R_VkMaterialGetEx( int tex_id, int rendermode, r_vk_material_t *out_material );

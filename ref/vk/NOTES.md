@@ -587,3 +587,38 @@ For multiple replacements:
 	"_xvk_texture_material" "generic028 generic_metal1 generic029 generic_metal2 ... ..."
 }
 ```
+
+# 2023-10-02 E305
+## Materials table
+
+### Operations
+- Clean
+- load materials from file
+	- current format (mixes materials and selection rules a bit)
+	- other formats (can only support named materials w/o any selection rules)
+	- inherit/use from previously defined materials
+		- needs index/value by name below
+- Get materials by:
+	- value by tex_id
+	- value by tex_id + rendermode
+	- value by tex_id + chrome
+		- ~~(do we need to specialize "for_chrome"? were there any cases where it would be useful?)~~ It seems not.
+	- index by name (currently works by having a dummy texture with this name; reuses vk_textures hash search)
+	- Lazy: Getting by value performs loading, getting by index does not.
+
+### Data structures overview
+- materials[mat_id] -- indexed by indexes independent of tex_id, referenced externally, requires stable index.
+	- (typical material fields)
+		- possibly lazily loaded
+			- arg `-vknolazymaterials` for development. To immediately recognize missing textues, not until they are requested for the first time.
+			- fallback onto default/error texture on lazy loading errors
+- tex_to_material[tex_id] table (hash table, array, whatever)
+	- state -- {NotChecked, NoReplacement, ReplacementExists}
+		- NotChecked -- means there was no explicit replacement, but we still can check for auto replacement (TEXNAME_roughness.png, etc)
+		- NoReplacement -- there's nothing to replace with, use original texture with default material parameters.
+	- mat_id -- index into materials[] table if there's a replacement
+    - rendermodes-specific overrides (fixed array? too expensive; linked list?)
+        - rendermode
+        - mat_id
+- name_to_material[] -- string "name" to mat_id
+    - hash table of some sorts
