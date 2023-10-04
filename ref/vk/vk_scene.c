@@ -90,6 +90,8 @@ static void loadLights( const model_t *const map ) {
 // Clears all old map data
 static void mapLoadBegin( const model_t *const map ) {
 	VK_EntityDataClear();
+
+	// Depends on VK_EntityDataClear()
 	R_StudioCacheClear();
 	R_GeometryBuffer_MapClear();
 
@@ -122,6 +124,8 @@ static void preloadModels( void ) {
 
 		DEBUG( "  %d: name=%s, type=%d, submodels=%d, nodes=%d, surfaces=%d, nummodelsurfaces=%d", i, m->name, m->type, m->numsubmodels, m->numnodes, m->numsurfaces, m->nummodelsurfaces);
 
+		R_VkMaterialsLoadForModel(m);
+
 		switch (m->type) {
 			case mod_brush:
 				if (!VK_BrushModelLoad(m))
@@ -149,7 +153,7 @@ static void loadMap(const model_t* const map) {
 	XVK_ParseMapEntities();
 
 	// Load PBR materials (depends on wadlist from parsed map entities)
-	XVK_ReloadMaterials();
+	R_VkMaterialsReload();
 
 	// Parse patch data
 	// Depends on loaded materials. Must preceed loading brush models.
@@ -238,6 +242,11 @@ void R_NewMap( void ) {
 	const qboolean is_save_load = !!gEngine.pfnGetModelByIndex( 1 )->cache.data;
 
 	INFO( "R_NewMap, loading save: %d", is_save_load );
+
+	// New map causes entites to be reallocated regardless of whether it was save-load.
+	// This realloc invalidates all previous entity data and pointers.
+	// Make sure that EntityData doesn't accidentally reference old pointers.
+	VK_EntityDataClear();
 
 	// Skip clearing already loaded data if the map hasn't changed.
 	if (is_save_load)
@@ -585,11 +594,11 @@ static void drawEntity( cl_entity_t *ent, int render_mode )
 		case mod_brush:
 			R_RotateForEntity( model, ent );
 
-			// If this is potentially a func_wall model
+			// If this is potentially a func_any model
 			if (ent->model->name[0] == '*') {
-				for (int i = 0; i < g_map_entities.func_walls_count; ++i) {
-					xvk_mapent_func_wall_t *const fw = g_map_entities.func_walls + i;
-					if (Q_strcmp(ent->model->name, fw->model) == 0) {
+				for (int i = 0; i < g_map_entities.func_any_count; ++i) {
+					xvk_mapent_func_any_t *const fw = g_map_entities.func_any + i;
+					if (Q_strcmp(ent->model->name, fw->model) == 0 && fw->origin_patched) {
 						/* DEBUG("ent->index=%d (%s) mapent:%d off=%f %f %f", */
 						/* 		ent->index, ent->model->name, fw->entity_index, */
 						/* 		fw->origin[0], fw->origin[1], fw->origin[2]); */

@@ -11,7 +11,7 @@
 
 #define MAX_INCLUDE_DEPTH 4
 
-static xvk_material_t k_default_material = {
+static r_vk_material_t k_default_material = {
 		.tex_base_color = -1,
 		.tex_metalness = 0,
 		.tex_roughness = 0,
@@ -25,8 +25,19 @@ static xvk_material_t k_default_material = {
 		.set = false,
 };
 
+#define MAX_RENDERMODE_MATERIALS 32
+typedef struct {
+		struct {
+			int tex_id;
+			r_vk_material_t mat;
+		} materials[MAX_RENDERMODE_MATERIALS];
+		int count;
+} r_vk_material_per_mode_t;
+
 static struct {
-	xvk_material_t materials[MAX_TEXTURES];
+	r_vk_material_t materials[MAX_TEXTURES];
+
+	r_vk_material_per_mode_t rendermode[kRenderTransAdd+1];
 } g_materials;
 
 static struct {
@@ -70,7 +81,7 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 	g_stats.material_file_read_duration_ns +=  aprof_time_now_ns() - load_file_begin_ns;
 
 	char *pos = (char*)data;
-	xvk_material_t current_material = k_default_material;
+	r_vk_material_t current_material = k_default_material;
 	int current_material_index = -1;
 	qboolean force_reload = false;
 	qboolean create = false;
@@ -78,7 +89,9 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 
 	string basecolor_map, normal_map, metal_map, roughness_map;
 
-	DEBUG("Loading materials from %s", filename);
+	int rendermode = 0;
+
+	DEBUG("Loading materials from %s (exists=%d)", filename, data != 0);
 
 	if ( !data )
 		return;
@@ -105,6 +118,7 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 			create = false;
 			metalness_set = false;
 			basecolor_map[0] = normal_map[0] = metal_map[0] = roughness_map[0] = '\0';
+			rendermode = 0;
 			continue;
 		}
 
@@ -146,8 +160,28 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 			DEBUG("Creating%s material for texture %s(%d)", create?" new":"",
 				findTexture(current_material_index)->name, current_material_index);
 
-			g_materials.materials[current_material_index] = current_material;
-			g_materials.materials[current_material_index].set = true;
+			// Assign rendermode-specific materials
+			if (rendermode > 0) {
+				r_vk_material_per_mode_t* const rm = g_materials.rendermode + rendermode;
+				if (rm->count == COUNTOF(rm->materials)) {
+					ERR("Too many rendermode/tex_id mappings");
+					continue;
+				}
+
+				DEBUG("Adding material %d for rendermode %d", current_material_index, rendermode);
+
+				// TODO proper texid-vs-material-index
+				rm->materials[rm->count].tex_id = current_material_index;
+				rm->materials[rm->count].mat = current_material;
+				rm->materials[rm->count].mat.set = true;
+				rm->count++;
+			} else {
+				DEBUG("Creating%s material for texture %s(%d)", create?" new":"",
+					findTexture(current_material_index)->name, current_material_index);
+
+				g_materials.materials[current_material_index] = current_material;
+				g_materials.materials[current_material_index].set = true;
+			}
 			continue;
 		}
 
@@ -193,6 +227,11 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 				sscanf(value, "%f", &current_material.normal_scale);
 			} else if (Q_stricmp(key, "base_color") == 0) {
 				sscanf(value, "%f %f %f %f", &current_material.base_color[0], &current_material.base_color[1], &current_material.base_color[2], &current_material.base_color[3]);
+			} else if (Q_stricmp(key, "for_rendermode") == 0) {
+				rendermode = R_VkRenderModeFromString(value);
+				if (rendermode < 0)
+					ERR("Invalid rendermode \"%s\"", value);
+				ASSERT(rendermode < COUNTOF(g_materials.rendermode[0].materials));
 			} else {
 				ERR("Unknown material key \"%s\" on line `%.*s`", key, (int)(pos - line_begin), line_begin);
 				continue;
@@ -215,15 +254,30 @@ static void loadMaterialsFromFileF( const char *fmt, ... ) {
 	loadMaterialsFromFile( buffer, MAX_INCLUDE_DEPTH );
 }
 
-void XVK_ReloadMaterials( void ) {
+static int findFilenameExtension(const char *s, int len) {
+	if (len < 0)
+		len = Q_strlen(s);
+
+	for (int i = len - 1; i >= 0; --i) {
+		if (s[i] == '.')
+			return i;
+	}
+
+	return len;
+}
+
+void R_VkMaterialsReload( void ) {
 	memset(&g_stats, 0, sizeof(g_stats));
 	const uint64_t begin_time_ns = aprof_time_now_ns();
+
+	for (int i = 0; i < COUNTOF(g_materials.rendermode); ++i)
+		g_materials.rendermode[i].count = 0;
 
 	k_default_material.tex_metalness = tglob.blackTexture;
 	k_default_material.tex_roughness = tglob.whiteTexture;
 
 	for (int i = 0; i < MAX_TEXTURES; ++i) {
-		xvk_material_t *const mat = g_materials.materials + i;
+		r_vk_material_t *const mat = g_materials.materials + i;
 		const vk_texture_t *const tex = findTexture( i );
 		*mat = k_default_material;
 
@@ -232,21 +286,32 @@ void XVK_ReloadMaterials( void ) {
 	}
 
 	loadMaterialsFromFile( "pbr/materials.mat", MAX_INCLUDE_DEPTH );
-	loadMaterialsFromFile( "pbr/models/models.mat", MAX_INCLUDE_DEPTH );
-	loadMaterialsFromFile( "pbr/sprites/sprites.mat", MAX_INCLUDE_DEPTH );
 
 	{
-		const char *wad = g_map_entities.wadlist;
-		for (; *wad;) {
-			const char *const wad_end = Q_strchr(wad, ';');
-			loadMaterialsFromFileF("pbr/%.*s/%.*s.mat", wad_end - wad, wad, wad_end - wad, wad);
+		for(const char *wad = g_map_entities.wadlist; *wad;) {
+			const char *wad_end = wad;
+			const char *ext = NULL;
+			while (*wad_end && *wad_end != ';') {
+				if (*wad_end == '.')
+					ext = wad_end;
+				++wad_end;
+			}
+
+			const int full_length = wad_end - wad;
+
+			// Length without extension
+			const int short_length = ext ? ext - wad : full_length;
+
+			loadMaterialsFromFileF("pbr/%.*s/%.*s.mat", full_length, wad, short_length, wad);
 			wad = wad_end + 1;
 		}
 	}
 
 	{
 		const model_t *map = gEngine.pfnGetModelByIndex( 1 );
-		loadMaterialsFromFileF("pbr/%s/%s.mat", map->name, COM_FileWithoutPath(map->name));
+		const char *filename = COM_FileWithoutPath(map->name);
+		const int no_ext_len = findFilenameExtension(filename, -1);
+		loadMaterialsFromFileF("pbr/%s/%.*s.mat", map->name, no_ext_len, filename);
 	}
 
 	// Print out statistics
@@ -264,14 +329,55 @@ void XVK_ReloadMaterials( void ) {
 	}
 }
 
-xvk_material_t* XVK_GetMaterialForTextureIndex( int tex_index ) {
-	xvk_material_t *mat = NULL;
+void R_VkMaterialsLoadForModel( const struct model_s* mod ) {
+	// Brush models are loaded separately
+	if (mod->type == mod_brush)
+		return;
+
+	const char *filename = COM_FileWithoutPath(mod->name);
+	const int no_ext_len = findFilenameExtension(filename, -1);
+	loadMaterialsFromFileF("pbr/%s/%.*s.mat", mod->name, no_ext_len, filename);
+}
+
+r_vk_material_t R_VkMaterialGetForTexture( int tex_index ) {
 	ASSERT(tex_index >= 0);
 	ASSERT(tex_index < MAX_TEXTURES);
 
-	mat = g_materials.materials + tex_index;
-	if (mat->base_color >= 0)
-		return mat;
+	return g_materials.materials[tex_index];
+}
 
-	return NULL;
+r_vk_material_ref_t R_VkMaterialGetForName( const char *name ) {
+	// TODO separate material table
+	// For now it depends on 1-to-1 mapping between materials and textures
+	 return (r_vk_material_ref_t){.index = VK_FindTexture(name)};
+}
+
+r_vk_material_t R_VkMaterialGetForRef( r_vk_material_ref_t ref ) {
+	// TODO separate material table
+	// For now it depends on 1-to-1 mapping between materials and textures
+	ASSERT(ref.index >= 0);
+	ASSERT(ref.index < MAX_TEXTURES);
+
+	return g_materials.materials[ref.index];
+}
+
+qboolean R_VkMaterialGetEx( int tex_id, int rendermode, r_vk_material_t *out_material ) {
+	DEBUG("Getting material for tex_id=%d rendermode=%d", tex_id, rendermode);
+
+	if (rendermode == 0) {
+		WARN("rendermode==0: fallback to regular tex_id=%d", tex_id);
+		*out_material = R_VkMaterialGetForTexture(tex_id);
+		return true;
+	}
+
+	ASSERT(rendermode < COUNTOF(g_materials.rendermode));
+	const r_vk_material_per_mode_t* const mode = &g_materials.rendermode[rendermode];
+	for (int i = 0; i < mode->count; ++i) {
+		if (mode->materials[i].tex_id == tex_id) {
+			*out_material = mode->materials[i].mat;
+			return true;
+		}
+	}
+
+	return false;
 }

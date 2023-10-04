@@ -6,6 +6,7 @@
 #include "vk_scene.h"
 #include "r_speeds.h"
 #include "vk_math.h"
+#include "vk_logs.h"
 
 #include "sprite.h"
 #include "xash3d_mathlib.h"
@@ -16,6 +17,7 @@
 #include <memory.h>
 
 #define MODULE_NAME "sprite"
+#define LOG_MODULE LogModule_Sprite
 
 // it's a Valve default value for LoadMapSprite (probably must be power of two)
 #define MAPSPRITE_SIZE	128
@@ -103,8 +105,8 @@ static qboolean createQuadModel(void) {
 		.element_count = 6,
 		.index_offset = g_sprite.quad.geom.indices.unit_offset,
 
-		.material = kXVkMaterialRegular,
-		.texture = tglob.defaultTexture,
+		.material = R_VkMaterialGetForTexture(tglob.defaultTexture),
+		.ye_olde_texture = tglob.defaultTexture,
 		.emissive = {1,1,1},
 	};
 
@@ -404,6 +406,7 @@ Loading a bitmap image as sprite with multiple frames
 as pieces of input image
 ====================
 */
+// IS NOT CALLED BY ANYTHING?!
 void Mod_LoadMapSprite( model_t *mod, const void *buffer, size_t size, qboolean *loaded )
 {
 	byte		*src, *dst;
@@ -416,6 +419,8 @@ void Mod_LoadMapSprite( model_t *mod, const void *buffer, size_t size, qboolean 
 	mspriteframe_t	*pspriteframe;
 	msprite_t		*psprite;
 	SpriteLoadContext ctx = {0};
+
+	DEBUG("%s(%s, %p, %d, %d)", __FUNCTION__, mod->name, buffer, (int)size, (int)*loaded);
 
 	if( loaded ) *loaded = false;
 	Q_snprintf( texname, sizeof( texname ), "#%s", mod->name );
@@ -757,7 +762,7 @@ static qboolean spriteIsOccluded( const cl_entity_t *e, vec3_t origin, float *ps
 		if( v[1] < g_camera.viewport[1] || v[1] > g_camera.viewport[1] + g_camera.viewport[3] )
 			return true; // do scissor
 
-		*blend = R_SpriteGlowBlend( origin, e->curstate.rendermode, e->curstate.renderfx, pscale );
+		*blend *= R_SpriteGlowBlend( origin, e->curstate.rendermode, e->curstate.renderfx, pscale );
 
 		if( *blend <= 0.01f )
 			return true; // faded
@@ -785,25 +790,29 @@ static vk_render_type_e spriteRenderModeToRenderType( int render_mode ) {
 	return kVkRenderTypeSolid;
 }
 
-static void R_DrawSpriteQuad( const char *debug_name, mspriteframe_t *frame, vec3_t org, vec3_t v_right, vec3_t v_up, float scale, int texture, int render_mode, const vec4_t color ) {
+static void R_DrawSpriteQuad( const char *debug_name, const mspriteframe_t *frame, const vec3_t org, const vec3_t v_right, const vec3_t v_up, float scale, int texture, int render_mode, const vec4_t color ) {
 	vec3_t v_normal;
 	CrossProduct(v_right, v_up, v_normal);
 
 	// TODO can frame->right/left and frame->up/down be asymmetric?
-	VectorScale(v_right, frame->right * scale, v_right);
-	VectorScale(v_up, frame->up * scale, v_up);
+	vec3_t right, up;
+	VectorScale(v_right, frame->right * scale, right);
+	VectorScale(v_up, frame->up * scale, up);
 
 	matrix4x4 transform;
-	Matrix4x4_CreateFromVectors(transform, v_right, v_up, v_normal, org);
+	Matrix4x4_CreateFromVectors(transform, right, up, v_normal, org);
 
 	const vk_render_type_e render_type = spriteRenderModeToRenderType(render_mode);
+	const r_vk_material_t material_override = R_VkMaterialGetForTexture(texture);
+	const material_mode_e material_mode = R_VkMaterialModeFromRenderType(render_type);
 
 	R_RenderModelDraw(&g_sprite.quad.model, (r_model_draw_t){
 		.render_type = render_type,
+		.material_mode = material_mode,
 		.color = (const vec4_t*)color,
 		.transform = &transform,
 		.prev_transform = &transform,
-		.textures_override = texture,
+		.material_override = &material_override,
 	});
 }
 
@@ -842,10 +851,6 @@ static qboolean R_SpriteAllowLerping( const cl_entity_t *e, msprite_t *psprite )
 	if( !r_sprite_lerping->value )
 		return false;
 	*/
-
-	// FIXME: lerping means drawing 2 coplanar quads blended on top of each other, which is not something ray tracing can do easily
-	if (vk_core.rtx)
-		return false;
 
 	if( psprite->numframes <= 1 )
 		return false;

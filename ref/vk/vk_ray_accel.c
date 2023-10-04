@@ -80,7 +80,7 @@ static VkAccelerationStructureKHR createAccel(const char *name, VkAccelerationSt
 	const alo_block_t block = aloPoolAllocate(g_accel.accels_buffer_alloc, size, /*TODO why? align=*/256);
 
 	if (block.offset == ALO_ALLOC_FAILED) {
-		ERR("Failed to allocated %u bytes for blas \"%s\"", size, name);
+		ERR("Failed to allocate %u bytes for blas \"%s\"", size, name);
 		return VK_NULL_HANDLE;
 	}
 

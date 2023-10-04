@@ -525,8 +525,11 @@ void VK_Render_FIXME_Barrier( VkCommandBuffer cmdbuf ) {
 	}
 }
 
-void VK_RenderEnd( VkCommandBuffer cmdbuf )
+void VK_RenderEnd( VkCommandBuffer cmdbuf, qboolean draw )
 {
+	if (!draw)
+		return;
+
 	// TODO we can sort collected draw commands for more efficient and correct rendering
 	// that requires adding info about distance to camera for correct order-dependent blending
 
@@ -720,7 +723,7 @@ static void submitToTraditionalRender( trad_submit_t args ) {
 
 	for (int i = 0; i < args.geometries_count; ++i) {
 		const vk_render_geometry_t *geom = args.geometries + i;
-		const int tex = args.textures_override > 0 ? args.textures_override : geom->texture;
+		const int tex = args.textures_override > 0 ? args.textures_override : geom->ye_olde_texture;
 		const qboolean split = current_texture != tex
 			|| vertex_offset != geom->vertex_offset
 			|| (index_offset + element_count) != geom->index_offset;
@@ -778,14 +781,14 @@ void R_RenderModelDraw(const vk_render_model_t *model, r_model_draw_t args) {
 	if (g_render_state.current_frame_is_ray_traced) {
 		ASSERT(model->rt_model);
 		RT_FrameAddModel(model->rt_model, (rt_frame_add_model_t){
-			.render_type = args.render_type,
+			.material_mode = args.material_mode,
 			.transform = (const matrix3x4*)args.transform,
 			.prev_transform = (const matrix3x4*)args.prev_transform,
 			.color = args.color,
 			.dynamic_polylights = model->dynamic_polylights,
 			.dynamic_polylights_count = model->dynamic_polylights_count,
 			.override = {
-				.textures = args.textures_override,
+				.material = args.material_override,
 				.geoms = model->geometries,
 				.geoms_count = model->num_geometries,
 			},
@@ -799,7 +802,7 @@ void R_RenderModelDraw(const vk_render_model_t *model, r_model_draw_t args) {
 			.transform = args.transform,
 			.color = args.color,
 			.render_type = args.render_type,
-			.textures_override = args.textures_override
+			.textures_override = args.material_override ? args.material_override->tex_base_color : -1,
 		});
 	}
 }
@@ -817,8 +820,8 @@ void R_RenderDrawOnce(r_draw_once_t args) {
 	R_GeometryBufferUnlock( &buffer );
 
 	const vk_render_geometry_t geometry = {
-		.texture = args.texture,
-		.material = kXVkMaterialRegular,
+		.material = args.material,
+		.ye_olde_texture = args.ye_olde_texture,
 
 		.max_vertex = args.vertices_count,
 		.vertex_offset = buffer.vertices.unit_offset,

@@ -275,9 +275,12 @@ static void brushComputeWaterPolys( compute_water_polys_t args ) {
 
 	// Render
 	const int tex_id = args.warp->texinfo->texture->gl_texturenum;
+	const r_vk_material_t material = R_VkMaterialGetForTexture(tex_id);
 	*args.dst_geometry = (vk_render_geometry_t){
-		.texture = tex_id, // FIXME assert >= 0
-		.material = kXVkMaterialRegular,
+		.material = material,
+
+		.ye_olde_texture = tex_id,
+
 		.surf_deprecate = args.warp,
 
 		.max_vertex = vertices,
@@ -531,6 +534,33 @@ static qboolean brushCreateWaterModel(const model_t *mod, vk_brush_model_t *bmod
 	return true;
 }
 
+material_mode_e brushMaterialModeForRenderType(vk_render_type_e render_type) {
+	switch (render_type) {
+		case kVkRenderTypeSolid:
+			return kMaterialMode_Opaque;
+			break;
+		case kVkRenderType_A_1mA_RW: // blend: scr*a + dst*(1-a), depth: RW
+		case kVkRenderType_A_1mA_R:  // blend: scr*a + dst*(1-a), depth test
+			return kMaterialMode_Translucent;
+			break;
+		case kVkRenderType_A_1:   // blend: scr*a + dst, no depth test or write; sprite:kRenderGlow only
+			return kMaterialMode_BlendGlow;
+			break;
+		case kVkRenderType_A_1_R: // blend: scr*a + dst, depth test
+		case kVkRenderType_1_1_R: // blend: scr + dst, depth test
+			return kMaterialMode_BlendAdd;
+			break;
+		case kVkRenderType_AT: // no blend, depth RW, alpha test
+			return kMaterialMode_AlphaTest;
+			break;
+
+		default:
+			gEngine.Host_Error("Unexpected render type %d\n", render_type);
+	}
+
+	return kMaterialMode_Opaque;
+}
+
 static void brushDrawWater(vk_brush_model_t *bmodel, const cl_entity_t *ent, int render_type, const vec4_t color, const matrix4x4 transform) {
 	APROF_SCOPE_DECLARE_BEGIN(brush_draw_water, __FUNCTION__);
 	ASSERT(bmodel->water.surfaces_count > 0);
@@ -540,8 +570,10 @@ static void brushDrawWater(vk_brush_model_t *bmodel, const cl_entity_t *ent, int
 		ERR("Failed to update brush model \"%s\" water", bmodel->render_model.debug_name);
 	}
 
+	const material_mode_e material_mode = brushMaterialModeForRenderType(render_type);
 	R_RenderModelDraw(&bmodel->water.render_model, (r_model_draw_t){
 		.render_type = render_type,
+		.material_mode = material_mode,
 		.color = (const vec4_t*)color,
 		.transform = (const matrix4x4*)transform,
 		.prev_transform = &bmodel->prev_transform,
@@ -698,15 +730,8 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 	if (bmodel->render_model.num_geometries == 0)
 		return;
 
-	// TransColor means ignore textures and draw just color
-	if (render_mode == kRenderTransColor) {
-		// TODO cache previous render_mode.
-		// TODO also it will break switching render type from TransColor to anyting else -- textures will be stuck at white
-		for (int i = 0; i < bmodel->render_model.num_geometries; ++i) {
-			vk_render_geometry_t *geom = bmodel->render_model.geometries + i;
-			geom->texture = tglob.whiteTexture;
-		}
-	} else {
+	// Animate textures
+	{
 		APROF_SCOPE_DECLARE_BEGIN(brush_update_textures, "brush: update animated textures");
 		// Update animated textures
 		int updated_textures_count = 0;
@@ -719,10 +744,11 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 			// Optionally patch by texture_s pointer and run animations
 			const struct texture_s *texture_override = patch_surface ? patch_surface->tex : NULL;
 			const texture_t *t = R_TextureAnimation(ent, geom->surf_deprecate, texture_override);
-			const int new_texture = t->gl_texturenum;
+			const int new_tex_id = t->gl_texturenum;
 
-			if (new_texture >= 0 && new_texture != geom->texture) {
-				geom->texture = t->gl_texturenum;
+			if (new_tex_id >= 0 && new_tex_id != geom->ye_olde_texture) {
+				geom->ye_olde_texture = new_tex_id;
+				geom->material = R_VkMaterialGetForTexture(new_tex_id);
 				if (updated_textures_count < MAX_ANIMATED_TEXTURES) {
 					g_brush.updated_textures[updated_textures_count++] = bmodel->animated_indexes[i];
 				}
@@ -732,7 +758,7 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 			// Add them as dynamic lights for now. It would probably be better if they were static lights (for worldmodel),
 			// but there's no easy way to do it for now.
 			vec3_t *emissive = &bmodel->render_model.geometries[geom_index].emissive;
-			if (RT_GetEmissiveForTexture(*emissive, geom->texture)) {
+			if (RT_GetEmissiveForTexture(*emissive, new_tex_id)) {
 				rt_light_add_polygon_t polylight = loadPolyLight(mod, surface_index, geom->surf_deprecate, *emissive);
 				polylight.dynamic = true;
 				polylight.transform_row = (const matrix3x4*)&transform;
@@ -746,8 +772,10 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 		APROF_SCOPE_END(brush_update_textures);
 	}
 
+	const material_mode_e material_mode = brushMaterialModeForRenderType(render_type);
 	R_RenderModelDraw(&bmodel->render_model, (r_model_draw_t){
 		.render_type = render_type,
+		.material_mode = material_mode,
 		.color = &color,
 		.transform = &transform,
 		.prev_transform = &bmodel->prev_transform,
@@ -1017,6 +1045,17 @@ static qboolean getSmoothedNormalFor(const model_t* mod, int vertex_index, int s
 	return true;
 }
 
+static const xvk_mapent_func_any_t *getModelFuncAnyPatch( const model_t *const mod ) {
+	for (int i = 0; i < g_map_entities.func_any_count; ++i) {
+		const xvk_mapent_func_any_t *const fw = g_map_entities.func_any + i;
+		if (Q_strcmp(mod->name, fw->model) == 0) {
+			return fw;
+		}
+	}
+
+	return NULL;
+}
+
 static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 	int vertex_offset = 0;
 	int num_geometries = 0;
@@ -1027,6 +1066,8 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 	int index_offset = args.base_index_offset;
 
 	connectVertices(args.mod);
+
+	const xvk_mapent_func_any_t *const entity_patch = getModelFuncAnyPatch(args.mod);
 
 	// Load sorted by gl_texturenum
 	// TODO this does not make that much sense in vulkan (can sort later)
@@ -1039,12 +1080,12 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 			const float sample_size = gEngine.Mod_SampleSizeForFace( surf );
 			int index_count = 0;
 			vec3_t tangent;
-			int tex_id = surf->texinfo->texture->gl_texturenum;
-			const xvk_patch_surface_t *const psurf = R_VkPatchGetSurface(surface_index);
-
-			if (t != tex_id)
+			const int orig_tex_id = surf->texinfo->texture->gl_texturenum;
+			if (t != orig_tex_id)
 				continue;
 
+			int tex_id = orig_tex_id;
+			const xvk_patch_surface_t *const psurf = R_VkPatchGetSurface(surface_index);
 			if (psurf && psurf->tex_id >= 0)
 				tex_id = psurf->tex_id;
 
@@ -1072,20 +1113,47 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 				return false;
 			}
 
+			model_geometry->ye_olde_texture = orig_tex_id;
+
+			qboolean material_assigned = false;
+			if (entity_patch) {
+				for (int i = 0; i < entity_patch->matmap_count; ++i) {
+					if (entity_patch->matmap[i].from_tex == tex_id) {
+						model_geometry->material = R_VkMaterialGetForTexture(entity_patch->matmap[i].to_mat.index);
+						material_assigned = true;
+						break;
+					}
+				}
+
+				if (!material_assigned && entity_patch->rendermode > 0) {
+					material_assigned = R_VkMaterialGetEx(tex_id, entity_patch->rendermode, &model_geometry->material);
+					if (!material_assigned && entity_patch->rendermode == kRenderTransColor) {
+						// TransColor means ignore textures and draw just color
+						model_geometry->material = R_VkMaterialGetForTexture(tglob.whiteTexture);
+						model_geometry->ye_olde_texture = tglob.whiteTexture;
+						material_assigned = true;
+					}
+				}
+			}
+
+			if (!material_assigned) {
+				model_geometry->material = R_VkMaterialGetForTexture(tex_id);
+				material_assigned = true;
+			}
+
 			VectorClear(model_geometry->emissive);
 
 			model_geometry->surf_deprecate = surf;
-			model_geometry->texture = tex_id;
 
 			model_geometry->vertex_offset = args.base_vertex_offset;
 			model_geometry->max_vertex = vertex_offset + surf->numedges;
 
 			model_geometry->index_offset = index_offset;
 
-			if(type == BrushSurface_Sky) {
-				model_geometry->material = kXVkMaterialSky;
+			if ( type == BrushSurface_Sky ) {
+#define TEX_BASE_SKYBOX 0xffffffffu // FIXME ray_interop.h
+				model_geometry->material.tex_base_color = TEX_BASE_SKYBOX;
 			} else {
-				model_geometry->material = kXVkMaterialRegular;
 				ASSERT(!FBitSet( surf->flags, SURF_DRAWTILED ));
 				VK_CreateSurfaceLightmap( surf, args.mod );
 			}
@@ -1194,17 +1262,6 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 	ASSERT(args.sizes.num_surfaces == num_geometries);
 	ASSERT(args.sizes.animated_count == animated_count);
 	return true;
-}
-
-static const xvk_mapent_func_wall_t *getModelFuncWallPatch( const model_t *const mod ) {
-	for (int i = 0; i < g_map_entities.func_walls_count; ++i) {
-		const xvk_mapent_func_wall_t *const fw = g_map_entities.func_walls + i;
-		if (Q_strcmp(mod->name, fw->model) == 0) {
-			return fw;
-		}
-	}
-
-	return NULL;
 }
 
 static qboolean createRenderModel( const model_t *mod, vk_brush_model_t *bmodel, const model_sizes_t sizes ) {
@@ -1376,8 +1433,8 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 	vk_brush_model_t *const bmodel = mod->cache.data;
 	ASSERT(bmodel);
 
-	const xvk_mapent_func_wall_t *func_wall = getModelFuncWallPatch(mod);
-	const qboolean is_static = is_worldmodel || func_wall;
+	const xvk_mapent_func_any_t *func_any = getModelFuncAnyPatch(mod);
+	const qboolean is_static = is_worldmodel || (func_any && func_any->origin_patched);
 
 	typedef struct {
 		int model_surface_index;
@@ -1449,14 +1506,14 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 
 		rt_light_add_polygon_t polylight = loadPolyLight(mod, s->surface_index, s->surf, s->emissive);
 
-		// func_wall surfaces do not really belong to BSP+PVS system, so they can't be used
+		// func_any surfaces do not really belong to BSP+PVS system, so they can't be used
 		// for lights visibility calculation directly.
-		if (func_wall) {
+		if (func_any && func_any->origin_patched) {
 			// TODO this is not really dynamic, but this flag signals using MovingSurface visibility calc
 			polylight.dynamic = true;
 			matrix3x4 m;
 			Matrix3x4_LoadIdentity(m);
-			Matrix3x4_SetOrigin(m, func_wall->origin[0], func_wall->origin[1], func_wall->origin[2]);
+			Matrix3x4_SetOrigin(m, func_any->origin[0], func_any->origin[1], func_any->origin[2]);
 			polylight.transform_row = &m;
 		}
 
