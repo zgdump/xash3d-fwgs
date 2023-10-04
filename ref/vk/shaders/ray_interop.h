@@ -173,7 +173,8 @@ struct UniformBuffer {
 	mat4 prev_inv_proj, prev_inv_view;
 	float ray_cone_width;
 	uint random_seed;
-	PAD(2)
+	uint frame_counter;
+	PAD(1)
 };
 
 #undef PAD
