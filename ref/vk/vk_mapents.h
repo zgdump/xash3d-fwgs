@@ -36,6 +36,7 @@
 	X(24, int_array_t, _xvk_smoothing_group, IntArray) \
 	X(25, string, _xvk_map_material, String) \
 	X(26, int, rendermode, Int) \
+	X(27, int, _xvk_smooth_entire_model, Int) \
 
 /* NOTE: not used
 	X(23, int, renderamt, Int) \
@@ -115,6 +116,8 @@ typedef struct {
 	} matmap[MAX_MATERIAL_MAPPINGS];
 
 	int rendermode;
+
+	qboolean smooth_entire_model;
 
 	/* NOTE: not used. Might be needed for #118 in the future.
 	int renderamt, renderfx;

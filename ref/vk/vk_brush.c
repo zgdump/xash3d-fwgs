@@ -850,7 +850,7 @@ static int getSurfaceTexture(const msurface_t *surf, int surface_index) {
 	return surf->texinfo->texture->gl_texturenum;
 }
 
-static qboolean shouldSmoothLinkSurfaces(const model_t* mod, int surf1, int surf2) {
+static qboolean shouldSmoothLinkSurfaces(const model_t* mod, qboolean smooth_entire_model, int surf1, int surf2) {
 	//return Q_min(surf1, surf2) == 741 && Q_max(surf1, surf2) == 743;
 
 	// Filter explicit exclusion
@@ -862,6 +862,9 @@ static qboolean shouldSmoothLinkSurfaces(const model_t* mod, int surf1, int surf
 			|| (cand1 == surf2 && cand2 == surf1))
 			return false;
 	}
+
+	if (smooth_entire_model)
+		return true;
 
 	for (int i = 0; i < g_map_entities.smoothing.groups_count; ++i) {
 		const xvk_smoothing_group_t *g = g_map_entities.smoothing.groups + i;
@@ -949,7 +952,7 @@ static void linkSmoothSurfaces(const model_t* mod, int surf1, int surf2, int ver
 	v->surfs[Q_max(i1, i2)].link = Q_min(i1, i2);
 }
 
-static void connectVertices( const model_t *mod ) {
+static void connectVertices( const model_t *mod, qboolean smooth_entire_model ) {
 	if (mod->numedges > g_brush.conn.edges_capacity) {
 		if (g_brush.conn.edges)
 			Mem_Free(g_brush.conn.edges);
@@ -983,7 +986,7 @@ static void connectVertices( const model_t *mod ) {
 				cedge->first_surface = surface_index;
 			} else {
 				const medge_t *edge = mod->edges + iedge;
-				if (shouldSmoothLinkSurfaces(mod, cedge->first_surface, surface_index)) {
+				if (shouldSmoothLinkSurfaces(mod, smooth_entire_model, cedge->first_surface, surface_index)) {
 					linkSmoothSurfaces(mod, cedge->first_surface, surface_index, edge->v[0]);
 					linkSmoothSurfaces(mod, cedge->first_surface, surface_index, edge->v[1]);
 				}
@@ -1065,9 +1068,9 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 	uint16_t *p_ind = args.out_indices;
 	int index_offset = args.base_index_offset;
 
-	connectVertices(args.mod);
-
 	const xvk_mapent_func_any_t *const entity_patch = getModelFuncAnyPatch(args.mod);
+	connectVertices(args.mod, entity_patch ? entity_patch->smooth_entire_model : false);
+
 
 	// Load sorted by gl_texturenum
 	// TODO this does not make that much sense in vulkan (can sort later)
