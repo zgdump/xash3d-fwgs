@@ -8,6 +8,7 @@
 #include "vk_mapents.h" // wadlist
 #include "vk_combuf.h"
 #include "vk_logs.h"
+#include "r_speeds.h"
 
 #include "xash3d_mathlib.h"
 #include "crtlib.h"
@@ -19,18 +20,29 @@
 #include <math.h>
 
 #define LOG_MODULE LogModule_Textures
+#define MODULE_NAME "textures"
 
 #define TEXTURES_HASH_SIZE	(MAX_TEXTURES >> 2)
 
 static vk_texture_t vk_textures[MAX_TEXTURES];
 static vk_texture_t* vk_texturesHashTable[TEXTURES_HASH_SIZE];
-static uint	vk_numTextures;
+static uint vk_numTextures;
 vk_textures_global_t tglob = {0};
+
+static struct {
+	struct {
+		int count;
+		int size_total;
+	} stats;
+} g_textures;
 
 static void VK_CreateInternalTextures(void);
 static VkSampler pickSamplerForFlags( texFlags_t flags );
 
 void initTextures( void ) {
+	R_SPEEDS_METRIC(g_textures.stats.count, "count", kSpeedsMetricCount);
+	R_SPEEDS_METRIC(g_textures.stats.size_total, "size_total", kSpeedsMetricBytes);
+
 	memset( vk_textures, 0, sizeof( vk_textures ));
 	memset( vk_texturesHashTable, 0, sizeof( vk_texturesHashTable ));
 	vk_numTextures = 0;
@@ -84,6 +96,8 @@ void destroyTextures( void )
 	unloadSkybox();
 
 	XVK_ImageDestroy(&tglob.cubemap_placeholder.vk.image);
+	g_textures.stats.size_total -= tglob.cubemap_placeholder.total_size;
+	g_textures.stats.count--;
 	memset(&tglob.cubemap_placeholder, 0, sizeof(tglob.cubemap_placeholder));
 
 	for (int i = 0; i < ARRAYSIZE(tglob.samplers); ++i) {
@@ -540,6 +554,8 @@ static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers,
 	const VkFormat format = VK_GetFormat(layers[0]->type);
 	int mipCount = 0;
 
+	tex->total_size = 0;
+
 	// TODO non-rbga textures
 
 	for (int i = 0; i < num_layers; ++i) {
@@ -665,6 +681,8 @@ static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers,
 				ASSERT(staging.ptr);
 				memcpy(staging.ptr, buf, mip_size);
 
+				tex->total_size += mip_size;
+
 				// Build mip in place for the next mip level
 				if ( mip < mipCount - 1 )
 				{
@@ -729,6 +747,8 @@ static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers,
 		tex->vk.descriptor = VK_NULL_HANDLE;
 	}
 
+	g_textures.stats.size_total += tex->total_size;
+	g_textures.stats.count++;
 	return true;
 }
 
@@ -889,6 +909,8 @@ void VK_FreeTexture( unsigned int texnum ) {
 	XVK_CHECK(vkDeviceWaitIdle(vk_core.device));
 
 	XVK_ImageDestroy(&tex->vk.image);
+	g_textures.stats.size_total -= tex->total_size;
+	g_textures.stats.count--;
 	memset(tex, 0, sizeof(*tex));
 
 	tglob.dii_all_textures[texnum] = (VkDescriptorImageInfo){
@@ -955,6 +977,8 @@ int XVK_TextureLookupF( const char *fmt, ...) {
 static void unloadSkybox( void ) {
 	if (tglob.skybox_cube.vk.image.image) {
 		XVK_ImageDestroy(&tglob.skybox_cube.vk.image);
+		g_textures.stats.size_total -= tglob.skybox_cube.total_size;
+		g_textures.stats.count--;
 		memset(&tglob.skybox_cube, 0, sizeof(tglob.skybox_cube));
 	}
 

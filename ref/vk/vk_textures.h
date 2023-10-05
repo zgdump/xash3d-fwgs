@@ -22,6 +22,8 @@ typedef struct vk_texture_s
 
 	uint hashValue;
 	struct vk_texture_s	*nextHash;
+
+	int total_size;
 } vk_texture_t;
 
 #define MAX_LIGHTMAPS	256
