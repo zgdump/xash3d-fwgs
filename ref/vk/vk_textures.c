@@ -782,18 +782,292 @@ const byte*	VK_TextureData( unsigned int texnum )
 	return NULL;
 }
 
+
+#define KTX_IDENTIFIER_SIZE 12
+static const char k_ktx2_identifier[KTX_IDENTIFIER_SIZE] = {
+  '\xAB', 'K', 'T', 'X', ' ', '2', '0', '\xBB', '\r', '\n', '\x1A', '\n'
+};
+
+typedef struct {
+	uint32_t vkFormat;
+	uint32_t typeSize;
+	uint32_t pixelWidth;
+	uint32_t pixelHeight;
+	uint32_t pixelDepth;
+	uint32_t layerCount;
+	uint32_t faceCount;
+	uint32_t levelCount;
+	uint32_t supercompressionScheme;
+} ktx_header_t;
+
+typedef struct {
+	uint32_t dfdByteOffset;
+	uint32_t dfdByteLength;
+	uint32_t kvdByteOffset;
+	uint32_t kvdByteLength;
+	uint64_t sgdByteOffset;
+	uint64_t sgdByteLength;
+} ktx_index_t;
+
+typedef struct {
+	uint64_t byteOffset;
+	uint64_t byteLength;
+	uint64_t uncompressedByteLength;
+} ktx_level_t;
+
+static int loadKtx2( const char *name ) {
+	fs_offset_t size = 0;
+	byte *data = gEngine.fsapi->LoadFile( name, &size, false );
+
+	DEBUG("Loading KTX2 file \"%s\", exists=%d", name, data != 0);
+
+	if ( !data )
+		return 0;
+
+	const ktx_header_t* header;
+	const ktx_index_t* index;
+	const ktx_level_t* levels;
+	vk_texture_t* tex = NULL;
+
+	if (size < (sizeof k_ktx2_identifier + sizeof(ktx_header_t) + sizeof(ktx_index_t) + sizeof(ktx_level_t))) {
+		ERR("KTX2 file \"%s\" seems truncated", name);
+		goto fail;
+	}
+
+	if (memcmp(data, k_ktx2_identifier, sizeof k_ktx2_identifier) != 0) {
+		ERR("KTX2 file \"%s\" identifier is invalid", name);
+		goto fail;
+	}
+
+	header = (const ktx_header_t*)(data + sizeof k_ktx2_identifier);
+	index = (const ktx_index_t*)(data + sizeof k_ktx2_identifier + sizeof(ktx_header_t));
+	levels = (const ktx_level_t*)(data + sizeof k_ktx2_identifier + sizeof(ktx_header_t) + sizeof(ktx_index_t));
+
+	DEBUG("KTX2 file \"%s\"", name);
+	DEBUG(" header:");
+#define X(field) DEBUG("  " # field "=%d", header->field);
+	DEBUG("  vkFormat = %s(%d)", R_VkFormatName(header->vkFormat), header->vkFormat);
+	X(typeSize)
+	X(pixelWidth)
+	X(pixelHeight)
+	X(pixelDepth)
+	X(layerCount)
+	X(faceCount)
+	X(levelCount)
+	X(supercompressionScheme)
+#undef X
+	DEBUG(" index:");
+#define X(field, fmt) DEBUG("  " # field "=" fmt, index->field);
+	X(dfdByteOffset, "%u")
+	X(dfdByteLength, "%u")
+	X(kvdByteOffset, "%u")
+	X(kvdByteLength, "%u")
+	X(sgdByteOffset, "%zu")
+	X(sgdByteLength, "%zu")
+#undef X
+
+	for (int mip = 0; mip < header->levelCount; ++mip) {
+		const ktx_level_t* const level = levels + mip;
+		DEBUG(" level[%d]:", mip);
+		DEBUG("  byteOffset=%zu", level->byteOffset);
+		DEBUG("  byteLength=%zu", level->byteLength);
+		DEBUG("  uncompressedByteLength=%zu", level->uncompressedByteLength);
+	}
+
+	{
+		const uint32_t flags = 0;
+		tex = Common_AllocTexture( name, flags );
+		if (!tex)
+			goto fail;
+	}
+
+	// FIXME check that format is supported
+	// FIXME layers == 0
+	// FIXME has_alpha
+	// FIXME no supercompressionScheme
+
+	// 1. Create image
+	{
+		const xvk_image_create_t create = {
+			.debug_name = tex->name,
+			.width = header->pixelWidth,
+			.height = header->pixelHeight,
+			.mips = header->levelCount,
+			.layers = 1, // TODO or 6 for cubemap; header->faceCount
+			.format = header->vkFormat,
+			.tiling = VK_IMAGE_TILING_OPTIMAL,
+			.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+			.has_alpha = false, // FIXME
+			.is_cubemap = false,
+		};
+		tex->vk.image = XVK_ImageCreate(&create);
+	}
+
+	// 2. Prep cmdbuf, barrier, etc
+	{
+		VkImageMemoryBarrier image_barrier = {
+			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+			.image = tex->vk.image.image,
+			.srcAccessMask = 0,
+			.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+			.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+			.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			.subresourceRange = (VkImageSubresourceRange) {
+				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+				.baseMipLevel = 0,
+				.levelCount = header->levelCount,
+				.baseArrayLayer = 0,
+				.layerCount = 1, // TODO cubemap
+			}
+		};
+
+		{
+			// cmdbuf may become invalidated in locks in the loops below
+			const VkCommandBuffer cmdbuf = R_VkStagingGetCommandBuffer();
+			vkCmdPipelineBarrier(cmdbuf,
+					VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+					VK_PIPELINE_STAGE_TRANSFER_BIT,
+					0, 0, NULL, 0, NULL, 1, &image_barrier);
+		}
+
+	// 3. For levels
+	// 3.1 upload
+		for (int mip = 0; mip < header->levelCount; ++mip) {
+			const ktx_level_t* const level = levels + mip;
+			const uint32_t width = header->pixelWidth >> mip;
+			const uint32_t height = header->pixelHeight >> mip;
+			const size_t mip_size = level->byteLength;
+			const uint32_t texel_block_size = 4; // TODO compressed might be different
+			const void* const image_data = data + level->byteOffset;
+			const vk_staging_image_args_t staging_args = {
+				.image = tex->vk.image.image,
+				.region = (VkBufferImageCopy) {
+					.bufferOffset = 0,
+					.bufferRowLength = 0,
+					.bufferImageHeight = 0,
+					.imageSubresource = (VkImageSubresourceLayers){
+						.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+						.mipLevel = mip,
+						.baseArrayLayer = 0, // TODO cubemap
+						.layerCount = 1,
+					},
+					.imageExtent = (VkExtent3D){
+						.width = width,
+						.height = height,
+						.depth = 1,
+					},
+				},
+				.layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+				.size = mip_size,
+				.alignment = texel_block_size,
+			};
+
+			{
+				const vk_staging_region_t staging = R_VkStagingLockForImage(staging_args);
+				ASSERT(staging.ptr);
+				memcpy(staging.ptr, image_data, mip_size);
+				tex->total_size += mip_size;
+				R_VkStagingUnlock(staging.handle);
+			}
+		} // for levels
+
+		{
+			// TODO Don't change layout here. Alternatively:
+			// I. Attach layout metadata to the image, and request its change next time it is used.
+			// II. Build-in layout transfer to staging commit and do it there on commit.
+			const VkCommandBuffer cmdbuf = R_VkStagingCommit()->cmdbuf;
+
+			// 	5.2 image:layout:DST -> image:layout:SAMPLED
+			// 		5.2.1 transitionToLayout(DST -> SHADER_READ_ONLY)
+			image_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+			image_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+			image_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+			image_barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+			image_barrier.subresourceRange = (VkImageSubresourceRange){
+				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+				.baseMipLevel = 0,
+				.levelCount = header->levelCount,
+				.baseArrayLayer = 0,
+				.layerCount = 1, // TODO cubemap
+			};
+			vkCmdPipelineBarrier(cmdbuf,
+					VK_PIPELINE_STAGE_TRANSFER_BIT,
+					VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, // FIXME incorrect, we also use them in compute and potentially ray tracing shaders
+					0, 0, NULL, 0, NULL, 1, &image_barrier);
+		}
+	}
+
+	// TODO how should we approach this:
+	// - per-texture desc sets can be inconvenient if texture is used in different incompatible contexts
+	// - update descriptor sets in batch?
+	if (vk_desc.next_free != MAX_TEXTURES) {
+		const int num_layers = 1; // TODO cubemap
+		const int index = tex - vk_textures;
+		VkDescriptorImageInfo dii_tmp;
+		// FIXME handle cubemaps properly w/o this garbage. they should be the same as regular textures.
+		VkDescriptorImageInfo *const dii_tex = (num_layers == 1) ? tglob.dii_all_textures + index : &dii_tmp;
+		*dii_tex = (VkDescriptorImageInfo){
+			.imageView = tex->vk.image.view,
+			.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+			.sampler = pickSamplerForFlags( tex->flags ),
+		};
+		const VkWriteDescriptorSet wds[] = { {
+			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			.dstBinding = 0,
+			.dstArrayElement = 0,
+			.descriptorCount = 1,
+			.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+			.pImageInfo = dii_tex,
+			.dstSet = tex->vk.descriptor = vk_desc.sets[vk_desc.next_free++],
+		}};
+		vkUpdateDescriptorSets(vk_core.device, ARRAYSIZE(wds), wds, 0, NULL);
+	}
+	else
+	{
+		tex->vk.descriptor = VK_NULL_HANDLE;
+	}
+
+	g_textures.stats.size_total += tex->total_size;
+	g_textures.stats.count++;
+
+	tex->width = header->pixelWidth;
+	tex->height = header->pixelHeight;
+
+	goto finalize;
+
+fail:
+	if (tex)
+		memset( tex, 0, sizeof( vk_texture_t ));
+
+finalize:
+	Mem_Free( data );
+	return (tex - vk_textures);
+}
+
+static int loadTextureUsingEngine( const char *name, const byte *buf, size_t size, int flags );
+
 int	VK_LoadTexture( const char *name, const byte *buf, size_t size, int flags )
 {
-	vk_texture_t	*tex;
-	rgbdata_t		*pic;
-	uint		picFlags = 0;
-
 	if( !Common_CheckTexName( name ))
 		return 0;
 
 	// see if already loaded
-	if(( tex = Common_TextureForName( name )))
+	vk_texture_t *tex = Common_TextureForName( name );
+	if( tex )
 		return (tex - vk_textures);
+
+	{
+		const char *ext = Q_strrchr(name, '.');
+		if (Q_strcmp(ext, ".ktx2") == 0) {
+			return loadKtx2(name);
+		}
+	}
+
+	return loadTextureUsingEngine(name, buf, size, flags);
+}
+
+static int loadTextureUsingEngine( const char *name, const byte *buf, size_t size, int flags ) {
+	uint picFlags = 0;
 
 	if( FBitSet( flags, TF_NOFLIP_TGA ))
 		SetBits( picFlags, IL_DONTFLIP_TGA );
@@ -804,11 +1078,11 @@ int	VK_LoadTexture( const char *name, const byte *buf, size_t size, int flags )
 	// set some image flags
 	gEngine.Image_SetForceFlags( picFlags );
 
-	pic = gEngine.FS_LoadImage( name, buf, size );
+	rgbdata_t *const pic = gEngine.FS_LoadImage( name, buf, size );
 	if( !pic ) return 0; // couldn't loading image
 
 	// allocate the new one
-	tex = Common_AllocTexture( name, flags );
+	vk_texture_t* const tex = Common_AllocTexture( name, flags );
 
 	// upload texture
 	VK_ProcessImage( tex, pic );
@@ -829,7 +1103,7 @@ int	VK_LoadTexture( const char *name, const byte *buf, size_t size, int flags )
 	return tex - vk_textures;
 }
 
-int	XVK_LoadTextureReplace( const char *name, const byte *buf, size_t size, int flags ) {
+int XVK_LoadTextureReplace( const char *name, const byte *buf, size_t size, int flags ) {
 	vk_texture_t	*tex;
 	if( !Common_CheckTexName( name ))
 		return 0;
