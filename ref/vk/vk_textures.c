@@ -857,21 +857,21 @@ static int loadKtx2( const char *name ) {
 	X(supercompressionScheme)
 #undef X
 	DEBUG(" index:");
-#define X(field, fmt) DEBUG("  " # field "=" fmt, index->field);
-	X(dfdByteOffset, "%u")
-	X(dfdByteLength, "%u")
-	X(kvdByteOffset, "%u")
-	X(kvdByteLength, "%u")
-	X(sgdByteOffset, "%zu")
-	X(sgdByteLength, "%zu")
+#define X(field) DEBUG("  " # field "=%llu", (unsigned long long)index->field);
+	X(dfdByteOffset)
+	X(dfdByteLength)
+	X(kvdByteOffset)
+	X(kvdByteLength)
+	X(sgdByteOffset)
+	X(sgdByteLength)
 #undef X
 
 	for (int mip = 0; mip < header->levelCount; ++mip) {
 		const ktx_level_t* const level = levels + mip;
 		DEBUG(" level[%d]:", mip);
-		DEBUG("  byteOffset=%zu", level->byteOffset);
-		DEBUG("  byteLength=%zu", level->byteLength);
-		DEBUG("  uncompressedByteLength=%zu", level->uncompressedByteLength);
+		DEBUG("  byteOffset=%llu", (unsigned long long)level->byteOffset);
+		DEBUG("  byteLength=%llu", (unsigned long long)level->byteLength);
+		DEBUG("  uncompressedByteLength=%llu", (unsigned long long)level->uncompressedByteLength);
 	}
 
 	{
