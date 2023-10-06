@@ -547,7 +547,7 @@ int GAME_EXPORT Cmd_Argc( void )
 Cmd_Argv
 ============
 */
-const char *Cmd_Argv( int arg )
+const char *GAME_EXPORT Cmd_Argv( int arg )
 {
 	if((uint)arg >= cmd_argc )
 		return "";
@@ -559,7 +559,7 @@ const char *Cmd_Argv( int arg )
 Cmd_Args
 ============
 */
-const char *Cmd_Args( void )
+const char *GAME_EXPORT Cmd_Args( void )
 {
 	return cmd_args;
 }
@@ -996,7 +996,7 @@ static void Cmd_ExecuteStringWithPrivilegeCheck( const char *text, qboolean isPr
 	cmd_condlevel = 0;
 
 	// cvar value substitution
-	if( CVAR_TO_BOOL( cmd_scripting ) && isPrivileged )
+	if( cmd_scripting.value && isPrivileged )
 	{
 		while( *text )
 		{
@@ -1357,7 +1357,7 @@ inserts escape sequences
 void Cmd_Escape( char *newCommand, const char *oldCommand, int len )
 {
 	int c;
-	int scripting = CVAR_TO_BOOL( cmd_scripting );
+	int scripting = cmd_scripting.value;
 
 	while( (c = *oldCommand++) && len > 1 )
 	{
