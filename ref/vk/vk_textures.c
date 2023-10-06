@@ -274,7 +274,7 @@ static void VK_ProcessImage( vk_texture_t *tex, rgbdata_t *pic )
 	}
 }
 
-static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers, int num_layers, qboolean cubemap);
+static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers, int num_layers, qboolean cubemap, colorspace_hint_e colorspace_hint);
 
 static void VK_CreateInternalTextures( void )
 {
@@ -350,14 +350,17 @@ static void VK_CreateInternalTextures( void )
 		sides[4] = pic;
 		sides[5] = pic;
 
-		uploadTexture( &tglob.cubemap_placeholder, sides, 6, true );
+		uploadTexture( &tglob.cubemap_placeholder, sides, 6, true, kColorspaceGamma );
 	}
 }
 
-static VkFormat VK_GetFormat(pixformat_t format) {
+static VkFormat VK_GetFormat(pixformat_t format, colorspace_hint_e colorspace_hint ) {
 	switch(format)
 	{
-		case PF_RGBA_32: return VK_FORMAT_R8G8B8A8_UNORM;
+		case PF_RGBA_32:
+			return (colorspace_hint == kColorspaceLinear)
+				? VK_FORMAT_R8G8B8A8_UNORM
+				: VK_FORMAT_R8G8B8A8_SRGB;
 		default:
 			WARN("FIXME unsupported pixformat_t %d", format);
 			return VK_FORMAT_UNDEFINED;
@@ -550,8 +553,8 @@ static VkSampler pickSamplerForFlags( texFlags_t flags ) {
 	return tglob.default_sampler_fixme;
 }
 
-static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers, int num_layers, qboolean cubemap) {
-	const VkFormat format = VK_GetFormat(layers[0]->type);
+static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers, int num_layers, qboolean cubemap, colorspace_hint_e colorspace_hint) {
+	const VkFormat format = VK_GetFormat(layers[0]->type, colorspace_hint);
 	int mipCount = 0;
 
 	tex->total_size = 0;
@@ -1044,29 +1047,7 @@ finalize:
 	return (tex - vk_textures);
 }
 
-static int loadTextureUsingEngine( const char *name, const byte *buf, size_t size, int flags );
-
-int	VK_LoadTexture( const char *name, const byte *buf, size_t size, int flags )
-{
-	if( !Common_CheckTexName( name ))
-		return 0;
-
-	// see if already loaded
-	vk_texture_t *tex = Common_TextureForName( name );
-	if( tex )
-		return (tex - vk_textures);
-
-	{
-		const char *ext = Q_strrchr(name, '.');
-		if (Q_strcmp(ext, ".ktx2") == 0) {
-			return loadKtx2(name);
-		}
-	}
-
-	return loadTextureUsingEngine(name, buf, size, flags);
-}
-
-static int loadTextureUsingEngine( const char *name, const byte *buf, size_t size, int flags ) {
+static int loadTextureUsingEngine( const char *name, const byte *buf, size_t size, int flags, colorspace_hint_e colorspace_hint ) {
 	uint picFlags = 0;
 
 	if( FBitSet( flags, TF_NOFLIP_TGA ))
@@ -1087,7 +1068,7 @@ static int loadTextureUsingEngine( const char *name, const byte *buf, size_t siz
 	// upload texture
 	VK_ProcessImage( tex, pic );
 
-	if( !uploadTexture( tex, &pic, 1, false ))
+	if( !uploadTexture( tex, &pic, 1, false, colorspace_hint ))
 	{
 		memset( tex, 0, sizeof( vk_texture_t ));
 		gEngine.FS_FreeImage( pic ); // release source texture
@@ -1103,17 +1084,43 @@ static int loadTextureUsingEngine( const char *name, const byte *buf, size_t siz
 	return tex - vk_textures;
 }
 
-int XVK_LoadTextureReplace( const char *name, const byte *buf, size_t size, int flags ) {
-	vk_texture_t	*tex;
+static int loadTextureInternal( const char *name, const byte *buf, size_t size, int flags, colorspace_hint_e colorspace_hint ) {
 	if( !Common_CheckTexName( name ))
 		return 0;
 
-	// free if already loaded
-	if(( tex = Common_TextureForName( name ))) {
-		VK_FreeTexture( tex - vk_textures );
+	// see if already loaded
+	vk_texture_t *tex = Common_TextureForName( name );
+	if( tex )
+		return (tex - vk_textures);
+
+	{
+		const char *ext = Q_strrchr(name, '.');
+		if (Q_strcmp(ext, ".ktx2") == 0) {
+			return loadKtx2(name);
+		}
 	}
 
-	return VK_LoadTexture( name, buf, size, flags );
+	return loadTextureUsingEngine(name, buf, size, flags, colorspace_hint);
+}
+
+int VK_LoadTextureExternal( const char *name, const byte *buf, size_t size, int flags ) {
+	return loadTextureInternal(name, buf, size, flags, kColorspaceGamma);
+}
+
+int R_VkLoadTexture( const char *filename, colorspace_hint_e colorspace, qboolean force_reload) {
+	vk_texture_t	*tex;
+	if( !Common_CheckTexName( filename ))
+		return 0;
+
+	if (force_reload) {
+		// free if already loaded
+		// TODO consider leaving intact if loading failed
+		if(( tex = Common_TextureForName( filename ))) {
+			VK_FreeTexture( tex - vk_textures );
+		}
+	}
+
+	return loadTextureInternal( filename, NULL, 0, 0, colorspace );
 }
 
 int	VK_CreateTexture( const char *name, int width, int height, const void *buffer, texFlags_t flags )
@@ -1222,7 +1229,7 @@ static int loadTextureFromBuffers( const char *name, rgbdata_t *const *const pic
 	for (int i = 0; i < pic_count; ++i)
 		VK_ProcessImage( tex, pic[i] );
 
-	if( !uploadTexture( tex, pic, pic_count, false ))
+	if( !uploadTexture( tex, pic, pic_count, false, kColorspaceGamma ))
 	{
 		memset( tex, 0, sizeof( vk_texture_t ));
 		return 0;
@@ -1348,7 +1355,7 @@ static qboolean loadSkybox( const char *prefix, int style ) {
 		goto cleanup;
 
 	Q_strncpy( tglob.skybox_cube.name, prefix, sizeof( tglob.skybox_cube.name ));
-	success = uploadTexture(&tglob.skybox_cube, sides, 6, true);
+	success = uploadTexture(&tglob.skybox_cube, sides, 6, true, kColorspaceGamma);
 
 cleanup:
 	for (int j = 0; j < i; ++j)

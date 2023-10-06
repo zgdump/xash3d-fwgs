@@ -30,7 +30,7 @@ void main() {
 	const Kusok kusok = getKusok(geom.kusok_index);
 
 	if (kusok.material.tex_base_color == TEX_BASE_SKYBOX) {
-		payload.emissive.rgb = SRGBtoLINEAR(texture(skybox, gl_WorldRayDirectionEXT).rgb);
+		payload.emissive.rgb = texture(skybox, gl_WorldRayDirectionEXT).rgb;
 		return;
 	} else {
 		const vec4 color = getModelHeader(gl_InstanceID).color * kusok.material.base_color;
@@ -55,7 +55,7 @@ void main() {
 #if 1
 	// Real correct emissive color
 	//payload.emissive.rgb = kusok.emissive;
-	payload.emissive.rgb = clamp(kusok.emissive / (1.0/3.0) / 25, 0, 1.5) * SRGBtoLINEAR(payload.base_color_a.rgb);
+	payload.emissive.rgb = clamp(kusok.emissive / (1.0/3.0) / 25, 0, 1.5) * payload.base_color_a.rgb;
 #else
 	// Fake texture color
 	if (any(greaterThan(kusok.emissive, vec3(0.))))

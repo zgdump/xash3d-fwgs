@@ -75,9 +75,9 @@ static struct {
 	uint64_t texture_load_duration_ns;
 } g_stats;
 
-static int loadTexture( const char *filename, qboolean force_reload ) {
+static int loadTexture( const char *filename, qboolean force_reload, colorspace_hint_e colorspace ) {
 	const uint64_t load_begin_ns = aprof_time_now_ns();
-	const int tex_id = force_reload ? XVK_LoadTextureReplace( filename, NULL, 0, 0 ) : VK_LoadTexture( filename, NULL, 0, 0 );
+	const int tex_id = R_VkLoadTexture( filename, colorspace, force_reload);
 	DEBUG("Loaded texture %s => %d", filename, tex_id);
 	g_stats.texture_loads++;
 	g_stats.texture_load_duration_ns += aprof_time_now_ns() - load_begin_ns;
@@ -206,11 +206,11 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 				continue;
 			}
 
-#define LOAD_TEXTURE_FOR(name, field) do { \
+#define LOAD_TEXTURE_FOR(name, field, colorspace) do { \
 			if (name[0] != '\0') { \
 				char texture_path[256]; \
 				MAKE_PATH(texture_path, name); \
-				const int tex_id = loadTexture(texture_path, force_reload); \
+				const int tex_id = loadTexture(texture_path, force_reload, colorspace); \
 				if (tex_id < 0) { \
 					ERR("Failed to load texture \"%s\" for "#name"", name); \
 				} else { \
@@ -218,10 +218,10 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 				} \
 			}} while(0)
 
-			LOAD_TEXTURE_FOR(basecolor_map, tex_base_color);
-			LOAD_TEXTURE_FOR(normal_map, tex_normalmap);
-			LOAD_TEXTURE_FOR(metal_map, tex_metalness);
-			LOAD_TEXTURE_FOR(roughness_map, tex_roughness);
+			LOAD_TEXTURE_FOR(basecolor_map, tex_base_color, kColorspaceGamma);
+			LOAD_TEXTURE_FOR(normal_map, tex_normalmap, kColorspaceLinear);
+			LOAD_TEXTURE_FOR(metal_map, tex_metalness, kColorspaceLinear);
+			LOAD_TEXTURE_FOR(roughness_map, tex_roughness, kColorspaceLinear);
 
 			// If there's no explicit basecolor_map value, use the "for" target texture
 			if (current_material.tex_base_color == -1)

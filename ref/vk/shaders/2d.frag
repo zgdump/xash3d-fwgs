@@ -1,4 +1,5 @@
 #version 450
+#include "color_spaces.glsl"
 
 layout(set=0,binding=0) uniform sampler2D tex;
 
@@ -8,5 +9,5 @@ layout(location=1) in vec4 vColor;
 layout(location = 0) out vec4 outColor;
 
 void main() {
-	outColor = texture(tex, vUv) * vColor;
+	outColor = LINEARtoSRGB(texture(tex, vUv)) * vColor;
 }
