@@ -2051,7 +2051,7 @@ static void Mod_LoadTextureData( dbspmodel_t *bmod, int textureIndex )
 	// 2. Internal from map
 
 	// Try WAD texture (force while r_wadtextures is 1)
-	if(( r_wadtextures->value && bmod->wadlist.count > 0 ) || mipTex->offsets[0] <= 0 )
+	if(( r_wadtextures.value && bmod->wadlist.count > 0 ) || mipTex->offsets[0] <= 0 )
 	{
 		char texpath[MAX_VA_STRING];
 		int wadIndex = Mod_FindTextureInWadList( &bmod->wadlist, mipTex->name, texpath, sizeof( texpath ));
@@ -3174,7 +3174,7 @@ Mod_CheckLump
 check lump for existing
 ==================
 */
-int Mod_CheckLump( const char *filename, const int lump, int *lumpsize )
+int GAME_EXPORT Mod_CheckLump( const char *filename, const int lump, int *lumpsize )
 {
 	file_t		*f = FS_Open( filename, "rb", false );
 	byte		buffer[sizeof( dheader_t ) + sizeof( dextrahdr_t )];
@@ -3233,7 +3233,7 @@ Mod_ReadLump
 reading random lump by user request
 ==================
 */
-int Mod_ReadLump( const char *filename, const int lump, void **lumpdata, int *lumpsize )
+int GAME_EXPORT Mod_ReadLump( const char *filename, const int lump, void **lumpdata, int *lumpsize )
 {
 	file_t		*f = FS_Open( filename, "rb", false );
 	byte		buffer[sizeof( dheader_t ) + sizeof( dextrahdr_t )];
@@ -3315,7 +3315,7 @@ writing lump by user request
 only empty lumps is allows
 ==================
 */
-int Mod_SaveLump( const char *filename, const int lump, void *lumpdata, int lumpsize )
+int GAME_EXPORT Mod_SaveLump( const char *filename, const int lump, void *lumpdata, int lumpsize )
 {
 	byte		buffer[sizeof( dheader_t ) + sizeof( dextrahdr_t )];
 	size_t		prefetch_size = sizeof( buffer );
