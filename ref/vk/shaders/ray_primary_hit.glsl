@@ -20,7 +20,7 @@ vec4 sampleTexture(uint tex_index, vec2 uv, vec4 uv_lods) {
 #endif
 }
 
-void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
+void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload, int test_value) {
 	Geometry geom = readHitGeometry(rq, ubo.ubo.ray_cone_width, rayQueryGetIntersectionBarycentricsEXT(rq, true));
 	const float hitT = rayQueryGetIntersectionTEXT(rq, true);  //gl_HitTEXT;
 	const vec3 rayDirection = rayQueryGetWorldRayDirectionEXT(rq); //gl_WorldRayDirectionEXT
@@ -99,7 +99,18 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 
 	const int model_index = rayQueryGetIntersectionInstanceIdEXT(rq, true);
 	const ModelHeader model = getModelHeader(model_index);
-	const vec4 color = model.color * SRGBtoLINEAR(kusok.material.base_color); // FIXME why is material.base_color in gamma space?
+
+//#define TEST_COLORS_GAMMA
+#ifdef TEST_COLORS_GAMMA
+	// FIXME:
+	// - should material.base_color (which we control) be linear or sRGB?
+	// - is model.color linear or sRGB? It's a value from the engine, which implies sRGB. Can we convert it once in the native code?
+	const vec4 color = test_value == 0
+		? SRGBtoLINEAR(model.color) * kusok.material.base_color
+		: model.color * kusok.material.base_color;
+#else
+	const vec4 color = SRGBtoLINEAR(model.color) * kusok.material.base_color;
+#endif
 
 	payload.base_color_a *= color;
 	payload.emissive.rgb *= color.rgb;

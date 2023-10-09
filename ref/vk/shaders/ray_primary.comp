@@ -103,7 +103,7 @@ void main() {
 	if (rayQueryGetIntersectionTypeEXT(rq, true) == gl_RayQueryCommittedIntersectionTriangleEXT) {
 		//debug_geometry_index = rayQueryGetIntersectionGeometryIndexEXT(rq, true);
 		//debug_geometry_index = rayQueryGetIntersectionPrimitiveIndexEXT(rq, true);
-		primaryRayHit(rq, payload);
+		primaryRayHit(rq, payload, (pix.x < res.x / 2) ? 0 : 1);
 		L = rayQueryGetIntersectionTEXT(rq, true);
 	} else {
 		// Draw skybox when nothing is hit
