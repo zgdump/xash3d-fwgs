@@ -390,6 +390,7 @@ void RT_DynamicModelShutdown(void) {
 }
 
 void RT_DynamicModelProcessFrame(void) {
+	APROF_SCOPE_DECLARE_BEGIN(process, __FUNCTION__);
 	for (int i = 0; i < MATERIAL_MODE_COUNT; ++i) {
 		rt_dynamic_t *const dyn = g_dyn.groups + i;
 		if (!dyn->geometries_count)
@@ -427,6 +428,7 @@ void RT_DynamicModelProcessFrame(void) {
 tail:
 		dyn->geometries_count = 0;
 	}
+	APROF_SCOPE_END(process);
 }
 
 void RT_FrameAddOnce( rt_frame_add_once_t args ) {

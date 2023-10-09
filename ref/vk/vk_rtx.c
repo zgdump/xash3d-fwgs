@@ -19,7 +19,7 @@
 #include "vk_logs.h"
 
 #include "alolcator.h"
-
+#include "profiler.h"
 
 #include "eiface.h"
 #include "xash3d_mathlib.h"
@@ -170,6 +170,7 @@ typedef struct {
 } perform_tracing_args_t;
 
 static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* args) {
+	APROF_SCOPE_DECLARE_BEGIN(perform, __FUNCTION__);
 	const VkCommandBuffer cmdbuf = combuf->cmdbuf;
 
 #define RES_SET_BUFFER(name, type_, source_, offset_, size_) \
@@ -338,6 +339,8 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 		g_rtx.mainpipe_out->resource.write.image_layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 	}
 	DEBUG_END(cmdbuf);
+
+	APROF_SCOPE_END(perform);
 }
 
 static void cleanupResources(void) {
@@ -512,6 +515,8 @@ fail:
 
 void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 {
+	APROF_SCOPE_DECLARE_BEGIN(ray_frame_end, __FUNCTION__);
+
 	const VkCommandBuffer cmdbuf = args->combuf->cmdbuf;
 	// const xvk_ray_frame_images_t* current_frame = g_rtx.frames + (g_rtx.frame_number % 2);
 
@@ -575,6 +580,8 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 		};
 		performTracing( args->combuf, &trace_args );
 	}
+
+	APROF_SCOPE_END(ray_frame_end);
 }
 
 static void reloadPipeline( void ) {

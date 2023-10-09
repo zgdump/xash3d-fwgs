@@ -259,6 +259,7 @@ void VK_RenderFrame( const struct ref_viewpass_s *rvp )
 }
 
 static void enqueueRendering( vk_combuf_t* combuf, qboolean draw ) {
+	APROF_SCOPE_DECLARE_BEGIN(enqueue, __FUNCTION__);
 	const VkClearValue clear_value[] = {
 		{.color = {{1., 0., 0., 0.}}},
 		{.depthStencil = {1., 0.}} // TODO reverse-z
@@ -307,10 +308,12 @@ static void enqueueRendering( vk_combuf_t* combuf, qboolean draw ) {
 		vkCmdEndRenderPass(cmdbuf);
 
 	g_frame.current.phase = Phase_RenderingEnqueued;
+	APROF_SCOPE_END(enqueue);
 }
 
 // FIXME pass frame, not combuf (possible desync)
 static void submit( vk_combuf_t* combuf, qboolean wait, qboolean draw ) {
+	APROF_SCOPE_DECLARE_BEGIN(submit, __FUNCTION__);
 	ASSERT(g_frame.current.phase == Phase_RenderingEnqueued);
 
 	const VkCommandBuffer cmdbuf = combuf->cmdbuf;
@@ -390,6 +393,8 @@ static void submit( vk_combuf_t* combuf, qboolean wait, qboolean draw ) {
 		/* } */
 		g_frame.current.phase = Phase_Idle;
 	}
+
+	APROF_SCOPE_END(submit);
 }
 
 inline static VkCommandBuffer currentCommandBuffer( void ) {

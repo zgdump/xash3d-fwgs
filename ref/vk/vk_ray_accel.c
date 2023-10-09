@@ -11,6 +11,8 @@
 #include "vk_render.h"
 #include "vk_logs.h"
 
+#include "profiler.h"
+
 #include "xash3d_mathlib.h"
 
 #define LOG_MODULE LogModule_RT
@@ -240,6 +242,7 @@ static void createTlas( vk_combuf_t *combuf, VkDeviceAddress instances_addr ) {
 }
 
 vk_resource_t RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
+	APROF_SCOPE_DECLARE_BEGIN(prepare, __FUNCTION__);
 	ASSERT(g_ray_model_state.frame.instances_count > 0);
 	DEBUG_BEGIN(combuf->cmdbuf, "prepare tlas");
 
@@ -345,6 +348,7 @@ vk_resource_t RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
 			0, 0, NULL, COUNTOF(bmb), bmb, 0, NULL);
 	}
 
+	APROF_SCOPE_END(prepare);
 	return (vk_resource_t){
 		.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
 		.value = (vk_descriptor_value_t){
