@@ -594,7 +594,7 @@ static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers,
 	tex->height = layers[0]->height;
 	mipCount = CalcMipmapCount( tex, true);
 
-	DEBUG("Uploading texture %s, mips=%d, layers=%d", tex->name, mipCount, num_layers);
+	DEBUG("Uploading texture[%d] %s, mips=%d, layers=%d", (int)(tex-vk_textures), tex->name, mipCount, num_layers);
 
 	// TODO this vvv
 	// // NOTE: only single uncompressed textures can be resamples, no mips, no layers, no sides
