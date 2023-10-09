@@ -95,7 +95,7 @@ void computeBounce(ivec2 pix, vec3 direction, out vec3 diffuse, out vec3 specula
 	specular = vec3(0.);
 
 	const vec4 material_data = imageLoad(material_rmxx, pix);
-	const vec4 base_a = imageLoad(base_color_a, pix);
+	const vec4 base_a = SRGBtoLINEAR(imageLoad(base_color_a, pix));
 
 	MaterialProperties material;
 	material.baseColor = vec3(1.f);
