@@ -1,5 +1,4 @@
 #version 450
-#include "color_spaces.glsl"
 
 layout(set=0,binding=0) uniform sampler2D tex;
 

@@ -1,5 +1,4 @@
 #version 450
-#include "color_spaces.glsl"
 
 layout (constant_id = 0) const float alpha_test_threshold = 0.;
 layout (constant_id = 1) const uint max_dlights = 1;
@@ -50,6 +49,4 @@ void main() {
 		const float attenuation = dlight_attenuation_const / (d2 + r2 * .5);
 		outColor.rgb += baseColor.rgb * light_color * max(0., dot(normalize(light_dir), vNormal)) * attenuation;
 	}
-
-	//outColor.rgb = vNormal * .5 + .5;
 }
