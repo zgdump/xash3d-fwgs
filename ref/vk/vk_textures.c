@@ -95,7 +95,7 @@ void destroyTextures( void )
 
 	unloadSkybox();
 
-	XVK_ImageDestroy(&tglob.cubemap_placeholder.vk.image);
+	R_VkImageDestroy(&tglob.cubemap_placeholder.vk.image);
 	g_textures.stats.size_total -= tglob.cubemap_placeholder.total_size;
 	g_textures.stats.count--;
 	memset(&tglob.cubemap_placeholder, 0, sizeof(tglob.cubemap_placeholder));
@@ -606,7 +606,7 @@ static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers,
 	// 	data = GL_ApplyFilter( data, tex->width, tex->height );
 
 	{
-		const xvk_image_create_t create = {
+		const r_vk_image_create_t create = {
 			.debug_name = tex->name,
 			.width = tex->width,
 			.height = tex->height,
@@ -615,10 +615,12 @@ static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers,
 			.format = format,
 			.tiling = VK_IMAGE_TILING_OPTIMAL,
 			.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-			.has_alpha = layers[0]->flags & IMAGE_HAS_ALPHA,
-			.is_cubemap = cubemap,
+			.flags = 0
+				| ((layers[0]->flags & IMAGE_HAS_ALPHA) ? kVkImageFlagHasAlpha : 0)
+				| (cubemap ? kVkImageFlagIsCubemap : 0)
+				| (colorspace_hint == kColorspaceGamma ? kVkImageFlagCreateUnormView : 0),
 		};
-		tex->vk.image = XVK_ImageCreate(&create);
+		tex->vk.image = R_VkImageCreate(&create);
 	}
 
 	{
@@ -724,30 +726,52 @@ static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers,
 	// TODO how should we approach this:
 	// - per-texture desc sets can be inconvenient if texture is used in different incompatible contexts
 	// - update descriptor sets in batch?
-	if (vk_desc.next_free != MAX_TEXTURES) {
+	if (vk_desc.next_free < MAX_TEXTURES-2) {
 		const int index = tex - vk_textures;
-		VkDescriptorImageInfo dii_tmp;
-		// FIXME handle cubemaps properly w/o this garbage. they should be the same as regular textures.
-		VkDescriptorImageInfo *const dii_tex = (num_layers == 1) ? tglob.dii_all_textures + index : &dii_tmp;
-		*dii_tex = (VkDescriptorImageInfo){
+		const VkDescriptorSet ds = vk_desc.sets[vk_desc.next_free++];
+		const VkDescriptorSet ds_unorm = colorspace_hint == kColorspaceGamma ? vk_desc.sets[vk_desc.next_free++] : VK_NULL_HANDLE;
+
+		const VkDescriptorImageInfo dii = {
 			.imageView = tex->vk.image.view,
 			.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 			.sampler = pickSamplerForFlags( tex->flags ),
 		};
-		const VkWriteDescriptorSet wds[] = { {
+
+		const VkDescriptorImageInfo dii_unorm = {
+			.imageView = tex->vk.image.view_unorm,
+			.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+			.sampler = dii.sampler,
+		};
+
+		VkWriteDescriptorSet wds[2] = { {
 			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
 			.dstBinding = 0,
 			.dstArrayElement = 0,
 			.descriptorCount = 1,
 			.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-			.pImageInfo = dii_tex,
-			.dstSet = tex->vk.descriptor = vk_desc.sets[vk_desc.next_free++],
+			.pImageInfo = &dii,
+			.dstSet = ds,
+		}, {
+			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			.dstBinding = 0,
+			.dstArrayElement = 0,
+			.descriptorCount = 1,
+			.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+			.pImageInfo = &dii_unorm,
+			.dstSet = ds_unorm,
 		}};
-		vkUpdateDescriptorSets(vk_core.device, ARRAYSIZE(wds), wds, 0, NULL);
+		vkUpdateDescriptorSets(vk_core.device, ds_unorm != VK_NULL_HANDLE ? 2 : 1 , wds, 0, NULL);
+
+		// FIXME handle cubemaps properly w/o this garbage. they should be the same as regular textures.
+		if (num_layers == 1) {
+			tglob.dii_all_textures[index] = dii;
+		}
+
+		tex->vk.descriptor_unorm = ds_unorm != VK_NULL_HANDLE ? ds_unorm : ds;
 	}
 	else
 	{
-		tex->vk.descriptor = VK_NULL_HANDLE;
+		tex->vk.descriptor_unorm = VK_NULL_HANDLE;
 	}
 
 	g_textures.stats.size_total += tex->total_size;
@@ -891,7 +915,7 @@ static int loadKtx2( const char *name ) {
 
 	// 1. Create image
 	{
-		const xvk_image_create_t create = {
+		const r_vk_image_create_t create = {
 			.debug_name = tex->name,
 			.width = header->pixelWidth,
 			.height = header->pixelHeight,
@@ -900,10 +924,10 @@ static int loadKtx2( const char *name ) {
 			.format = header->vkFormat,
 			.tiling = VK_IMAGE_TILING_OPTIMAL,
 			.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-			.has_alpha = false, // FIXME
-			.is_cubemap = false,
+			// FIXME find out if there's alpha
+			.flags = 0,
 		};
-		tex->vk.image = XVK_ImageCreate(&create);
+		tex->vk.image = R_VkImageCreate(&create);
 	}
 
 	// 2. Prep cmdbuf, barrier, etc
@@ -1000,9 +1024,13 @@ static int loadKtx2( const char *name ) {
 		}
 	}
 
+	// KTX2 textures are inaccessible from trad renderer (for now)
+	tex->vk.descriptor_unorm = VK_NULL_HANDLE;
+
 	// TODO how should we approach this:
 	// - per-texture desc sets can be inconvenient if texture is used in different incompatible contexts
 	// - update descriptor sets in batch?
+
 	if (vk_desc.next_free != MAX_TEXTURES) {
 		const int num_layers = 1; // TODO cubemap
 		const int index = tex - vk_textures;
@@ -1021,13 +1049,9 @@ static int loadKtx2( const char *name ) {
 			.descriptorCount = 1,
 			.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 			.pImageInfo = dii_tex,
-			.dstSet = tex->vk.descriptor = vk_desc.sets[vk_desc.next_free++],
+			.dstSet = vk_desc.sets[vk_desc.next_free++],
 		}};
 		vkUpdateDescriptorSets(vk_core.device, ARRAYSIZE(wds), wds, 0, NULL);
-	}
-	else
-	{
-		tex->vk.descriptor = VK_NULL_HANDLE;
 	}
 
 	g_textures.stats.size_total += tex->total_size;
@@ -1189,7 +1213,7 @@ void VK_FreeTexture( unsigned int texnum ) {
 	R_VkStagingFlushSync();
 	XVK_CHECK(vkDeviceWaitIdle(vk_core.device));
 
-	XVK_ImageDestroy(&tex->vk.image);
+	R_VkImageDestroy(&tex->vk.image);
 	g_textures.stats.size_total -= tex->total_size;
 	g_textures.stats.count--;
 	memset(tex, 0, sizeof(*tex));
@@ -1257,7 +1281,7 @@ int XVK_TextureLookupF( const char *fmt, ...) {
 
 static void unloadSkybox( void ) {
 	if (tglob.skybox_cube.vk.image.image) {
-		XVK_ImageDestroy(&tglob.skybox_cube.vk.image);
+		R_VkImageDestroy(&tglob.skybox_cube.vk.image);
 		g_textures.stats.size_total -= tglob.skybox_cube.total_size;
 		g_textures.stats.count--;
 		memset(&tglob.skybox_cube, 0, sizeof(tglob.skybox_cube));

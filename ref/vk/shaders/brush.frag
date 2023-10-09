@@ -30,7 +30,8 @@ const float dlight_attenuation_const = 5000.;
 
 void main() {
 	outColor = vec4(0.);
-	const vec4 tex_color = LINEARtoSRGB(texture(sTexture0, vTexture0));
+	const vec4 tex_color = texture(sTexture0, vTexture0);
+
 	// TODO make sure textures are premultiplied alpha
 	const vec4 baseColor = vColor * tex_color;
 
@@ -38,7 +39,7 @@ void main() {
 		discard;
 
 	outColor.a = baseColor.a;
-	outColor.rgb += baseColor.rgb * LINEARtoSRGB(texture(sLightmap, vLightmapUV).rgb);
+	outColor.rgb += baseColor.rgb * texture(sLightmap, vLightmapUV).rgb;
 
 	for (uint i = 0; i < ubo.num_lights; ++i) {
 		const vec4 light_pos_r = ubo.lights[i].pos_r;

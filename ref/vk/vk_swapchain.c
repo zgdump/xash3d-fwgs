@@ -18,7 +18,7 @@ static struct {
 	VkImageView *image_views;
 	VkFramebuffer *framebuffers;
 
-	xvk_image_t depth;
+	r_vk_image_t depth;
 
 	uint32_t width, height;
 
@@ -33,11 +33,10 @@ static uint32_t clamp_u32(uint32_t v, uint32_t min, uint32_t max) {
 }
 
 static void createDepthImage(int w, int h, VkFormat depth_format) {
-	const xvk_image_create_t xic = {
+	const r_vk_image_create_t xic = {
 		.debug_name = "depth",
 		.format = depth_format,
-		.has_alpha = false,
-		.is_cubemap = false,
+		.flags = 0,
 		.mips = 1,
 		.layers = 1,
 		.width = w,
@@ -45,7 +44,7 @@ static void createDepthImage(int w, int h, VkFormat depth_format) {
 		.tiling = VK_IMAGE_TILING_OPTIMAL,
 		.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
 	};
-	g_swapchain.depth = XVK_ImageCreate( &xic );
+	g_swapchain.depth = R_VkImageCreate( &xic );
 }
 
 static void destroySwapchainAndFramebuffers( VkSwapchainKHR swapchain ) {
@@ -56,7 +55,7 @@ static void destroySwapchainAndFramebuffers( VkSwapchainKHR swapchain ) {
 		vkDestroyFramebuffer(vk_core.device, g_swapchain.framebuffers[i], NULL);
 	}
 
-	XVK_ImageDestroy( &g_swapchain.depth );
+	R_VkImageDestroy( &g_swapchain.depth );
 
 	vkDestroySwapchainKHR(vk_core.device, swapchain, NULL);
 }

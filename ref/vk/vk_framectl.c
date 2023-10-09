@@ -510,7 +510,7 @@ static qboolean canBlitFromSwapchainToFormat( VkFormat dest_format ) {
 
 static rgbdata_t *XVK_ReadPixels( void ) {
 	const VkFormat dest_format = VK_FORMAT_R8G8B8A8_UNORM;
-	xvk_image_t dest_image;
+	r_vk_image_t dest_image;
 	const VkImage frame_image = g_frame.current.framebuffer.image;
 	rgbdata_t *r_shot = NULL;
 	qboolean blit = canBlitFromSwapchainToFormat( dest_format );
@@ -525,7 +525,7 @@ static rgbdata_t *XVK_ReadPixels( void ) {
 
 	// Create destination image to blit/copy framebuffer pixels to
 	{
-		const xvk_image_create_t xic = {
+		const r_vk_image_create_t xic = {
 			.debug_name = "screenshot",
 			.width = vk_frame.width,
 			.height = vk_frame.height,
@@ -534,11 +534,10 @@ static rgbdata_t *XVK_ReadPixels( void ) {
 			.format = dest_format,
 			.tiling = VK_IMAGE_TILING_LINEAR,
 			.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-			.has_alpha = false,
-			.is_cubemap = false,
+			.flags = 0,
 			.memory_props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
 		};
-		dest_image = XVK_ImageCreate(&xic);
+		dest_image = R_VkImageCreate(&xic);
 	}
 
 	// Make sure that all rendering ops are enqueued
@@ -700,7 +699,7 @@ static rgbdata_t *XVK_ReadPixels( void ) {
 		}
 	}
 
-	XVK_ImageDestroy( &dest_image );
+	R_VkImageDestroy( &dest_image );
 
 	return r_shot;
 }

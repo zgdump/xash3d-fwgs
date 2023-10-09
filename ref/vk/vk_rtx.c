@@ -67,7 +67,7 @@ enum {
 typedef struct {
 		char name[64];
 		vk_resource_t resource;
-		xvk_image_t image;
+		r_vk_image_t image;
 		int refcount;
 		int source_index_plus_1;
 } rt_resource_t;
@@ -238,7 +238,7 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 
 		// Swap resources
 		const vk_resource_t tmp_res = res->resource;
-		const xvk_image_t tmp_img = res->image;
+		const r_vk_image_t tmp_img = res->image;
 
 		res->resource = src->resource;
 		res->image = src->image;
@@ -346,7 +346,7 @@ static void cleanupResources(void) {
 		if (!res->name[0] || res->refcount || !res->image.image)
 			continue;
 
-		XVK_ImageDestroy(&res->image);
+		R_VkImageDestroy(&res->image);
 		res->name[0] = '\0';
 	}
 }
@@ -416,7 +416,7 @@ static void reloadMainpipe(void) {
 
 		if (create) {
 			if (res->image.image == VK_NULL_HANDLE) {
-				const xvk_image_create_t create = {
+				const r_vk_image_create_t create = {
 					.debug_name = mr->name,
 					.width = FRAME_WIDTH,
 					.height = FRAME_HEIGHT,
@@ -427,10 +427,9 @@ static void reloadMainpipe(void) {
 					// TODO figure out how to detect this need properly. prev_dest is not defined as "output"
 					//.usage = VK_IMAGE_USAGE_STORAGE_BIT | (output ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT : 0),
 					.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-					.has_alpha = true,
-					.is_cubemap = false,
+					.flags = kVkImageFlagHasAlpha,
 				};
-				res->image = XVK_ImageCreate(&create);
+				res->image = R_VkImageCreate(&create);
 				Q_strncpy(res->name, mr->name, sizeof(res->name));
 			} else {
 				// TODO if (mr->image_format != res->image.format) { S_ERROR and goto fail }
@@ -493,7 +492,7 @@ static void reloadMainpipe(void) {
 
 	// TODO currently changing texture format is not handled. It will try to reuse existing image with the old format
 	// which will probably fail. To handle it we'd need to refactor this:
-	// 1. xvk_image_t should have a field with its current format? (or we'd also store if with the resource here)
+	// 1. r_vk_image_t should have a field with its current format? (or we'd also store if with the resource here)
 	// 2. do another loop here to detect format mismatch and recreate.
 
 	g_rtx.mainpipe = newpipe;

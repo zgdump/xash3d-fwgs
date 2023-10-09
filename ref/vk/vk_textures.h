@@ -16,8 +16,8 @@ typedef struct vk_texture_s
 	uint texnum;
 
 	struct {
-		xvk_image_t image;
-		VkDescriptorSet descriptor;
+		r_vk_image_t image;
+		VkDescriptorSet descriptor_unorm;
 	} vk;
 
 	uint hashValue;
@@ -48,6 +48,7 @@ typedef struct vk_textures_global_s
 	vk_texture_t skybox_cube;
 	vk_texture_t cubemap_placeholder;
 
+	// All textures descriptors in their native formats used for RT
 	VkDescriptorImageInfo dii_all_textures[MAX_TEXTURES];
 
 	// FIXME this should not exist, all textures should have their own samplers based on flags

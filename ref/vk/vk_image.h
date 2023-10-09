@@ -2,14 +2,24 @@
 #include "vk_core.h"
 #include "vk_devmem.h"
 
-typedef struct xvk_image_s {
+typedef struct r_vk_image_s {
 	vk_devmem_t devmem;
 	VkImage image;
 	VkImageView view;
 
+	// Optional, created by kVkImageFlagCreateUnormView
+	// Used for sRGB-γ-unaware traditional renderer
+	VkImageView view_unorm;
+
 	uint32_t width, height;
 	int mips;
-} xvk_image_t;
+} r_vk_image_t;
+
+enum {
+	kVkImageFlagHasAlpha = (1<<0),
+	kVkImageFlagIsCubemap = (1<<1),
+	kVkImageFlagCreateUnormView = (1<<2),
+};
 
 typedef struct {
 	const char *debug_name;
@@ -18,13 +28,12 @@ typedef struct {
 	VkFormat format;
 	VkImageTiling tiling;
 	VkImageUsageFlags usage;
-	qboolean has_alpha;
-	qboolean is_cubemap;
 	VkMemoryPropertyFlags memory_props;
-} xvk_image_create_t;
+	uint32_t flags;
+} r_vk_image_create_t;
 
-xvk_image_t XVK_ImageCreate(const xvk_image_create_t *create);
-void XVK_ImageDestroy(xvk_image_t *img);
+r_vk_image_t R_VkImageCreate(const r_vk_image_create_t *create);
+void R_VkImageDestroy(r_vk_image_t *img);
 
 void R_VkImageClear(VkCommandBuffer cmdbuf, VkImage image);
 
