@@ -119,6 +119,8 @@ r_vk_image_t R_VkImageCreate(const r_vk_image_create_t *create) {
 
 	XVK_CHECK(vkCreateImage(vk_core.device, &ici, NULL, &image.image));
 
+	image.format = ici.format;
+
 	if (create->debug_name)
 		SET_DEBUG_NAME(image.image, VK_OBJECT_TYPE_IMAGE, create->debug_name);
 

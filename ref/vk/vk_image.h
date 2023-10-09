@@ -13,6 +13,7 @@ typedef struct r_vk_image_s {
 
 	uint32_t width, height;
 	int mips;
+	VkFormat format;
 } r_vk_image_t;
 
 enum {

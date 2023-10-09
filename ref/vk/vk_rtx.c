@@ -390,10 +390,11 @@ static void reloadMainpipe(void) {
 
 	for (int i = 0; i < newpipe->resources_count; ++i) {
 		const vk_meatpipe_resource_t *mr = newpipe->resources + i;
-		DEBUG("res %d/%d: %s descriptor=%u count=%d flags=[%c%c] image_format=%u",
+		DEBUG("res %d/%d: %s descriptor=%u count=%d flags=[%c%c] image_format=(%s)%u",
 			i, newpipe->resources_count, mr->name, mr->descriptor_type, mr->count,
 			(mr->flags & MEATPIPE_RES_WRITE) ? 'W' : ' ',
 			(mr->flags & MEATPIPE_RES_CREATE) ? 'C' : ' ',
+			R_VkFormatName(mr->image_format),
 			mr->image_format);
 
 		const qboolean create = !!(mr->flags & MEATPIPE_RES_CREATE);
@@ -418,7 +419,10 @@ static void reloadMainpipe(void) {
 			newpipe_out = res;
 
 		if (create) {
-			if (res->image.image == VK_NULL_HANDLE) {
+			if (res->image.image == VK_NULL_HANDLE || mr->image_format != res->image.format) {
+				if (res->image.image != VK_NULL_HANDLE) {
+					R_VkImageDestroy(&res->image);
+				}
 				const r_vk_image_create_t create = {
 					.debug_name = mr->name,
 					.width = FRAME_WIDTH,
@@ -434,8 +438,6 @@ static void reloadMainpipe(void) {
 				};
 				res->image = R_VkImageCreate(&create);
 				Q_strncpy(res->name, mr->name, sizeof(res->name));
-			} else {
-				// TODO if (mr->image_format != res->image.format) { S_ERROR and goto fail }
 			}
 		}
 
