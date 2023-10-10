@@ -743,7 +743,7 @@ static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers,
 				const int width = Q_max( 1, ( pic->width >> mip ));
 				const int height = Q_max( 1, ( pic->height >> mip ));
 				const size_t mip_size = CalcImageSize( pic->type, width, height, 1 );
-				const uint32_t texel_block_size = 4; // TODO compressed might be different
+				const uint32_t texel_block_size = R_VkImageFormatTexelBlockSize(format);
 				const vk_staging_image_args_t staging_args = {
 					.image = tex->vk.image.image,
 					.region = (VkBufferImageCopy) {
@@ -1048,10 +1048,10 @@ static int loadKtx2( const char *name ) {
 	// 3.1 upload
 		for (int mip = 0; mip < header->levelCount; ++mip) {
 			const ktx_level_t* const level = levels + mip;
-			const uint32_t width = header->pixelWidth >> mip;
-			const uint32_t height = header->pixelHeight >> mip;
+			const uint32_t width = Q_max(1, header->pixelWidth >> mip);
+			const uint32_t height = Q_max(1, header->pixelHeight >> mip);
 			const size_t mip_size = level->byteLength;
-			const uint32_t texel_block_size = 4; // TODO compressed might be different
+			const uint32_t texel_block_size = R_VkImageFormatTexelBlockSize(header->vkFormat);
 			const void* const image_data = data + level->byteOffset;
 			const vk_staging_image_args_t staging_args = {
 				.image = tex->vk.image.image,

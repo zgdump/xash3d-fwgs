@@ -50,3 +50,4 @@ typedef struct {
 
 void R_VkImageBlit( VkCommandBuffer cmdbuf, const r_vkimage_blit_args *blit_args );
 
+uint32_t R_VkImageFormatTexelBlockSize( VkFormat format );
