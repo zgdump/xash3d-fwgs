@@ -2,6 +2,20 @@
 
 #include "xash3d_types.h"
 
+/* TODO
+#define MATERIAL_FIELDS_LIST(X) \
+	X(0, int, tex_base_color, basecolor_map, readTexture) \
+	X(1, int, tex_roughness, normal_map, readTexture) \
+	X(2, int, tex_metalness, metal_map, readTexture) \
+	X(3, int, tex_normalmap, roughness_map, readTexture) \
+	X(4, vec4_t, base_color, base_color, readVec4) \
+	X(5, float, roughness, roughness, readFloat) \
+	X(6, float, metalness, metalness, readFloat) \
+	X(7, float, normal_scale, normal_scale, readFloat) \
+	X(7, int, rendermode, rendermode, readRendermode) \
+	X(8, int, _inherit, inherit, readInerit) \
+*/
+
 typedef struct r_vk_material_s {
 	int tex_base_color;
 	int tex_roughness;

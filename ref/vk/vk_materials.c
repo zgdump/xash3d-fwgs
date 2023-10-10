@@ -14,18 +14,26 @@
 #define MAX_MATERIALS 2048
 
 static r_vk_material_t k_default_material = {
-		.tex_base_color = -1,
-		.tex_metalness = 0,
-		.tex_roughness = 0,
-		.tex_normalmap = 0,
+	.tex_base_color = -1,
+	.tex_metalness = 0,
+	.tex_roughness = 0,
+	.tex_normalmap = 0,
 
-		.metalness = 0.f,
-		.roughness = 1.f,
-		.normal_scale = 1.f,
-		.base_color = { 1.f, 1.f, 1.f, 1.f },
+	.metalness = 0.f,
+	.roughness = 1.f,
+	.normal_scale = 1.f,
+	.base_color = { 1.f, 1.f, 1.f, 1.f },
 
-		.set = false,
+	.set = false,
 };
+
+/* TODO
+enum {
+#define X(bit, type, name, key, func) kMatField_##key = (1 << (bit)),
+MATERIAL_FIELDS_LIST(X)
+#undef X
+};
+*/
 
 #define MAX_RENDERMODE_MATERIALS 32
 typedef struct {
@@ -156,6 +164,7 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 
 	string name;
 	string basecolor_map, normal_map, metal_map, roughness_map;
+	//uint32_t fields;
 
 	int rendermode = 0;
 
@@ -191,6 +200,7 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 			metalness_set = false;
 			name[0] = basecolor_map[0] = normal_map[0] = metal_map[0] = roughness_map[0] = '\0';
 			rendermode = 0;
+			//fields = 0;
 			continue;
 		}
 
@@ -303,26 +313,43 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 			int *tex_id_dest = NULL;
 			if (Q_stricmp(key, "basecolor_map") == 0) {
 				Q_strncpy(basecolor_map, value, sizeof(basecolor_map));
+				//fields |= kMatField_basecolor_map;
 			} else if (Q_stricmp(key, "normal_map") == 0) {
 				Q_strncpy(normal_map, value, sizeof(normal_map));
+				//fields |= kMatField_normal_map;
 			} else if (Q_stricmp(key, "metal_map") == 0) {
 				Q_strncpy(metal_map, value, sizeof(metal_map));
+				//fields |= kMatField_metal_map;
 			} else if (Q_stricmp(key, "roughness_map") == 0) {
 				Q_strncpy(roughness_map, value, sizeof(roughness_map));
+				//fields |= kMatField_roughness_map;
+			} else if (Q_stricmp(key, "inherit") == 0 || Q_stricmp(key, "use") == 0) {
+				const r_vk_material_ref_t ref = R_VkMaterialGetForName(value);
+				if (ref.index < 0) {
+					ERR("In material \"%s\" cannot find material \"%s\" to inherit", name, value);
+					continue;
+				}
+				const r_vk_material_t inherited = R_VkMaterialGetForRef(ref);
+				current_material = inherited;
 			} else if (Q_stricmp(key, "roughness") == 0) {
 				sscanf(value, "%f", &current_material.roughness);
+				//fields |= kMatField_roughness;
 			} else if (Q_stricmp(key, "metalness") == 0) {
 				sscanf(value, "%f", &current_material.metalness);
+				//fields |= kMatField_metalness;
 				metalness_set = true;
 			} else if (Q_stricmp(key, "normal_scale") == 0) {
 				sscanf(value, "%f", &current_material.normal_scale);
+				//fields |= kMatField_normal_scale;
 			} else if (Q_stricmp(key, "base_color") == 0) {
 				sscanf(value, "%f %f %f %f", &current_material.base_color[0], &current_material.base_color[1], &current_material.base_color[2], &current_material.base_color[3]);
+				//fields |= kMatField_base_color;
 			} else if (Q_stricmp(key, "for_rendermode") == 0) {
 				rendermode = R_VkRenderModeFromString(value);
 				if (rendermode < 0)
 					ERR("Invalid rendermode \"%s\"", value);
 				ASSERT(rendermode < COUNTOF(g_materials.for_rendermode[0].map));
+				//fields |= kMatField_rendermode;
 			} else {
 				ERR("Unknown material key \"%s\" on line `%.*s`", key, (int)(pos - line_begin), line_begin);
 				continue;
