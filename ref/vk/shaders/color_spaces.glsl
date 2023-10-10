@@ -1,3 +1,5 @@
+#ifndef RT_COLOR_SPACES_GLSL_INCLUDED
+#define RT_COLOR_SPACES_GLSL_INCLUDED
 #ifdef SRGB_FAST_APPROXIMATION
 #define LINEARtoSRGB OECF_sRGBFast
 #define SRGBtoLINEAR sRGB_OECFFast
@@ -61,3 +63,5 @@ vec3 OECF_sRGBFast(const vec3 linear) {
 vec4 OECF_sRGBFast(const vec4 linear) {
 	return vec4(pow(linear.rgb, vec3(1.0 / 2.2)), linear.w);
 }
+
+#endif //ifndef RT_COLOR_SPACES_GLSL_INCLUDED
