@@ -36,7 +36,13 @@ layout(set = 0, binding = 15, rgba16f) uniform image2D prev_temporal_diffuse;
 layout(set = 0, binding = 16, rgba16f) uniform image2D out_temporal_specular;
 layout(set = 0, binding = 17, rgba16f) uniform image2D prev_temporal_specular;
 
+#ifdef DEBUG_NOISE
+layout(set = 0, binding = 18) uniform sampler2D textures[MAX_TEXTURES];
+include "bluenoise.glsl"
+#endif
+
 //layout(set = 0, binding = 19) uniform sampler2D textures[MAX_TEXTURES];
+
 
 const int INDIRECT_SCALE = 2;
 
@@ -186,6 +192,10 @@ void main() {
 	if (any(greaterThanEqual(pix, res))) {
 		return;
 	}
+
+#ifdef DEBUG_NOISE
+	imageStore(out_dest, pix, blueNoise(ivec3(pix.xy, ubo.ubo.frame_counter))); return;
+#endif
 
 	/* if (pix.y < res.y / 3) { */
 	/* 	imageStore(out_dest, pix, vec4(pow(float(pix.x) / res.x, 2.2))); return; */

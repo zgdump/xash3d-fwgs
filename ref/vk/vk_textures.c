@@ -16,6 +16,9 @@
 #include "com_strings.h"
 #include "eiface.h"
 
+#define PCG_IMPLEMENT
+#include "pcg.h"
+
 #include <memory.h>
 #include <math.h>
 
@@ -276,6 +279,84 @@ static void VK_ProcessImage( vk_texture_t *tex, rgbdata_t *pic )
 
 static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers, int num_layers, qboolean cubemap, colorspace_hint_e colorspace_hint);
 
+static int VK_LoadTextureF(int flags, const char *fmt, ...) {
+	int tex_id = 0;
+	char buffer[1024];
+	va_list argptr;
+	va_start( argptr, fmt );
+	vsnprintf( buffer, sizeof buffer, fmt, argptr );
+	va_end( argptr );
+
+	return VK_LoadTexture(buffer, NULL, 0, flags);
+}
+
+#define BLUE_NOISE_NAME_F "bluenoise/LDR_RGBA_%d.png"
+
+static qboolean generateFallbackNoiseTextures(void) {
+	pcg32_random_t pcg_state = {
+		BLUE_NOISE_SIZE * BLUE_NOISE_SIZE - 1,
+		17,
+	};
+	uint32_t scratch[BLUE_NOISE_SIZE * BLUE_NOISE_SIZE];
+	rgbdata_t pic = {
+		.width = BLUE_NOISE_SIZE,
+		.height = BLUE_NOISE_SIZE,
+		.depth = 1,
+		.flags = 0,
+		.type = PF_RGBA_32,
+		.size = BLUE_NOISE_SIZE * BLUE_NOISE_SIZE * 4,
+		.buffer = (byte*)&scratch,
+		.palette = NULL,
+		.numMips = 1,
+		.encode = 0,
+	};
+
+	int blueNoiseTexturesBegin = -1;
+	for (int i = 0; i < BLUE_NOISE_SIZE; ++i) {
+		for (int j = 0; j < COUNTOF(scratch); ++j) {
+			scratch[j] = pcg32_random_r(&pcg_state);
+		}
+
+		char name[256];
+		snprintf(name, sizeof(name), BLUE_NOISE_NAME_F, i);
+		const int texid = VK_LoadTextureInternal(name, &pic, TF_NOMIPMAP);
+		ASSERT(texid > 0);
+
+		if (blueNoiseTexturesBegin == -1) {
+			ASSERT(texid == BLUE_NOISE_TEXTURE_ID);
+			blueNoiseTexturesBegin = texid;
+		} else {
+			ASSERT(blueNoiseTexturesBegin + i == texid);
+		}
+	}
+
+	return true;
+}
+
+static qboolean loadBlueNoiseTextures(void) {
+	int blueNoiseTexturesBegin = -1;
+	for (int i = 0; i < 64; ++i) {
+		const int texid = VK_LoadTextureF(TF_NOMIPMAP, BLUE_NOISE_NAME_F, i);
+
+		if (blueNoiseTexturesBegin == -1) {
+			if (texid <= 0) {
+				ERR("Couldn't find precomputed blue noise textures. Generating bad quality regular noise textures as a fallback");
+				return generateFallbackNoiseTextures();
+			}
+
+			blueNoiseTexturesBegin = texid;
+		} else {
+			ASSERT(texid > 0);
+			ASSERT(blueNoiseTexturesBegin + i == texid);
+		}
+	}
+
+	INFO("Base blue noise texture is %d", blueNoiseTexturesBegin);
+	ASSERT(blueNoiseTexturesBegin == BLUE_NOISE_TEXTURE_ID);
+
+	return true;
+}
+
 static void VK_CreateInternalTextures( void )
 {
 	int	dx2, dy, d;
@@ -352,6 +433,8 @@ static void VK_CreateInternalTextures( void )
 
 		uploadTexture( &tglob.cubemap_placeholder, sides, 6, true, kColorspaceGamma );
 	}
+
+	loadBlueNoiseTextures();
 }
 
 static VkFormat VK_GetFormat(pixformat_t format, colorspace_hint_e colorspace_hint ) {

@@ -117,9 +117,8 @@ typedef struct
 } studio_draw_state_t;
 
 // studio-related cvars
-static cvar_t			*r_studio_sort_textures;
+static CVAR_DEFINE_AUTO( r_studio_sort_textures, "0", FCVAR_GLCONFIG, "change draw order for additive meshes" );
 static cvar_t			*cl_righthand = NULL;
-static cvar_t			*r_studio_drawelements;
 
 static r_studio_interface_t	*pStudioDraw;
 static studio_draw_state_t	g_studio;		// global studio state
@@ -131,7 +130,6 @@ mstudiobodyparts_t		*m_pBodyPart;
 player_info_t		*m_pPlayerInfo;
 studiohdr_t		*m_pStudioHeader;
 float			m_flGaitMovement;
-int			g_iBackFaceCull;
 int			g_nTopColor, g_nBottomColor;	// remap colors
 int			g_nFaceFlags, g_nForceFaceFlags;
 
@@ -143,8 +141,7 @@ R_StudioInit
 */
 void R_StudioInit( void )
 {
-	r_studio_sort_textures = gEngfuncs.Cvar_Get( "r_studio_sort_textures", "0", FCVAR_ARCHIVE, "change draw order for additive meshes" );
-	r_drawviewmodel = gEngfuncs.Cvar_Get( "r_drawviewmodel", "1", 0, "draw firstperson weapon model" );
+	gEngfuncs.Cvar_RegisterVariable( &r_studio_sort_textures );
 
 	Matrix3x4_LoadIdentity( g_studio.rotationmatrix );
 
@@ -1836,7 +1833,7 @@ sets true for enable backculling (for left-hand viewmodel)
 */
 void R_StudioSetCullState( int iCull )
 {
-	g_iBackFaceCull = iCull;
+	// This function intentionally does nothing
 }
 
 /*
@@ -2113,7 +2110,7 @@ static void R_StudioDrawPoints( void )
 		}
 	}
 
-	if( r_studio_sort_textures->value && need_sort )
+	if( r_studio_sort_textures.value && need_sort )
 	{
 		// resort opaque and translucent meshes draw order
 		qsort( g_studio.meshes, m_pSubModel->nummesh, sizeof( sortedmesh_t ), (void*)R_StudioMeshCompare );
@@ -3443,7 +3440,7 @@ void R_DrawViewModel( void )
 	RI.currentmodel = RI.currententity->model;
 
 	// backface culling for left-handed weapons
-	if( R_AllowFlipViewModel( RI.currententity ) || g_iBackFaceCull )
+	if( R_AllowFlipViewModel( RI.currententity ))
 	{
 		tr.fFlipViewModel = true;
 		//pglFrontFace( GL_CW );
@@ -3465,7 +3462,7 @@ void R_DrawViewModel( void )
 	s_ziscale = (float)0x8000 * (float)0x10000;
 
 	// backface culling for left-handed weapons
-	if( R_AllowFlipViewModel( RI.currententity ) || g_iBackFaceCull )
+	if( R_AllowFlipViewModel( RI.currententity ))
 	{
 		tr.fFlipViewModel = false;
 		//pglFrontFace( GL_CCW );
@@ -3713,9 +3710,6 @@ void GAME_EXPORT CL_InitStudioAPI( void )
 
 	// trying to grab them from client.dll
 	cl_righthand = gEngfuncs.pfnGetCvarPointer( "cl_righthand", 0 );
-
-	if( cl_righthand == NULL )
-		cl_righthand = gEngfuncs.Cvar_Get( "cl_righthand", "0", FCVAR_ARCHIVE, "flip viewmodel (left to right)" );
 
 	// Xash will be used internal StudioModelRenderer
 	if( gEngfuncs.pfnGetStudioModelInterface( STUDIO_INTERFACE_VERSION, &pStudioDraw, &gStudioAPI ))

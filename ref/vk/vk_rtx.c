@@ -140,7 +140,7 @@ void VK_RayFrameBegin( void ) {
 	RT_LightsFrameBegin();
 }
 
-static void prepareUniformBuffer( const vk_ray_frame_render_args_t *args, int frame_index, float fov_angle_y ) {
+static void prepareUniformBuffer( const vk_ray_frame_render_args_t *args, int frame_index, uint32_t frame_counter, float fov_angle_y ) {
 	struct UniformBuffer *ubo = (struct UniformBuffer*)((char*)g_rtx.uniform_buffer.mapped + frame_index * g_rtx.uniform_unit_size);
 
 	matrix4x4 proj_inv, view_inv;
@@ -160,11 +160,13 @@ static void prepareUniformBuffer( const vk_ray_frame_render_args_t *args, int fr
 
 	ubo->ray_cone_width = atanf((2.0f*tanf(DEG2RAD(fov_angle_y) * 0.5f)) / (float)FRAME_HEIGHT);
 	ubo->random_seed = (uint32_t)gEngine.COM_RandomLong(0, INT32_MAX);
+	ubo->frame_counter = frame_counter;
 }
 
 typedef struct {
 	const vk_ray_frame_render_args_t* render_args;
 	int frame_index;
+	uint32_t frame_counter;
 	float fov_angle_y;
 	const vk_lights_bindings_t *light_bindings;
 } perform_tracing_args_t;
@@ -272,7 +274,7 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 	// TODO move this to "TLAS producer"
 	g_rtx.res[ExternalResource_tlas].resource = RT_VkAccelPrepareTlas(combuf);
 
-	prepareUniformBuffer(args->render_args, args->frame_index, args->fov_angle_y);
+	prepareUniformBuffer(args->render_args, args->frame_index, args->frame_counter, args->fov_angle_y);
 
 	{ // FIXME this should be done automatically inside meatpipe, TODO
 		//const uint32_t size = sizeof(struct Lights);
@@ -577,6 +579,7 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 		const perform_tracing_args_t trace_args = {
 			.render_args = args,
 			.frame_index = (g_rtx.frame_number % 2),
+			.frame_counter = g_rtx.frame_number,
 			.fov_angle_y = args->fov_angle_y,
 			.light_bindings = &light_bindings,
 		};

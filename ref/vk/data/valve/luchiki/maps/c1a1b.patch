@@ -63,7 +63,12 @@
 {
 "_xvk_ent_id" "267 266" // remove hack lights entity
 }
-{ // FIXME: color should take from translucent texture 
+{ // FIXME: color should take from translucent texture
 "_xvk_surface_id" "9" // +0LAB1_W6B       150 160 210  4000
 "_light" "70 200 110 4000" // color from hack light
+}
+
+{
+	_xvk_ent_id "321 322 323 324"
+	_xvk_smooth_entire_model "1"
 }
