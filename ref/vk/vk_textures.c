@@ -279,7 +279,9 @@ static void VK_ProcessImage( vk_texture_t *tex, rgbdata_t *pic )
 
 static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers, int num_layers, qboolean cubemap, colorspace_hint_e colorspace_hint);
 
-static int VK_LoadTextureF(int flags, const char *fmt, ...) {
+static int loadTextureInternal( const char *name, const byte *buf, size_t size, int flags, colorspace_hint_e colorspace_hint );
+
+static int VK_LoadTextureF(int flags, colorspace_hint_e colorspace, const char *fmt, ...) {
 	int tex_id = 0;
 	char buffer[1024];
 	va_list argptr;
@@ -287,7 +289,7 @@ static int VK_LoadTextureF(int flags, const char *fmt, ...) {
 	vsnprintf( buffer, sizeof buffer, fmt, argptr );
 	va_end( argptr );
 
-	return VK_LoadTexture(buffer, NULL, 0, flags);
+	return loadTextureInternal(buffer, NULL, 0, flags, colorspace);
 }
 
 #define BLUE_NOISE_NAME_F "bluenoise/LDR_RGBA_%d.png"
@@ -336,7 +338,7 @@ static qboolean generateFallbackNoiseTextures(void) {
 static qboolean loadBlueNoiseTextures(void) {
 	int blueNoiseTexturesBegin = -1;
 	for (int i = 0; i < 64; ++i) {
-		const int texid = VK_LoadTextureF(TF_NOMIPMAP, BLUE_NOISE_NAME_F, i);
+		const int texid = VK_LoadTextureF(TF_NOMIPMAP, kColorspaceLinear, BLUE_NOISE_NAME_F, i);
 
 		if (blueNoiseTexturesBegin == -1) {
 			if (texid <= 0) {
