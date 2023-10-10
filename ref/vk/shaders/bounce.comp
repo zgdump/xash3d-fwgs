@@ -49,7 +49,7 @@ void readNormals(ivec2 uv, out vec3 geometry_normal, out vec3 shading_normal) {
 }
 
 
-bool getHit(vec3 origin, vec3 direction, inout RayPayloadPrimary payload, int test_val) {
+bool getHit(vec3 origin, vec3 direction, inout RayPayloadPrimary payload) {
 	rayQueryEXT rq;
 	const uint flags = 0
 		//| gl_RayFlagsCullFrontFacingTrianglesEXT
@@ -84,7 +84,7 @@ bool getHit(vec3 origin, vec3 direction, inout RayPayloadPrimary payload, int te
 	if (rayQueryGetIntersectionTypeEXT(rq, true) != gl_RayQueryCommittedIntersectionTriangleEXT)
 		return false;
 
-	primaryRayHit(rq, payload, test_val);
+	primaryRayHit(rq, payload);
 	//L = rayQueryGetIntersectionTEXT(rq, true);
 	return true;
 }
@@ -150,8 +150,7 @@ void computeBounce(ivec2 pix, vec3 direction, out vec3 diffuse, out vec3 specula
 	payload.base_color_a = vec4(0.);
 	payload.emissive = vec4(0.);
 	const vec3 pos = imageLoad(position_t, pix).xyz + geometry_normal * ray_normal_fudge;
-	const ivec2 res = ivec2(imageSize(out_indirect_diffuse)) / INDIRECT_SCALE;
-	if (!getHit(pos, bounce_direction, payload, (pix.x < res.x / 2) ? 0 : 1))
+	if (!getHit(pos, bounce_direction, payload))
 		return;
 
 	throughput *= payload.base_color_a.rgb;

@@ -298,6 +298,20 @@ rt_draw_instance_t *getDrawInstance(void) {
 	return g_ray_model_state.frame.instances + (g_ray_model_state.frame.instances_count++);
 }
 
+static float sRGBtoLinearScalar(const float sRGB) {
+	// IEC 61966-2-1:1999
+	const float linearLow = sRGB / 12.92f;
+	const float linearHigh = powf((sRGB + 0.055f) / 1.055f, 2.4f);
+	return sRGB <= 0.04045f ? linearLow : linearHigh;
+}
+
+static void sRGBtoLinearVec4(const vec4_t in, vec4_t out) {
+	out[0] = sRGBtoLinearScalar(in[0]);
+	out[1] = sRGBtoLinearScalar(in[1]);
+	out[2] = sRGBtoLinearScalar(in[2]);
+	out[3] = in[3];
+}
+
 void RT_FrameAddModel( struct rt_model_s *model, rt_frame_add_model_t args ) {
 	if (!model || !model->blas)
 		return;
@@ -329,7 +343,7 @@ void RT_FrameAddModel( struct rt_model_s *model, rt_frame_add_model_t args ) {
 	draw_instance->blas_addr = model->blas_addr;
 	draw_instance->kusochki_offset = kusochki_offset;
 	draw_instance->material_mode = args.material_mode;
-	Vector4Copy(*args.color, draw_instance->color);
+	sRGBtoLinearVec4(*args.color_srgb, draw_instance->color);
 	Matrix3x4_Copy(draw_instance->transform_row, args.transform);
 	Matrix4x4_Copy(draw_instance->prev_transform_row, args.prev_transform);
 }
