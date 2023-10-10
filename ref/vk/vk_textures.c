@@ -729,7 +729,9 @@ static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers,
 	if (vk_desc.next_free < MAX_TEXTURES-2) {
 		const int index = tex - vk_textures;
 		const VkDescriptorSet ds = vk_desc.sets[vk_desc.next_free++];
-		const VkDescriptorSet ds_unorm = colorspace_hint == kColorspaceGamma ? vk_desc.sets[vk_desc.next_free++] : VK_NULL_HANDLE;
+		const VkDescriptorSet ds_unorm =
+			(colorspace_hint == kColorspaceGamma && tex->vk.image.view_unorm != VK_NULL_HANDLE)
+			? vk_desc.sets[vk_desc.next_free++] : VK_NULL_HANDLE;
 
 		const VkDescriptorImageInfo dii = {
 			.imageView = tex->vk.image.view,

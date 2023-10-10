@@ -96,7 +96,12 @@ r_vk_image_t R_VkImageCreate(const r_vk_image_create_t *create) {
 	VkMemoryRequirements memreq;
 
 	const qboolean is_cubemap = !!(create->flags & kVkImageFlagIsCubemap);
-	const qboolean create_unorm = !!(create->flags & kVkImageFlagCreateUnormView);
+
+	const VkFormat unorm_format = unormFormatFor(create->format);
+	const qboolean create_unorm =
+		!!(create->flags & kVkImageFlagCreateUnormView)
+		&& unorm_format != VK_FORMAT_UNDEFINED
+		&& unorm_format != create->format;
 
 	VkImageCreateInfo ici = {
 		.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
@@ -150,16 +155,11 @@ r_vk_image_t R_VkImageCreate(const r_vk_image_create_t *create) {
 			SET_DEBUG_NAME(image.view, VK_OBJECT_TYPE_IMAGE_VIEW, create->debug_name);
 
 		if (create_unorm) {
-			// FIXME handle same formats: reuse the same image_view, destroy it properly, etc
-			ivci.format = unormFormatFor(ici.format);
-			if (ivci.format != VK_FORMAT_UNDEFINED) {
-				XVK_CHECK(vkCreateImageView(vk_core.device, &ivci, NULL, &image.view_unorm));
+			ivci.format = unorm_format;
+			XVK_CHECK(vkCreateImageView(vk_core.device, &ivci, NULL, &image.view_unorm));
 
-				if (create->debug_name)
-					SET_DEBUG_NAMEF(image.view_unorm, VK_OBJECT_TYPE_IMAGE_VIEW, "%s_unorm", create->debug_name);
-			} else {
-				WARN("There's no UNORM format for %s for image \"%s\"", R_VkFormatName(ici.format), create->debug_name);
-			}
+			if (create->debug_name)
+				SET_DEBUG_NAMEF(image.view_unorm, VK_OBJECT_TYPE_IMAGE_VIEW, "%s_unorm", create->debug_name);
 		}
 	}
 
