@@ -88,13 +88,14 @@ bool getHit(vec3 origin, vec3 direction, inout RayPayloadPrimary payload) {
 	//L = rayQueryGetIntersectionTEXT(rq, true);
 	return true;
 }
+const int INDIRECT_SCALE = 2;
 
 void computeBounce(ivec2 pix, vec3 direction, out vec3 diffuse, out vec3 specular) {
 	diffuse = vec3(0.);
 	specular = vec3(0.);
 
 	const vec4 material_data = imageLoad(material_rmxx, pix);
-	const vec4 base_a = imageLoad(base_color_a, pix);
+	const vec4 base_a = SRGBtoLINEAR(imageLoad(base_color_a, pix));
 
 	MaterialProperties material;
 	material.baseColor = vec3(1.f);
@@ -180,7 +181,6 @@ void computeBounce(ivec2 pix, vec3 direction, out vec3 diffuse, out vec3 specula
 	}
 }
 
-const int INDIRECT_SCALE = 2;
 
 void main() {
 	const ivec2 pix = ivec2(gl_GlobalInvocationID);

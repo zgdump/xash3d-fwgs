@@ -1,6 +1,7 @@
 #ifndef RT_GEOMETRY_GLSL_INCLUDED
 #define RT_GEOMETRY_GLSL_INCLUDED
 #include "utils.glsl"
+#include "color_spaces.glsl"
 
 // Taken from Journal of Computer Graphics Techniques, Vol. 10, No. 1, 2021.
 // Improved Shader and Texture Level of Detail Using Ray Cones,
@@ -156,9 +157,9 @@ MiniGeometry readCandidateMiniGeometry(rayQueryEXT rq) {
 		const vec2 uv = baryMix(uvs[0], uvs[1], uvs[2], bary);
 
 		const vec4 colors[3] = {
-			unpackUnorm4x8(GET_VERTEX(vi1).color),
-			unpackUnorm4x8(GET_VERTEX(vi2).color),
-			unpackUnorm4x8(GET_VERTEX(vi3).color),
+			SRGBtoLINEAR(unpackUnorm4x8(GET_VERTEX(vi1).color)),
+			SRGBtoLINEAR(unpackUnorm4x8(GET_VERTEX(vi2).color)),
+			SRGBtoLINEAR(unpackUnorm4x8(GET_VERTEX(vi3).color)),
 		};
 
 		MiniGeometry ret;

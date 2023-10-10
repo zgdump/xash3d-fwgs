@@ -543,7 +543,7 @@ static const ref_interface_t gReffuncs =
 	VK_FindTexture,
 	VK_TextureName,
 	VK_TextureData,
-	VK_LoadTexture,
+	VK_LoadTextureExternal,
 	VK_CreateTexture,
 	VK_LoadTextureArray,
 	VK_CreateTextureArray,

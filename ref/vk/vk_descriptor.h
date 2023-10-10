@@ -12,7 +12,8 @@ typedef struct descriptor_pool_s
 	int next_free;
 	//uint32_t *free_set;
 
-	VkDescriptorSet sets[MAX_TEXTURES];
+	// * 2 because of unorm views for trad renderer
+	VkDescriptorSet sets[MAX_TEXTURES * 2];
 	VkDescriptorSetLayout one_texture_layout;
 
 	// FIXME HOW THE F
@@ -31,7 +32,7 @@ typedef union {
 	VkDescriptorImageInfo image;
 	VkDescriptorImageInfo *image_array;
 	VkWriteDescriptorSetAccelerationStructureKHR accel;
-	const struct xvk_image_s *image_object;
+	const struct r_vk_image_s *image_object;
 } vk_descriptor_value_t;
 
 typedef struct {

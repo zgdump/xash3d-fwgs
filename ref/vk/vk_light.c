@@ -1263,6 +1263,7 @@ static void uploadPointLights( struct LightsMetadata *metadata ) {
 }
 
 vk_lights_bindings_t VK_LightsUpload( void ) {
+	APROF_SCOPE_DECLARE_BEGIN(upload, __FUNCTION__);
 	const vk_staging_region_t locked = R_VkStagingLockForBuffer( (vk_staging_buffer_args_t) {
 		.buffer = g_lights_.buffer.buffer,
 		.offset = 0,
@@ -1286,6 +1287,8 @@ vk_lights_bindings_t VK_LightsUpload( void ) {
 	uploadGrid();
 
 	g_lights_.frame_sequence++;
+
+	APROF_SCOPE_END(upload);
 
 	return (vk_lights_bindings_t){
 		.buffer = g_lights_.buffer.buffer,

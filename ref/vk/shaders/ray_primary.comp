@@ -107,13 +107,13 @@ void main() {
 		L = rayQueryGetIntersectionTEXT(rq, true);
 	} else {
 		// Draw skybox when nothing is hit
-		payload.emissive.rgb = SRGBtoLINEAR(texture(skybox, ray.direction).rgb);
+		payload.emissive.rgb = texture(skybox, ray.direction).rgb;
 	}
 
 	traceSimpleBlending(ray.origin, ray.direction, L, payload.emissive.rgb, payload.base_color_a.rgb);
 
 	imageStore(out_position_t, pix, payload.hit_t);
-	imageStore(out_base_color_a, pix, payload.base_color_a);
+	imageStore(out_base_color_a, pix, LINEARtoSRGB(payload.base_color_a));
 	imageStore(out_normals_gs, pix, payload.normals_gs);
 	//imageStore(out_material_rmxx, pix, vec4(payload.material_rmxx.rg, 0, uintToFloat01(xxhash32(debug_geometry_index))));
 	imageStore(out_material_rmxx, pix, payload.material_rmxx);

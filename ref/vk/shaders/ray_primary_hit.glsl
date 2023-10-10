@@ -31,10 +31,10 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 	const Material material = kusok.material;
 
 	if (kusok.material.tex_base_color == TEX_BASE_SKYBOX) {
-		payload.emissive.rgb = SRGBtoLINEAR(texture(skybox, rayDirection).rgb);
+		payload.emissive.rgb = texture(skybox, rayDirection).rgb;
 		return;
 	} else {
-		payload.base_color_a = SRGBtoLINEAR(sampleTexture(material.tex_base_color, geom.uv, geom.uv_lods));
+		payload.base_color_a = sampleTexture(material.tex_base_color, geom.uv, geom.uv_lods);
 		payload.material_rmxx.r = sampleTexture(material.tex_roughness, geom.uv, geom.uv_lods).r * material.roughness;
 		payload.material_rmxx.g = sampleTexture(material.tex_metalness, geom.uv, geom.uv_lods).r * material.metalness;
 
@@ -99,7 +99,7 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 
 	const int model_index = rayQueryGetIntersectionInstanceIdEXT(rq, true);
 	const ModelHeader model = getModelHeader(model_index);
-	const vec4 color = model.color * SRGBtoLINEAR(kusok.material.base_color); // FIXME why is material.base_color in gamma space?
+	const vec4 color = model.color * kusok.material.base_color;
 
 	payload.base_color_a *= color;
 	payload.emissive.rgb *= color.rgb;

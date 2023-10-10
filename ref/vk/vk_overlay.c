@@ -266,10 +266,10 @@ static void drawOverlay( VkCommandBuffer cmdbuf ) {
 	{
 		vk_texture_t *texture = findTexture(g2d.batch[i].texture);
 		const VkPipeline pipeline = g2d.pipelines[g2d.batch[i].blending_mode];
-		if (texture->vk.descriptor)
+		if (texture->vk.descriptor_unorm)
 		{
 			vkCmdBindPipeline(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g2d.pipeline_layout, 0, 1, &texture->vk.descriptor, 0, NULL);
+			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g2d.pipeline_layout, 0, 1, &texture->vk.descriptor_unorm, 0, NULL);
 			vkCmdDraw(cmdbuf, g2d.batch[i].vertex_count, 1, g2d.batch[i].vertex_offset, 0);
 		} // FIXME else what?
 	}

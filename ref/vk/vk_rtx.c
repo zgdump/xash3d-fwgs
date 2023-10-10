@@ -19,7 +19,7 @@
 #include "vk_logs.h"
 
 #include "alolcator.h"
-
+#include "profiler.h"
 
 #include "eiface.h"
 #include "xash3d_mathlib.h"
@@ -67,7 +67,7 @@ enum {
 typedef struct {
 		char name[64];
 		vk_resource_t resource;
-		xvk_image_t image;
+		r_vk_image_t image;
 		int refcount;
 		int source_index_plus_1;
 } rt_resource_t;
@@ -170,6 +170,7 @@ typedef struct {
 } perform_tracing_args_t;
 
 static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* args) {
+	APROF_SCOPE_DECLARE_BEGIN(perform, __FUNCTION__);
 	const VkCommandBuffer cmdbuf = combuf->cmdbuf;
 
 #define RES_SET_BUFFER(name, type_, source_, offset_, size_) \
@@ -238,7 +239,7 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 
 		// Swap resources
 		const vk_resource_t tmp_res = res->resource;
-		const xvk_image_t tmp_img = res->image;
+		const r_vk_image_t tmp_img = res->image;
 
 		res->resource = src->resource;
 		res->image = src->image;
@@ -338,6 +339,8 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 		g_rtx.mainpipe_out->resource.write.image_layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 	}
 	DEBUG_END(cmdbuf);
+
+	APROF_SCOPE_END(perform);
 }
 
 static void cleanupResources(void) {
@@ -346,7 +349,7 @@ static void cleanupResources(void) {
 		if (!res->name[0] || res->refcount || !res->image.image)
 			continue;
 
-		XVK_ImageDestroy(&res->image);
+		R_VkImageDestroy(&res->image);
 		res->name[0] = '\0';
 	}
 }
@@ -387,10 +390,11 @@ static void reloadMainpipe(void) {
 
 	for (int i = 0; i < newpipe->resources_count; ++i) {
 		const vk_meatpipe_resource_t *mr = newpipe->resources + i;
-		DEBUG("res %d/%d: %s descriptor=%u count=%d flags=[%c%c] image_format=%u",
+		DEBUG("res %d/%d: %s descriptor=%u count=%d flags=[%c%c] image_format=(%s)%u",
 			i, newpipe->resources_count, mr->name, mr->descriptor_type, mr->count,
 			(mr->flags & MEATPIPE_RES_WRITE) ? 'W' : ' ',
 			(mr->flags & MEATPIPE_RES_CREATE) ? 'C' : ' ',
+			R_VkFormatName(mr->image_format),
 			mr->image_format);
 
 		const qboolean create = !!(mr->flags & MEATPIPE_RES_CREATE);
@@ -415,8 +419,11 @@ static void reloadMainpipe(void) {
 			newpipe_out = res;
 
 		if (create) {
-			if (res->image.image == VK_NULL_HANDLE) {
-				const xvk_image_create_t create = {
+			if (res->image.image == VK_NULL_HANDLE || mr->image_format != res->image.format) {
+				if (res->image.image != VK_NULL_HANDLE) {
+					R_VkImageDestroy(&res->image);
+				}
+				const r_vk_image_create_t create = {
 					.debug_name = mr->name,
 					.width = FRAME_WIDTH,
 					.height = FRAME_HEIGHT,
@@ -427,13 +434,10 @@ static void reloadMainpipe(void) {
 					// TODO figure out how to detect this need properly. prev_dest is not defined as "output"
 					//.usage = VK_IMAGE_USAGE_STORAGE_BIT | (output ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT : 0),
 					.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-					.has_alpha = true,
-					.is_cubemap = false,
+					.flags = kVkImageFlagHasAlpha,
 				};
-				res->image = XVK_ImageCreate(&create);
+				res->image = R_VkImageCreate(&create);
 				Q_strncpy(res->name, mr->name, sizeof(res->name));
-			} else {
-				// TODO if (mr->image_format != res->image.format) { S_ERROR and goto fail }
 			}
 		}
 
@@ -493,7 +497,7 @@ static void reloadMainpipe(void) {
 
 	// TODO currently changing texture format is not handled. It will try to reuse existing image with the old format
 	// which will probably fail. To handle it we'd need to refactor this:
-	// 1. xvk_image_t should have a field with its current format? (or we'd also store if with the resource here)
+	// 1. r_vk_image_t should have a field with its current format? (or we'd also store if with the resource here)
 	// 2. do another loop here to detect format mismatch and recreate.
 
 	g_rtx.mainpipe = newpipe;
@@ -513,6 +517,8 @@ fail:
 
 void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 {
+	APROF_SCOPE_DECLARE_BEGIN(ray_frame_end, __FUNCTION__);
+
 	const VkCommandBuffer cmdbuf = args->combuf->cmdbuf;
 	// const xvk_ray_frame_images_t* current_frame = g_rtx.frames + (g_rtx.frame_number % 2);
 
@@ -576,6 +582,8 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 		};
 		performTracing( args->combuf, &trace_args );
 	}
+
+	APROF_SCOPE_END(ray_frame_end);
 }
 
 static void reloadPipeline( void ) {

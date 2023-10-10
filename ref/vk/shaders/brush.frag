@@ -30,6 +30,7 @@ const float dlight_attenuation_const = 5000.;
 void main() {
 	outColor = vec4(0.);
 	const vec4 tex_color = texture(sTexture0, vTexture0);
+
 	// TODO make sure textures are premultiplied alpha
 	const vec4 baseColor = vColor * tex_color;
 
@@ -48,6 +49,4 @@ void main() {
 		const float attenuation = dlight_attenuation_const / (d2 + r2 * .5);
 		outColor.rgb += baseColor.rgb * light_color * max(0., dot(normalize(light_dir), vNormal)) * attenuation;
 	}
-
-	//outColor.rgb = vNormal * .5 + .5;
 }

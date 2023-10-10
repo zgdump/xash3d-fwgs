@@ -16,8 +16,8 @@ typedef struct vk_texture_s
 	uint texnum;
 
 	struct {
-		xvk_image_t image;
-		VkDescriptorSet descriptor;
+		r_vk_image_t image;
+		VkDescriptorSet descriptor_unorm;
 	} vk;
 
 	uint hashValue;
@@ -48,6 +48,7 @@ typedef struct vk_textures_global_s
 	vk_texture_t skybox_cube;
 	vk_texture_t cubemap_placeholder;
 
+	// All textures descriptors in their native formats used for RT
 	VkDescriptorImageInfo dii_all_textures[MAX_TEXTURES];
 
 	// FIXME this should not exist, all textures should have their own samplers based on flags
@@ -67,18 +68,24 @@ void initTextures( void );
 void destroyTextures( void );
 vk_texture_t *findTexture(int index);
 
+typedef enum {
+	kColorspaceNative,
+	kColorspaceLinear,
+	kColorspaceGamma,
+} colorspace_hint_e;
+
 // Public API functions
 int		VK_FindTexture( const char *name );
 const char*	VK_TextureName( unsigned int texnum );
 const byte*	VK_TextureData( unsigned int texnum );
-int		VK_LoadTexture( const char *name, const byte *buf, size_t size, int flags );
+int		VK_LoadTextureExternal( const char *name, const byte *buf, size_t size, int flags );
 int		VK_CreateTexture( const char *name, int width, int height, const void *buffer, texFlags_t flags );
 int		VK_LoadTextureArray( const char **names, int flags );
 int		VK_CreateTextureArray( const char *name, int width, int height, int depth, const void *buffer, texFlags_t flags );
 void		VK_FreeTexture( unsigned int texnum );
 int VK_LoadTextureFromBuffer( const char *name, rgbdata_t *pic, texFlags_t flags, qboolean update );
 
-int	XVK_LoadTextureReplace( const char *name, const byte *buf, size_t size, int flags );
+int R_VkLoadTexture( const char *filename, colorspace_hint_e colorspace, qboolean force_reload);
 
 int XVK_TextureLookupF( const char *fmt, ...);
 

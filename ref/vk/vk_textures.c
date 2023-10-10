@@ -95,7 +95,7 @@ void destroyTextures( void )
 
 	unloadSkybox();
 
-	XVK_ImageDestroy(&tglob.cubemap_placeholder.vk.image);
+	R_VkImageDestroy(&tglob.cubemap_placeholder.vk.image);
 	g_textures.stats.size_total -= tglob.cubemap_placeholder.total_size;
 	g_textures.stats.count--;
 	memset(&tglob.cubemap_placeholder, 0, sizeof(tglob.cubemap_placeholder));
@@ -274,7 +274,7 @@ static void VK_ProcessImage( vk_texture_t *tex, rgbdata_t *pic )
 	}
 }
 
-static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers, int num_layers, qboolean cubemap);
+static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers, int num_layers, qboolean cubemap, colorspace_hint_e colorspace_hint);
 
 static void VK_CreateInternalTextures( void )
 {
@@ -350,14 +350,17 @@ static void VK_CreateInternalTextures( void )
 		sides[4] = pic;
 		sides[5] = pic;
 
-		uploadTexture( &tglob.cubemap_placeholder, sides, 6, true );
+		uploadTexture( &tglob.cubemap_placeholder, sides, 6, true, kColorspaceGamma );
 	}
 }
 
-static VkFormat VK_GetFormat(pixformat_t format) {
+static VkFormat VK_GetFormat(pixformat_t format, colorspace_hint_e colorspace_hint ) {
 	switch(format)
 	{
-		case PF_RGBA_32: return VK_FORMAT_R8G8B8A8_UNORM;
+		case PF_RGBA_32:
+			return (colorspace_hint == kColorspaceLinear)
+				? VK_FORMAT_R8G8B8A8_UNORM
+				: VK_FORMAT_R8G8B8A8_SRGB;
 		default:
 			WARN("FIXME unsupported pixformat_t %d", format);
 			return VK_FORMAT_UNDEFINED;
@@ -550,8 +553,8 @@ static VkSampler pickSamplerForFlags( texFlags_t flags ) {
 	return tglob.default_sampler_fixme;
 }
 
-static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers, int num_layers, qboolean cubemap) {
-	const VkFormat format = VK_GetFormat(layers[0]->type);
+static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers, int num_layers, qboolean cubemap, colorspace_hint_e colorspace_hint) {
+	const VkFormat format = VK_GetFormat(layers[0]->type, colorspace_hint);
 	int mipCount = 0;
 
 	tex->total_size = 0;
@@ -591,7 +594,7 @@ static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers,
 	tex->height = layers[0]->height;
 	mipCount = CalcMipmapCount( tex, true);
 
-	DEBUG("Uploading texture %s, mips=%d, layers=%d", tex->name, mipCount, num_layers);
+	DEBUG("Uploading texture[%d] %s, mips=%d, layers=%d", (int)(tex-vk_textures), tex->name, mipCount, num_layers);
 
 	// TODO this vvv
 	// // NOTE: only single uncompressed textures can be resamples, no mips, no layers, no sides
@@ -603,7 +606,7 @@ static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers,
 	// 	data = GL_ApplyFilter( data, tex->width, tex->height );
 
 	{
-		const xvk_image_create_t create = {
+		const r_vk_image_create_t create = {
 			.debug_name = tex->name,
 			.width = tex->width,
 			.height = tex->height,
@@ -612,10 +615,12 @@ static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers,
 			.format = format,
 			.tiling = VK_IMAGE_TILING_OPTIMAL,
 			.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-			.has_alpha = layers[0]->flags & IMAGE_HAS_ALPHA,
-			.is_cubemap = cubemap,
+			.flags = 0
+				| ((layers[0]->flags & IMAGE_HAS_ALPHA) ? kVkImageFlagHasAlpha : 0)
+				| (cubemap ? kVkImageFlagIsCubemap : 0)
+				| (colorspace_hint == kColorspaceGamma ? kVkImageFlagCreateUnormView : 0),
 		};
-		tex->vk.image = XVK_ImageCreate(&create);
+		tex->vk.image = R_VkImageCreate(&create);
 	}
 
 	{
@@ -721,30 +726,54 @@ static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers,
 	// TODO how should we approach this:
 	// - per-texture desc sets can be inconvenient if texture is used in different incompatible contexts
 	// - update descriptor sets in batch?
-	if (vk_desc.next_free != MAX_TEXTURES) {
+	if (vk_desc.next_free < MAX_TEXTURES-2) {
 		const int index = tex - vk_textures;
-		VkDescriptorImageInfo dii_tmp;
-		// FIXME handle cubemaps properly w/o this garbage. they should be the same as regular textures.
-		VkDescriptorImageInfo *const dii_tex = (num_layers == 1) ? tglob.dii_all_textures + index : &dii_tmp;
-		*dii_tex = (VkDescriptorImageInfo){
+		const VkDescriptorSet ds = vk_desc.sets[vk_desc.next_free++];
+		const VkDescriptorSet ds_unorm =
+			(colorspace_hint == kColorspaceGamma && tex->vk.image.view_unorm != VK_NULL_HANDLE)
+			? vk_desc.sets[vk_desc.next_free++] : VK_NULL_HANDLE;
+
+		const VkDescriptorImageInfo dii = {
 			.imageView = tex->vk.image.view,
 			.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 			.sampler = pickSamplerForFlags( tex->flags ),
 		};
-		const VkWriteDescriptorSet wds[] = { {
+
+		const VkDescriptorImageInfo dii_unorm = {
+			.imageView = tex->vk.image.view_unorm,
+			.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+			.sampler = dii.sampler,
+		};
+
+		VkWriteDescriptorSet wds[2] = { {
 			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
 			.dstBinding = 0,
 			.dstArrayElement = 0,
 			.descriptorCount = 1,
 			.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-			.pImageInfo = dii_tex,
-			.dstSet = tex->vk.descriptor = vk_desc.sets[vk_desc.next_free++],
+			.pImageInfo = &dii,
+			.dstSet = ds,
+		}, {
+			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			.dstBinding = 0,
+			.dstArrayElement = 0,
+			.descriptorCount = 1,
+			.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+			.pImageInfo = &dii_unorm,
+			.dstSet = ds_unorm,
 		}};
-		vkUpdateDescriptorSets(vk_core.device, ARRAYSIZE(wds), wds, 0, NULL);
+		vkUpdateDescriptorSets(vk_core.device, ds_unorm != VK_NULL_HANDLE ? 2 : 1 , wds, 0, NULL);
+
+		// FIXME handle cubemaps properly w/o this garbage. they should be the same as regular textures.
+		if (num_layers == 1) {
+			tglob.dii_all_textures[index] = dii;
+		}
+
+		tex->vk.descriptor_unorm = ds_unorm != VK_NULL_HANDLE ? ds_unorm : ds;
 	}
 	else
 	{
-		tex->vk.descriptor = VK_NULL_HANDLE;
+		tex->vk.descriptor_unorm = VK_NULL_HANDLE;
 	}
 
 	g_textures.stats.size_total += tex->total_size;
@@ -888,7 +917,7 @@ static int loadKtx2( const char *name ) {
 
 	// 1. Create image
 	{
-		const xvk_image_create_t create = {
+		const r_vk_image_create_t create = {
 			.debug_name = tex->name,
 			.width = header->pixelWidth,
 			.height = header->pixelHeight,
@@ -897,10 +926,10 @@ static int loadKtx2( const char *name ) {
 			.format = header->vkFormat,
 			.tiling = VK_IMAGE_TILING_OPTIMAL,
 			.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-			.has_alpha = false, // FIXME
-			.is_cubemap = false,
+			// FIXME find out if there's alpha
+			.flags = 0,
 		};
-		tex->vk.image = XVK_ImageCreate(&create);
+		tex->vk.image = R_VkImageCreate(&create);
 	}
 
 	// 2. Prep cmdbuf, barrier, etc
@@ -997,9 +1026,13 @@ static int loadKtx2( const char *name ) {
 		}
 	}
 
+	// KTX2 textures are inaccessible from trad renderer (for now)
+	tex->vk.descriptor_unorm = VK_NULL_HANDLE;
+
 	// TODO how should we approach this:
 	// - per-texture desc sets can be inconvenient if texture is used in different incompatible contexts
 	// - update descriptor sets in batch?
+
 	if (vk_desc.next_free != MAX_TEXTURES) {
 		const int num_layers = 1; // TODO cubemap
 		const int index = tex - vk_textures;
@@ -1018,13 +1051,9 @@ static int loadKtx2( const char *name ) {
 			.descriptorCount = 1,
 			.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 			.pImageInfo = dii_tex,
-			.dstSet = tex->vk.descriptor = vk_desc.sets[vk_desc.next_free++],
+			.dstSet = vk_desc.sets[vk_desc.next_free++],
 		}};
 		vkUpdateDescriptorSets(vk_core.device, ARRAYSIZE(wds), wds, 0, NULL);
-	}
-	else
-	{
-		tex->vk.descriptor = VK_NULL_HANDLE;
 	}
 
 	g_textures.stats.size_total += tex->total_size;
@@ -1044,29 +1073,7 @@ finalize:
 	return (tex - vk_textures);
 }
 
-static int loadTextureUsingEngine( const char *name, const byte *buf, size_t size, int flags );
-
-int	VK_LoadTexture( const char *name, const byte *buf, size_t size, int flags )
-{
-	if( !Common_CheckTexName( name ))
-		return 0;
-
-	// see if already loaded
-	vk_texture_t *tex = Common_TextureForName( name );
-	if( tex )
-		return (tex - vk_textures);
-
-	{
-		const char *ext = Q_strrchr(name, '.');
-		if (Q_strcmp(ext, ".ktx2") == 0) {
-			return loadKtx2(name);
-		}
-	}
-
-	return loadTextureUsingEngine(name, buf, size, flags);
-}
-
-static int loadTextureUsingEngine( const char *name, const byte *buf, size_t size, int flags ) {
+static int loadTextureUsingEngine( const char *name, const byte *buf, size_t size, int flags, colorspace_hint_e colorspace_hint ) {
 	uint picFlags = 0;
 
 	if( FBitSet( flags, TF_NOFLIP_TGA ))
@@ -1087,7 +1094,7 @@ static int loadTextureUsingEngine( const char *name, const byte *buf, size_t siz
 	// upload texture
 	VK_ProcessImage( tex, pic );
 
-	if( !uploadTexture( tex, &pic, 1, false ))
+	if( !uploadTexture( tex, &pic, 1, false, colorspace_hint ))
 	{
 		memset( tex, 0, sizeof( vk_texture_t ));
 		gEngine.FS_FreeImage( pic ); // release source texture
@@ -1103,17 +1110,43 @@ static int loadTextureUsingEngine( const char *name, const byte *buf, size_t siz
 	return tex - vk_textures;
 }
 
-int XVK_LoadTextureReplace( const char *name, const byte *buf, size_t size, int flags ) {
-	vk_texture_t	*tex;
+static int loadTextureInternal( const char *name, const byte *buf, size_t size, int flags, colorspace_hint_e colorspace_hint ) {
 	if( !Common_CheckTexName( name ))
 		return 0;
 
-	// free if already loaded
-	if(( tex = Common_TextureForName( name ))) {
-		VK_FreeTexture( tex - vk_textures );
+	// see if already loaded
+	vk_texture_t *tex = Common_TextureForName( name );
+	if( tex )
+		return (tex - vk_textures);
+
+	{
+		const char *ext = Q_strrchr(name, '.');
+		if (Q_strcmp(ext, ".ktx2") == 0) {
+			return loadKtx2(name);
+		}
 	}
 
-	return VK_LoadTexture( name, buf, size, flags );
+	return loadTextureUsingEngine(name, buf, size, flags, colorspace_hint);
+}
+
+int VK_LoadTextureExternal( const char *name, const byte *buf, size_t size, int flags ) {
+	return loadTextureInternal(name, buf, size, flags, kColorspaceGamma);
+}
+
+int R_VkLoadTexture( const char *filename, colorspace_hint_e colorspace, qboolean force_reload) {
+	vk_texture_t	*tex;
+	if( !Common_CheckTexName( filename ))
+		return 0;
+
+	if (force_reload) {
+		// free if already loaded
+		// TODO consider leaving intact if loading failed
+		if(( tex = Common_TextureForName( filename ))) {
+			VK_FreeTexture( tex - vk_textures );
+		}
+	}
+
+	return loadTextureInternal( filename, NULL, 0, 0, colorspace );
 }
 
 int	VK_CreateTexture( const char *name, int width, int height, const void *buffer, texFlags_t flags )
@@ -1182,7 +1215,7 @@ void VK_FreeTexture( unsigned int texnum ) {
 	R_VkStagingFlushSync();
 	XVK_CHECK(vkDeviceWaitIdle(vk_core.device));
 
-	XVK_ImageDestroy(&tex->vk.image);
+	R_VkImageDestroy(&tex->vk.image);
 	g_textures.stats.size_total -= tex->total_size;
 	g_textures.stats.count--;
 	memset(tex, 0, sizeof(*tex));
@@ -1222,7 +1255,7 @@ static int loadTextureFromBuffers( const char *name, rgbdata_t *const *const pic
 	for (int i = 0; i < pic_count; ++i)
 		VK_ProcessImage( tex, pic[i] );
 
-	if( !uploadTexture( tex, pic, pic_count, false ))
+	if( !uploadTexture( tex, pic, pic_count, false, kColorspaceGamma ))
 	{
 		memset( tex, 0, sizeof( vk_texture_t ));
 		return 0;
@@ -1250,7 +1283,7 @@ int XVK_TextureLookupF( const char *fmt, ...) {
 
 static void unloadSkybox( void ) {
 	if (tglob.skybox_cube.vk.image.image) {
-		XVK_ImageDestroy(&tglob.skybox_cube.vk.image);
+		R_VkImageDestroy(&tglob.skybox_cube.vk.image);
 		g_textures.stats.size_total -= tglob.skybox_cube.total_size;
 		g_textures.stats.count--;
 		memset(&tglob.skybox_cube, 0, sizeof(tglob.skybox_cube));
@@ -1348,7 +1381,7 @@ static qboolean loadSkybox( const char *prefix, int style ) {
 		goto cleanup;
 
 	Q_strncpy( tglob.skybox_cube.name, prefix, sizeof( tglob.skybox_cube.name ));
-	success = uploadTexture(&tglob.skybox_cube, sides, 6, true);
+	success = uploadTexture(&tglob.skybox_cube, sides, 6, true, kColorspaceGamma);
 
 cleanup:
 	for (int j = 0; j < i; ++j)

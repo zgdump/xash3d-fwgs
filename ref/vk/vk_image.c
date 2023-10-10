@@ -1,4 +1,5 @@
 #include "vk_image.h"
+#include "vk_logs.h"
 
 static const VkImageUsageFlags usage_bits_implying_views =
 	VK_IMAGE_USAGE_SAMPLED_BIT |
@@ -16,10 +17,91 @@ static const VkImageUsageFlags usage_bits_implying_views =
 	VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR;
 */
 
-xvk_image_t XVK_ImageCreate(const xvk_image_create_t *create) {
+static VkFormat unormFormatFor(VkFormat fmt) {
+	switch (fmt) {
+		case VK_FORMAT_R8_SRGB: return VK_FORMAT_R8_UNORM;
+		case VK_FORMAT_R8_UNORM: return VK_FORMAT_R8_UNORM;
+		case VK_FORMAT_R8G8_SRGB: return VK_FORMAT_R8G8_UNORM;
+		case VK_FORMAT_R8G8_UNORM: return VK_FORMAT_R8G8_UNORM;
+		case VK_FORMAT_R8G8B8_SRGB: return VK_FORMAT_R8G8B8_UNORM;
+		case VK_FORMAT_R8G8B8_UNORM: return VK_FORMAT_R8G8B8_UNORM;
+		case VK_FORMAT_B8G8R8_SRGB: return VK_FORMAT_B8G8R8_UNORM;
+		case VK_FORMAT_B8G8R8_UNORM: return VK_FORMAT_B8G8R8_UNORM;
+		case VK_FORMAT_R8G8B8A8_SRGB: return VK_FORMAT_R8G8B8A8_UNORM;
+		case VK_FORMAT_R8G8B8A8_UNORM: return VK_FORMAT_R8G8B8A8_UNORM;
+		case VK_FORMAT_B8G8R8A8_SRGB: return VK_FORMAT_B8G8R8A8_UNORM;
+		case VK_FORMAT_B8G8R8A8_UNORM: return VK_FORMAT_B8G8R8A8_UNORM;
+		case VK_FORMAT_A8B8G8R8_SRGB_PACK32: return VK_FORMAT_A8B8G8R8_UNORM_PACK32;
+		case VK_FORMAT_A8B8G8R8_UNORM_PACK32: return VK_FORMAT_A8B8G8R8_UNORM_PACK32;
+		case VK_FORMAT_BC1_RGB_SRGB_BLOCK: return VK_FORMAT_BC1_RGB_UNORM_BLOCK;
+		case VK_FORMAT_BC1_RGB_UNORM_BLOCK: return VK_FORMAT_BC1_RGB_UNORM_BLOCK;
+		case VK_FORMAT_BC1_RGBA_SRGB_BLOCK: return VK_FORMAT_BC1_RGBA_UNORM_BLOCK;
+		case VK_FORMAT_BC1_RGBA_UNORM_BLOCK: return VK_FORMAT_BC1_RGBA_UNORM_BLOCK;
+		case VK_FORMAT_BC2_SRGB_BLOCK: return VK_FORMAT_BC2_UNORM_BLOCK;
+		case VK_FORMAT_BC2_UNORM_BLOCK: return VK_FORMAT_BC2_UNORM_BLOCK;
+		case VK_FORMAT_BC3_SRGB_BLOCK: return VK_FORMAT_BC3_UNORM_BLOCK;
+		case VK_FORMAT_BC3_UNORM_BLOCK: return VK_FORMAT_BC3_UNORM_BLOCK;
+		case VK_FORMAT_BC7_SRGB_BLOCK: return VK_FORMAT_BC7_UNORM_BLOCK;
+		case VK_FORMAT_BC7_UNORM_BLOCK: return VK_FORMAT_BC7_UNORM_BLOCK;
+		case VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK: return VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK;
+		case VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK: return VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK;
+		case VK_FORMAT_ETC2_R8G8B8A1_SRGB_BLOCK: return VK_FORMAT_ETC2_R8G8B8A1_UNORM_BLOCK;
+		case VK_FORMAT_ETC2_R8G8B8A1_UNORM_BLOCK: return VK_FORMAT_ETC2_R8G8B8A1_UNORM_BLOCK;
+		case VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK: return VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK;
+		case VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK: return VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK;
+		case VK_FORMAT_ASTC_4x4_SRGB_BLOCK: return VK_FORMAT_ASTC_4x4_UNORM_BLOCK;
+		case VK_FORMAT_ASTC_4x4_UNORM_BLOCK: return VK_FORMAT_ASTC_4x4_UNORM_BLOCK;
+		case VK_FORMAT_ASTC_5x4_SRGB_BLOCK: return VK_FORMAT_ASTC_5x4_UNORM_BLOCK;
+		case VK_FORMAT_ASTC_5x4_UNORM_BLOCK: return VK_FORMAT_ASTC_5x4_UNORM_BLOCK;
+		case VK_FORMAT_ASTC_5x5_SRGB_BLOCK: return VK_FORMAT_ASTC_5x5_UNORM_BLOCK;
+		case VK_FORMAT_ASTC_5x5_UNORM_BLOCK: return VK_FORMAT_ASTC_5x5_UNORM_BLOCK;
+		case VK_FORMAT_ASTC_6x5_SRGB_BLOCK: return VK_FORMAT_ASTC_6x5_UNORM_BLOCK;
+		case VK_FORMAT_ASTC_6x5_UNORM_BLOCK: return VK_FORMAT_ASTC_6x5_UNORM_BLOCK;
+		case VK_FORMAT_ASTC_6x6_SRGB_BLOCK: return VK_FORMAT_ASTC_6x6_UNORM_BLOCK;
+		case VK_FORMAT_ASTC_6x6_UNORM_BLOCK: return VK_FORMAT_ASTC_6x6_UNORM_BLOCK;
+		case VK_FORMAT_ASTC_8x5_SRGB_BLOCK: return VK_FORMAT_ASTC_8x5_UNORM_BLOCK;
+		case VK_FORMAT_ASTC_8x5_UNORM_BLOCK: return VK_FORMAT_ASTC_8x5_UNORM_BLOCK;
+		case VK_FORMAT_ASTC_8x6_SRGB_BLOCK: return VK_FORMAT_ASTC_8x6_UNORM_BLOCK;
+		case VK_FORMAT_ASTC_8x6_UNORM_BLOCK: return VK_FORMAT_ASTC_8x6_UNORM_BLOCK;
+		case VK_FORMAT_ASTC_8x8_SRGB_BLOCK: return VK_FORMAT_ASTC_8x8_UNORM_BLOCK;
+		case VK_FORMAT_ASTC_8x8_UNORM_BLOCK: return VK_FORMAT_ASTC_8x8_UNORM_BLOCK;
+		case VK_FORMAT_ASTC_10x5_SRGB_BLOCK: return VK_FORMAT_ASTC_10x5_UNORM_BLOCK;
+		case VK_FORMAT_ASTC_10x5_UNORM_BLOCK: return VK_FORMAT_ASTC_10x5_UNORM_BLOCK;
+		case VK_FORMAT_ASTC_10x6_SRGB_BLOCK: return VK_FORMAT_ASTC_10x6_UNORM_BLOCK;
+		case VK_FORMAT_ASTC_10x6_UNORM_BLOCK: return VK_FORMAT_ASTC_10x6_UNORM_BLOCK;
+		case VK_FORMAT_ASTC_10x8_SRGB_BLOCK: return VK_FORMAT_ASTC_10x8_UNORM_BLOCK;
+		case VK_FORMAT_ASTC_10x8_UNORM_BLOCK: return VK_FORMAT_ASTC_10x8_UNORM_BLOCK;
+		case VK_FORMAT_ASTC_10x10_SRGB_BLOCK: return VK_FORMAT_ASTC_10x10_UNORM_BLOCK;
+		case VK_FORMAT_ASTC_10x10_UNORM_BLOCK: return VK_FORMAT_ASTC_10x10_UNORM_BLOCK;
+		case VK_FORMAT_ASTC_12x10_SRGB_BLOCK: return VK_FORMAT_ASTC_12x10_UNORM_BLOCK;
+		case VK_FORMAT_ASTC_12x10_UNORM_BLOCK: return VK_FORMAT_ASTC_12x10_UNORM_BLOCK;
+		case VK_FORMAT_ASTC_12x12_SRGB_BLOCK: return VK_FORMAT_ASTC_12x12_UNORM_BLOCK;
+		case VK_FORMAT_ASTC_12x12_UNORM_BLOCK: return VK_FORMAT_ASTC_12x12_UNORM_BLOCK;
+		case VK_FORMAT_PVRTC1_2BPP_SRGB_BLOCK_IMG: return VK_FORMAT_PVRTC1_2BPP_UNORM_BLOCK_IMG;
+		case VK_FORMAT_PVRTC1_2BPP_UNORM_BLOCK_IMG: return VK_FORMAT_PVRTC1_2BPP_UNORM_BLOCK_IMG;
+		case VK_FORMAT_PVRTC1_4BPP_SRGB_BLOCK_IMG: return VK_FORMAT_PVRTC1_4BPP_UNORM_BLOCK_IMG;
+		case VK_FORMAT_PVRTC1_4BPP_UNORM_BLOCK_IMG: return VK_FORMAT_PVRTC1_4BPP_UNORM_BLOCK_IMG;
+		case VK_FORMAT_PVRTC2_2BPP_SRGB_BLOCK_IMG: return VK_FORMAT_PVRTC2_2BPP_UNORM_BLOCK_IMG;
+		case VK_FORMAT_PVRTC2_2BPP_UNORM_BLOCK_IMG: return VK_FORMAT_PVRTC2_2BPP_UNORM_BLOCK_IMG;
+		case VK_FORMAT_PVRTC2_4BPP_SRGB_BLOCK_IMG: return VK_FORMAT_PVRTC2_4BPP_UNORM_BLOCK_IMG;
+		case VK_FORMAT_PVRTC2_4BPP_UNORM_BLOCK_IMG: return VK_FORMAT_PVRTC2_4BPP_UNORM_BLOCK_IMG;
+		default:
+			return VK_FORMAT_UNDEFINED;
+	}
+}
+
+r_vk_image_t R_VkImageCreate(const r_vk_image_create_t *create) {
 	const qboolean is_depth = !!(create->usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
-	xvk_image_t image = {0};
+	r_vk_image_t image = {0};
 	VkMemoryRequirements memreq;
+
+	const qboolean is_cubemap = !!(create->flags & kVkImageFlagIsCubemap);
+
+	const VkFormat unorm_format = unormFormatFor(create->format);
+	const qboolean create_unorm =
+		!!(create->flags & kVkImageFlagCreateUnormView)
+		&& unorm_format != VK_FORMAT_UNDEFINED
+		&& unorm_format != create->format;
 
 	VkImageCreateInfo ici = {
 		.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
@@ -35,10 +117,14 @@ xvk_image_t XVK_ImageCreate(const xvk_image_create_t *create) {
 		.usage = create->usage,
 		.samples = VK_SAMPLE_COUNT_1_BIT,
 		.sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-		.flags = create->is_cubemap ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0,
+		.flags = 0
+			| (is_cubemap ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0)
+			| (create_unorm ? VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT : 0),
 	};
 
 	XVK_CHECK(vkCreateImage(vk_core.device, &ici, NULL, &image.image));
+
+	image.format = ici.format;
 
 	if (create->debug_name)
 		SET_DEBUG_NAME(image.image, VK_OBJECT_TYPE_IMAGE, create->debug_name);
@@ -48,9 +134,11 @@ xvk_image_t XVK_ImageCreate(const xvk_image_create_t *create) {
 	XVK_CHECK(vkBindImageMemory(vk_core.device, image.image, image.devmem.device_memory, image.devmem.offset));
 
 	if (create->usage & usage_bits_implying_views) {
-		const VkImageViewCreateInfo ivci = {
+		const qboolean has_alpha = !!(create->flags & kVkImageFlagHasAlpha);
+
+		VkImageViewCreateInfo ivci = {
 			.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-			.viewType = create->is_cubemap ? VK_IMAGE_VIEW_TYPE_CUBE : VK_IMAGE_VIEW_TYPE_2D,
+			.viewType = is_cubemap ? VK_IMAGE_VIEW_TYPE_CUBE : VK_IMAGE_VIEW_TYPE_2D,
 			.format = ici.format,
 			.image = image.image,
 			.subresourceRange.aspectMask = is_depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT,
@@ -58,12 +146,21 @@ xvk_image_t XVK_ImageCreate(const xvk_image_create_t *create) {
 			.subresourceRange.levelCount = ici.mipLevels,
 			.subresourceRange.baseArrayLayer = 0,
 			.subresourceRange.layerCount = ici.arrayLayers,
-			.components = (VkComponentMapping){0, 0, 0, (is_depth || create->has_alpha) ? 0 : VK_COMPONENT_SWIZZLE_ONE},
+			// TODO component swizzling based on format, e.g. R8 -> RRRR
+			.components = (VkComponentMapping){0, 0, 0, (is_depth || has_alpha) ? 0 : VK_COMPONENT_SWIZZLE_ONE},
 		};
 		XVK_CHECK(vkCreateImageView(vk_core.device, &ivci, NULL, &image.view));
 
 		if (create->debug_name)
 			SET_DEBUG_NAME(image.view, VK_OBJECT_TYPE_IMAGE_VIEW, create->debug_name);
+
+		if (create_unorm) {
+			ivci.format = unorm_format;
+			XVK_CHECK(vkCreateImageView(vk_core.device, &ivci, NULL, &image.view_unorm));
+
+			if (create->debug_name)
+				SET_DEBUG_NAMEF(image.view_unorm, VK_OBJECT_TYPE_IMAGE_VIEW, "%s_unorm", create->debug_name);
+		}
 	}
 
 	image.width = create->width;
@@ -73,11 +170,17 @@ xvk_image_t XVK_ImageCreate(const xvk_image_create_t *create) {
 	return image;
 }
 
-void XVK_ImageDestroy(xvk_image_t *img) {
-	vkDestroyImageView(vk_core.device, img->view, NULL);
+void R_VkImageDestroy(r_vk_image_t *img) {
+	if (img->view_unorm != VK_NULL_HANDLE)
+		vkDestroyImageView(vk_core.device, img->view_unorm, NULL);
+
+	if (img->view != VK_NULL_HANDLE)
+		vkDestroyImageView(vk_core.device, img->view, NULL);
+
 	vkDestroyImage(vk_core.device, img->image, NULL);
+
 	VK_DevMemFree(&img->devmem);
-	*img = (xvk_image_t){0};
+	*img = (r_vk_image_t){0};
 }
 
 void R_VkImageClear(VkCommandBuffer cmdbuf, VkImage image) {

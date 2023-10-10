@@ -230,6 +230,9 @@ int R_FIXME_GetEntityRenderMode( cl_entity_t *ent )
 }
 
 void R_SceneMapDestroy( void ) {
+	// Make sure no rendering is happening
+	XVK_CHECK(vkDeviceWaitIdle( vk_core.device ));
+
 	VK_BrushModelDestroyAll();
 }
 
