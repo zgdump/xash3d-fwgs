@@ -69,7 +69,7 @@ void destroyTextures( void );
 vk_texture_t *findTexture(int index);
 
 typedef enum {
-	//kColorspaceNative,
+	kColorspaceNative,
 	kColorspaceLinear,
 	kColorspaceGamma,
 } colorspace_hint_e;
