@@ -589,14 +589,14 @@ void VK_RenderEnd( VkCommandBuffer cmdbuf, qboolean draw )
 
 		if (lightmap != draw->draw.lightmap) {
 			lightmap = draw->draw.lightmap;
-			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_render.pipeline_layout, 2, 1, &findTexture(lightmap)->vk.descriptor, 0, NULL);
+			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_render.pipeline_layout, 2, 1, &findTexture(lightmap)->vk.descriptor_unorm, 0, NULL);
 		}
 
 		if (texture != draw->draw.texture)
 		{
 			texture = draw->draw.texture;
 			// TODO names/enums for binding points
-			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_render.pipeline_layout, 1, 1, &findTexture(texture)->vk.descriptor, 0, NULL);
+			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_render.pipeline_layout, 1, 1, &findTexture(texture)->vk.descriptor_unorm, 0, NULL);
 		}
 
 		// Only indexed mode is supported
@@ -784,7 +784,7 @@ void R_RenderModelDraw(const vk_render_model_t *model, r_model_draw_t args) {
 			.material_mode = args.material_mode,
 			.transform = (const matrix3x4*)args.transform,
 			.prev_transform = (const matrix3x4*)args.prev_transform,
-			.color = args.color,
+			.color_srgb = args.color,
 			.dynamic_polylights = model->dynamic_polylights,
 			.dynamic_polylights_count = model->dynamic_polylights_count,
 			.override = {

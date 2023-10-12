@@ -31,7 +31,7 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 	const Material material = kusok.material;
 
 	if (kusok.material.tex_base_color == TEX_BASE_SKYBOX) {
-		payload.emissive.rgb = SRGBtoLINEAR(texture(skybox, rayDirection).rgb);
+		payload.emissive.rgb = texture(skybox, rayDirection).rgb;
 		return;
 	} else {
 		payload.base_color_a = sampleTexture(material.tex_base_color, geom.uv, geom.uv_lods);
@@ -45,9 +45,36 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 			T = normalize(T - dot(T, geom.normal_shading) * geom.normal_shading);
 			const vec3 B = normalize(cross(geom.normal_shading, T));
 			const mat3 TBN = mat3(T, B, geom.normal_shading);
-			vec3 tnorm = sampleTexture(tex_normal, geom.uv, geom.uv_lods).xyz * 2. - 1.; // TODO is this sampling correct for normal data?
+
+// Get to KTX2 normal maps eventually
+//#define KTX2
+#ifdef KTX2
+// We expect KTX2 normalmaps to have only 2 SNORM components.
+// TODO: BC6H only can do signed or unsigned 16-bit floats. It can't normalize them on its own. So we either deal with
+// sub-par 10bit precision for <1 values. Or do normalization manually in shader. Manual normalization implies prepa-
+// ring normalmaps in a special way, i.e. scaling vector components to full f16 scale.
+#define NORMALMAP_SNORM
+#define NORMALMAP_2COMP
+#endif
+
+#ifdef NORMALMAP_SNORM // [-1..1]
+			// TODO is this sampling correct for normal data?
+			vec3 tnorm = sampleTexture(tex_normal, geom.uv, geom.uv_lods).xyz;
+#else // Older UNORM [0..1]
+			vec3 tnorm = sampleTexture(tex_normal, geom.uv, geom.uv_lods).xyz * 2. - 1.;
+#endif
+
+#ifndef NORMALMAP_2COMP
+			// Older 8-bit PNG suffers from quantization.
+			// Smoothen quantization by normalizing it
+			tnorm = normalize(tnorm);
+#endif
+
 			tnorm.xy *= material.normal_scale;
+
+			// Restore z based on scaled xy
 			tnorm.z = sqrt(max(0., 1. - dot(tnorm.xy, tnorm.xy)));
+
 			geom.normal_shading = normalize(TBN * tnorm);
 		}
 #endif
@@ -62,7 +89,8 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 	//payload.emissive.rgb = kusok.emissive * SRGBtoLINEAR(payload.base_color_a.rgb);
 	//payload.emissive.rgb = clamp((kusok.emissive * (1.0/3.0) / 20), 0, 1.0) * SRGBtoLINEAR(payload.base_color_a.rgb);
 	//payload.emissive.rgb = (sqrt(sqrt(kusok.emissive)) * (1.0/3.0)) * SRGBtoLINEAR(payload.base_color_a.rgb);
-	payload.emissive.rgb = (sqrt(kusok.emissive) / 8) * SRGBtoLINEAR(payload.base_color_a.rgb);
+	payload.emissive.rgb = (sqrt(kusok.emissive) / 8) * payload.base_color_a.rgb;
+	//payload.emissive.rgb = kusok.emissive * payload.base_color_a.rgb;
 #else
 	// Fake texture color
 	if (any(greaterThan(kusok.emissive, vec3(0.))))

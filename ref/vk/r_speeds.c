@@ -21,9 +21,10 @@
 enum {
 	SPEEDS_BIT_OFF = 0,       // `r_speeds 0` turns off all performance stats display
 	SPEEDS_BIT_SIMPLE = 1,    // `r_speeds 1` displays only basic info about frame time
-	SPEEDS_BIT_STATS = 2,     // `r_speeds 2` displays additional metrics, i.e. lights counts, dynamic geometry upload sizes, etc (TODO)
-	SPEEDS_BIT_GPU_USAGE = 4, // `r_speeds 4` displays overall GPU usage stats (TODO)
-	SPEEDS_BIT_FRAME = 8,     // `r_speeds 8` diplays details instrumental profiler frame data, e.g. specific functions times graphs, etc
+	SPEEDS_BIT_STATS = 2,     // `r_speeds 2` displays additional metrics, i.e. lights counts, dynamic geometry upload sizes, etc
+	SPEEDS_BIT_GRAPHS = 4,     // `r_speeds 4` display instrumental metrics graphs, controlled by r_speeds_graphs var
+	SPEEDS_BIT_FRAME = 8,     // `r_speeds 8` diplays details instrumental profiler flame graph
+	// TODO SPEEDS_BIT_GPU_USAGE = 16, // `r_speeds 16` displays overall GPU usage stats
 
 	// These bits can be combined, e.g. `r_speeds 9`, 8+1, will display 1: basic timing info and 8: frame graphs
 };
@@ -972,10 +973,11 @@ void R_SpeedsDisplayMore(uint32_t prev_frame_index, const struct vk_combuf_scope
 
 	{
 		int y = 100;
-		const int draw = speeds_bits & SPEEDS_BIT_FRAME;
-		y = drawFrames( draw, prev_frame_index, y, gpurofl, gpurofl_count );
+		const int draw_frame = speeds_bits & SPEEDS_BIT_FRAME;
+		y = drawFrames( draw_frame, prev_frame_index, y, gpurofl, gpurofl_count );
 
-		if (draw)
+		const int draw_graphs = speeds_bits & SPEEDS_BIT_GRAPHS;
+		if (draw_graphs)
 			y = drawGraphs(y + 10);
 	}
 

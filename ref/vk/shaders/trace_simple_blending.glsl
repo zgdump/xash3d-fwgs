@@ -53,7 +53,7 @@ void traceSimpleBlending(vec3 pos, vec3 dir, float L, inout vec3 emissive, inout
 		const vec4 texture_color = texture(textures[nonuniformEXT(kusok.material.tex_base_color)], geom.uv);
 		const vec4 mm_color = model.color * kusok.material.base_color;
 		float alpha = mm_color.a * texture_color.a * geom.vertex_color.a;
-		vec3 color = mm_color.rgb * SRGBtoLINEAR(texture_color.rgb) * geom.vertex_color.rgb * alpha;
+		vec3 color = mm_color.rgb * texture_color.rgb * geom.vertex_color.rgb * alpha;
 
 		if (model.mode == MATERIAL_MODE_BLEND_GLOW) {
 			// Glow is additive + small overshoot

@@ -41,10 +41,14 @@ layout(set = 0, binding = 18) uniform sampler2D textures[MAX_TEXTURES];
 include "bluenoise.glsl"
 #endif
 
+//layout(set = 0, binding = 19) uniform sampler2D textures[MAX_TEXTURES];
+
+
 const int INDIRECT_SCALE = 2;
 
 //#define DEBUG_TEXTURE normals_gs
 //#define DEBUG_TEXTURE emissive
+//#define DEBUG_TEXTURE base_color_a
 //#define DEBUG_TEXTURE light_point_diffuse
 //#define DEBUG_NORMAL
 //layout(set = 0, binding = 18, rgba8) uniform readonly image2D material_rmxx;
@@ -202,8 +206,30 @@ void main() {
 	/* } */
 
 #if defined(DEBUG_TEXTURE)
+	//if (pix.x < res.x / 2) {
+		//imageStore(out_dest, pix, vec4(LINEARtoSRGB(texture(textures[161], vec2(pix)/vec2(res)).rgb), 0.)); return;
+	//}
 	imageStore(out_dest, pix, vec4(LINEARtoSRGB(imageLoad(DEBUG_TEXTURE, pix).rgb), 0.)); return;
 #endif
+
+	/*
+	if (pix.x < res.x / 4) {
+		imageStore(out_dest, pix, vec4(imageLoad(base_color_a, pix).rgb, 0.)); return;
+	} else if (pix.x < res.x / 2) {
+		imageStore(out_dest, pix, vec4(LINEARtoSRGB(imageLoad(emissive, pix).rgb), 0.)); return;
+	} else if (pix.x < res.x * 3 / 4) {
+		imageStore(out_dest, pix, vec4(LINEARtoSRGB(fract(
+			imageLoad(light_poly_diffuse, pix).rgb
+			+ imageLoad(light_poly_specular, pix).rgb
+			+ imageLoad(light_point_diffuse, pix).rgb
+			+ imageLoad(light_point_specular, pix).rgb
+			)), 0.)); return;
+	} else {
+		imageStore(out_dest, pix, vec4(LINEARtoSRGB(
+			imageLoad(indirect_diffuse, pix / INDIRECT_SCALE).rgb
+			+ imageLoad(indirect_specular, pix / INDIRECT_SCALE).rgb
+		), 0.)); return;
+	}*/
 
 	//imageStore(out_dest, pix, vec4(fract(imageLoad(position_t, pix).rgb/10.), 0.)); return;
 	//imageStore(out_dest, pix, vec4(fract(imageLoad(geometry_prev_position, pix).rgb/50.), 0.)); return;
@@ -278,8 +304,8 @@ void main() {
 		//imageStore(out_dest, pix, vec4(LINEARtoSRGB(diffuse), 0.)); return;
 	}
 
-	const vec4 base_color_a = imageLoad(base_color_a, pix);
-	colour *= SRGBtoLINEAR(base_color_a.rgb);
+	const vec4 base_color_a = SRGBtoLINEAR(imageLoad(base_color_a, pix));
+	colour *= base_color_a.rgb;
 	colour += imageLoad(emissive, pix).rgb;
 	colour = LINEARtoSRGB(colour);
 

@@ -1088,6 +1088,8 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 				continue;
 
 			int tex_id = orig_tex_id;
+
+			// TODO this patching should probably override entity patching below
 			const xvk_patch_surface_t *const psurf = R_VkPatchGetSurface(surface_index);
 			if (psurf && psurf->tex_id >= 0)
 				tex_id = psurf->tex_id;
@@ -1121,7 +1123,7 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 			qboolean material_assigned = false;
 			if (entity_patch) {
 				for (int i = 0; i < entity_patch->matmap_count; ++i) {
-					if (entity_patch->matmap[i].from_tex == tex_id) {
+					if (entity_patch->matmap[i].from_tex == orig_tex_id) {
 						model_geometry->material = R_VkMaterialGetForTexture(entity_patch->matmap[i].to_mat.index);
 						material_assigned = true;
 						break;
